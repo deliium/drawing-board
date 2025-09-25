@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: drawing-board-backend-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DB_PATH=/data/drawing-board-dev.db
+      - SESSION_SECRET=dev-secret-key
+    volumes:
+      - backend_dev_data:/data
+      - ./:/app
+    networks:
+      - drawing-board-dev-network
+    restart: unless-stopped
+    command: ["./main"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: drawing-board-frontend-dev
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - drawing-board-dev-network
+    restart: unless-stopped
+
+volumes:
+  backend_dev_data:
+    driver: local
+
+networks:
+  drawing-board-dev-network:
+    driver: bridge
