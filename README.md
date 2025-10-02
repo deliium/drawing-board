@@ -1,3 +1,5 @@
+![drawing-board](http://counter.seku.su/cmoe?name=drawing-board&theme=rule34-big)
+
 # Drawing Board (React + Go)
 
 A collaborative drawing board with handwriting recognition and user accounts:
