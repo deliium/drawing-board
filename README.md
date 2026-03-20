@@ -253,6 +253,23 @@ Recognition analysis for 2 strokes:
 
 ## Development
 
+### Speckit Workflow (Cursor)
+
+The repository is initialized for **Speckit** in Cursor. Use slash commands in
+Cursor chat:
+
+```text
+/speckit.constitution
+/speckit.specify <feature description>
+/speckit.clarify
+/speckit.plan
+/speckit.tasks
+/speckit.implement
+```
+
+Generated project artifacts live in `.specify/`, and Cursor commands are in
+`.cursor/commands/`.
+
 ### Project Structure
 ```
 drawing-board/
