@@ -3,6 +3,10 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -32,14 +36,79 @@ type Stroke struct {
 }
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite3", path)
+	filename, enableFK := normalizeSQLitePath(path)
+	db, err := openAndInit(filename, enableFK)
+	if err == nil {
+		return &Store{SQL: db}, nil
+	}
+
+	// In some environments stale -wal/-shm sidecar files can break opening the DB (disk I/O error).
+	// If that happens, try removing the sidecars and retry once.
+	if isSQLiteSidecarError(err) {
+		_ = db.Close()
+		_ = os.Remove(filename + "-wal")
+		_ = os.Remove(filename + "-shm")
+		db2, err2 := openAndInit(filename, enableFK)
+		if err2 == nil {
+			return &Store{SQL: db2}, nil
+		}
+		return nil, err2
+	}
+
+	_ = db.Close()
+	return nil, err
+}
+
+func openAndInit(filename string, enableFK bool) (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", filename)
 	if err != nil { return nil, err }
+
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
-	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil { return nil, err }
-	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil { return nil, err }
-	if err := migrate(db); err != nil { return nil, err }
-	return &Store{SQL: db}, nil
+	if enableFK {
+		if _, err := db.Exec("PRAGMA foreign_keys=ON;"); err != nil { return db, fmt.Errorf("pragma foreign_keys: %w", err) }
+	}
+	// WAL can fail on some filesystems / environments (e.g. limited locking). Prefer it, but don't hard-fail.
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		// Try to explicitly switch back to DELETE; if that also fails, continue with SQLite defaults.
+		_, _ = db.Exec("PRAGMA journal_mode=DELETE;")
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil { return db, fmt.Errorf("pragma busy_timeout: %w", err) }
+	if err := migrate(db); err != nil { return db, fmt.Errorf("migrate: %w", err) }
+	return db, nil
+}
+
+func isSQLiteSidecarError(err error) bool {
+	// Keep it conservative: only retry on the exact class of errors we saw.
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "disk i/o error") && strings.Contains(s, "no such file or directory")
+}
+
+func normalizeSQLitePath(dsnOrPath string) (filename string, enableFK bool) {
+	s := strings.TrimSpace(dsnOrPath)
+	if s == "" {
+		return "data.db", true
+	}
+
+	// Handle legacy/default form like: file:data.db?_fk=1
+	// We normalize it to a plain filename so it works consistently across environments.
+	if strings.HasPrefix(s, "file:") && strings.Contains(s, "?") {
+		if u, err := url.Parse(s); err == nil && u.Scheme == "file" {
+			if v := u.Query().Get("_fk"); v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "on") {
+				enableFK = true
+			}
+
+			// For "file:data.db?...": url.Parse uses Opaque for the path part.
+			if u.Opaque != "" {
+				return u.Opaque, enableFK
+			}
+			if u.Path != "" {
+				return u.Path, enableFK
+			}
+		}
+	}
+
+	return s, true
 }
 
 func migrate(db *sql.DB) error {

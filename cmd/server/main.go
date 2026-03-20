@@ -23,7 +23,7 @@ func main() {
 	var (
 		addr = flag.String("addr", getEnv("ADDR", ":8080"), "http service address")
 		staticDir = flag.String("static", getEnv("STATIC_DIR", ""), "directory to serve static files from (optional)")
-		dbPath = flag.String("db", getEnv("DB_PATH", "file:data.db?_fk=1"), "sqlite dsn or file path")
+		dbPath = flag.String("db", getEnv("DB_PATH", "data.db"), "sqlite dsn or file path")
 		cookieKey = flag.String("cookie", getEnv("COOKIE_KEY", "change-me-please-32-bytes-min"), "cookie auth key")
 		onnxModel = flag.String("onnx_model", getEnv("ONNX_MODEL", "./models/handwriting.onnx"), "path to ONNX model")
 	)
