@@ -45,7 +45,7 @@ changes are risky, design MUST include rollback/fallback notes.
 ## Technical Constraints
 
 - Backend runtime: Go 1.22+.
-- Frontend runtime: React + TypeScript (Vite).
+- Frontend runtime: Vue 3 + TypeScript (Vite).
 - Storage: SQLite as default persistent store.
 - Transport: HTTP + WebSocket; JSON payloads for external interfaces.
 - Avoid introducing heavy infrastructure dependencies unless justified in plan.
