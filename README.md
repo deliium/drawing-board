@@ -1,9 +1,9 @@
 ![drawing-board](http://counter.seku.su/cmoe?name=drawing-board&theme=rule34-big)
 
-# Drawing Board (React + Go)
+# Drawing Board (Vue + Go)
 
 A collaborative drawing board with handwriting recognition and user accounts:
-- **React (TypeScript)** canvas drawing with real-time WebSocket communication
+- **Vue 3 (TypeScript, Vite)** canvas drawing with real-time WebSocket communication
 - **Go backend** with Gorilla mux, WebSocket, SQLite persistence
 - **User authentication** with session-based login/register/logout
 - **Drawing tools**: Pencil and Eraser with hit-testing
@@ -280,8 +280,8 @@ drawing-board/
 │   ├── httpapi/        # HTTP API handlers
 │   ├── recognize/      # Recognition algorithms
 │   └── ws/             # WebSocket handling
-├── web/                # React frontend
-│   ├── src/           # TypeScript source
+├── web/                # Vue 3 frontend
+│   ├── src/           # TypeScript / Vue source
 │   └── public/        # Static assets
 └── models/            # ONNX model files
 ```
@@ -291,7 +291,7 @@ drawing-board/
 #### Development Commands
 ```bash
 make backend          # Run Go backend
-make frontend         # Run React frontend  
+make frontend         # Run Vue frontend
 make build-web        # Build frontend for production
 make run              # Run production server
 make onnx-model       # Download ONNX model
