@@ -1,7 +1,7 @@
 <template>
   <div class="shell">
     <header class="header">
-      <strong>Drawing Board</strong>
+      <strong>Japanese Handwriting Practice</strong>
     </header>
     <main>
       <slot />

@@ -3,18 +3,18 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { apiFetch } from '../services/apiClient'
 import { trackMetric } from '../services/migrationHealth'
 import { createWsClient, type WsMessage } from '../services/wsClient'
+import { applyIncomingMessage, type Point, type Stroke } from '../services/strokeSync'
 import { sessionContext, setAuthenticatedUser } from '../services/sessionContext'
 
-type Point = { x: number; y: number }
-type Stroke = {
-  id?: number
-  points: Point[]
-  color: string
-  width: number
-  clientId: string
-  startedAtUnixMs: number
-}
 type Candidate = { text: string; score: number }
+
+const wsDebug =
+  typeof import.meta !== 'undefined' &&
+  Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
+
+function boardDebug(...args: unknown[]) {
+  if (wsDebug) console.debug('[BoardPage.ws]', ...args)
+}
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const color = ref('#1d4ed8')
@@ -40,24 +40,13 @@ const ws = createWsClient(
 )
 
 function handleIncoming(message: WsMessage) {
-  if (message.type === 'stroke') {
-    const incoming = message.stroke as Stroke
-    const existingIndex = strokes.value.findIndex(
-      (st) =>
-        st.clientId === incoming.clientId &&
-        st.startedAtUnixMs === incoming.startedAtUnixMs &&
-        !st.id,
-    )
-    if (existingIndex >= 0) {
-      const updated = [...strokes.value]
-      updated[existingIndex] = { ...updated[existingIndex], id: incoming.id }
-      strokes.value = updated
-      return
-    }
-    strokes.value = [...strokes.value, incoming]
+  const result = applyIncomingMessage(strokes.value, message as Parameters<typeof applyIncomingMessage>[1])
+  if (result.action === 'ignored-foreign-stroke' || result.action === 'ignored-unknown-delete') {
+    boardDebug('ignore inbound', result.action, result.reason)
     return
   }
-  strokes.value = strokes.value.filter((st) => st.id !== message.delete)
+  boardDebug('apply inbound', result.action)
+  strokes.value = result.strokes
 }
 
 async function loadStrokes() {
@@ -288,6 +277,7 @@ watch(
     const wsUrl = location.port === '5173'
       ? `ws://${location.hostname}:5173/ws`
       : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+    boardDebug('connect session', wsUrl)
     ws.connect(wsUrl)
   },
   { immediate: true },
@@ -317,7 +307,7 @@ onMounted(() => {
 <template>
   <div style="height: 100vh; display: grid; grid-template-rows: auto auto 1fr">
     <header style="padding: 12px; display: flex; gap: 12px; align-items: center">
-      <b>Drawing Board</b>
+      <b>Japanese Handwriting Practice</b>
       <label>
         Color
         <input v-model="color" type="color" :disabled="tool !== 'pencil'" />
@@ -330,7 +320,7 @@ onMounted(() => {
       <button :disabled="tool === 'eraser'" @click="tool = 'eraser'">Eraser</button>
       <button v-if="user" :disabled="strokes.length === 0" @click="doUndo">Undo</button>
       <span style="margin-left: auto; opacity: 0.7">
-        {{ user ? (wsReady ? 'Connected' : 'Connecting...') : 'Sign in to draw' }}
+        {{ user ? (wsReady ? 'Practice ready' : 'Connecting…') : 'Sign in to practice' }}
       </span>
       <button v-if="user" @click="doClear">Clear</button>
       <button v-if="user" @click="doLogout">Logout</button>
