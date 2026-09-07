@@ -1,15 +1,16 @@
 ![drawing-board](http://counter.seku.su/cmoe?name=drawing-board&theme=rule34-big)
 
-# Drawing Board (Vue + Go)
+# Japanese Handwriting Practice (Vue + Go)
 
-A collaborative drawing board with handwriting recognition and user accounts:
-- **Vue 3 (TypeScript, Vite)** canvas drawing with real-time WebSocket communication
+A **personal** Japanese handwriting training app: practice on a private canvas, persist your strokes, and get recognition feedback. Strokes are never shared with other users.
+
+- **Vue 3 (TypeScript, Vite)** practice canvas with authenticated WebSocket persist/echo
 - **Go backend** with Gorilla mux, WebSocket, SQLite persistence
 - **User authentication** with session-based login/register/logout
 - **Drawing tools**: Pencil and Eraser with hit-testing
 - **Undo functionality**: Ctrl+Z to undo last stroke
-- **Handwriting recognition**: AI-powered Japanese character recognition
-- **Stroke persistence**: All drawings saved per user and restored on login
+- **Handwriting recognition**: AI-powered Japanese character recognition (training feedback loop)
+- **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
 ## Features
 
@@ -28,8 +29,8 @@ A collaborative drawing board with handwriting recognition and user accounts:
 ### User Management
 - **Registration**: Create new accounts with email and password
 - **Login/Logout**: Secure session-based authentication
-- **Personal Drawings**: Each user's drawings are saved separately
-- **Auto-restore**: Your drawings are automatically loaded when you log in
+- **Private practice**: Each user's strokes stay private (REST + WebSocket are per-user)
+- **Auto-restore**: Your practice strokes load automatically when you log in
 
 ## Requirements
 
@@ -132,9 +133,9 @@ npm run dev
 
 ### Getting Started
 1. **Register**: Create a new account with your email and password
-2. **Login**: Sign in to access your personal drawing space
-3. **Draw**: Use the pencil tool to draw on the canvas
-4. **Save**: Your drawings are automatically saved as you draw
+2. **Login**: Sign in to open your private practice session
+3. **Practice**: Use the pencil tool to write characters on the canvas
+4. **Save**: Strokes are persisted for your account as you draw (WebSocket echo assigns server ids)
 
 ### Drawing Tools
 - **Color Picker**: Choose any color for your pencil
@@ -207,17 +208,20 @@ ONNX_MODEL=./models/handwriting.onnx go run ./cmd/server
 - `POST /api/recognize` - Recognize drawn characters `{ topN: 10, width: 300, height: 300 }`
 
 ### WebSocket
-- `WS /ws` - Real-time drawing communication (authenticated via cookie)
+- `WS /ws` - Authenticated **private persist + echo** channel (cookie session required)
+
+The hub delivers messages only to connections belonging to the same `user_id` (multi-tab same account receives echoes; other users never see your strokes). This is **not** a collaborative/shared board.
 
 **WebSocket Messages:**
 ```json
-// Send stroke
+// Send stroke (saved for the authenticated user, then echoed to that user's connections)
 {"type":"stroke","stroke":{"points":[{"x":10,"y":20}],"color":"#1d4ed8","width":4,"clientId":"abc","startedAtUnixMs":1690000000000}}
 
-// Delete stroke
+// Delete stroke (scoped to the authenticated user, echoed to that user's connections)
 {"type":"delete","delete":123}
 ```
 
+The frontend treats unmatched inbound strokes as non-authoritative (ignores foreign live strokes) and only merges echoes that match a pending local stroke.
 ## Recognition System
 
 The application includes two recognition systems:
@@ -238,12 +242,26 @@ The application includes two recognition systems:
 
 ### Common Issues
 1. **"Address already in use"**: Stop existing server processes with `pkill -f "go run"`
-2. **Recognition not working**: Check server logs for debug output
-3. **WebSocket connection failed**: Ensure backend is running on port 8080
+2. **Recognition not working**: Check server logs for recognition debug output
+3. **WebSocket connection failed**: Ensure backend is running on port 8080 and you are signed in
 4. **Frontend not loading**: Check if `npm run dev` is running on port 5173
+5. **Seeing another user's strokes**: Should not happen; verify you are on a build with per-user `sendToUser` (not global broadcast) and check logs below
 
 ### Debug Mode
-The server provides detailed debug logging for recognition:
+
+Verbose server log prefixes for privacy and persistence:
+
+| Prefix | Meaning |
+|--------|---------|
+| `[ws.Handle]` | Connect/disconnect (`userID`, remote), inbound stroke/delete, save/delete INFO, upgrade/read errors |
+| `[ws.sendToUser]` | Delivery to one user's connections; `recipients=` should stay within that account (e.g. 1–N tabs) |
+| `[httpapi.ListStrokes]` / `[httpapi.ClearStrokes]` / `[httpapi.DeleteStroke]` | Authenticated REST entry (`userID`), clear count, delete success, store errors |
+
+Example privacy check while two users practice: user A's stroke logs should show `sendToUser` recipient counts only for A's open tabs, never B's.
+
+Frontend (Vite dev): browser console uses `[wsClient]` and `[BoardPage.ws]` for connect/send/ignore reasons.
+
+Recognition still logs feature/candidate analysis:
 ```
 Recognition analysis for 2 strokes:
   Features: horizontal_lines=1.0, vertical_lines=1.0, diagonal_lines=0.0
