@@ -280,3 +280,44 @@ func TestDeleteStroke(t *testing.T) {
 		t.Fatalf("Expected 0 strokes after delete, got %d", len(strokes))
 	}
 }
+
+func TestListStrokesByUser_CrossUserIsolation(t *testing.T) {
+	tmpFile := "test_stroke_privacy.db"
+	defer os.Remove(tmpFile)
+
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer store.SQL.Close()
+
+	userA, err := store.CreateUser("a@example.com", "password123")
+	if err != nil {
+		t.Fatalf("Failed to create user A: %v", err)
+	}
+	userB, err := store.CreateUser("b@example.com", "password123")
+	if err != nil {
+		t.Fatalf("Failed to create user B: %v", err)
+	}
+
+	_, err = store.SaveStroke(userA, "#000000", 2, 1000, []StrokePoint{{X: 1, Y: 2}, {X: 3, Y: 4}})
+	if err != nil {
+		t.Fatalf("Failed to save stroke for user A: %v", err)
+	}
+
+	strokesB, err := store.ListStrokesByUser(userB)
+	if err != nil {
+		t.Fatalf("Failed to list strokes for user B: %v", err)
+	}
+	if len(strokesB) != 0 {
+		t.Fatalf("privacy regression: ListStrokesByUser(B) must not return strokes saved under user A, got %d", len(strokesB))
+	}
+
+	strokesA, err := store.ListStrokesByUser(userA)
+	if err != nil {
+		t.Fatalf("Failed to list strokes for user A: %v", err)
+	}
+	if len(strokesA) != 1 {
+		t.Fatalf("Expected 1 stroke for user A, got %d", len(strokesA))
+	}
+}

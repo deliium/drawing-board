@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,50 +12,48 @@ import (
 )
 
 func TestHub_Add(t *testing.T) {
-	// Create a mock store and auth service
 	store := &db.Store{}
 	authSvc := &auth.Service{}
 	hub := NewHub(store, authSvc)
 	conn := &websocket.Conn{}
-	
-	hub.add(conn)
-	
+
+	hub.add(conn, 42)
+
 	if len(hub.clients) != 1 {
 		t.Fatalf("Expected 1 client, got %d", len(hub.clients))
 	}
-	
-	if _, exists := hub.clients[conn]; !exists {
+
+	uid, exists := hub.clients[conn]
+	if !exists {
 		t.Fatal("Client should be registered")
+	}
+	if uid != 42 {
+		t.Fatalf("Expected userID 42, got %d", uid)
 	}
 }
 
 func TestHub_Remove(t *testing.T) {
-	// Create a mock store and auth service
 	store := &db.Store{}
 	authSvc := &auth.Service{}
 	hub := NewHub(store, authSvc)
 	conn := &websocket.Conn{}
-	
-	// Add first
-	hub.add(conn)
+
+	hub.add(conn, 7)
 	if len(hub.clients) != 1 {
 		t.Fatalf("Expected 1 client after add, got %d", len(hub.clients))
 	}
-	
-	// Remove
+
 	hub.remove(conn)
 	if len(hub.clients) != 0 {
 		t.Fatalf("Expected 0 clients after remove, got %d", len(hub.clients))
 	}
 }
 
-func TestHub_Broadcast(t *testing.T) {
-	// Create a mock store and auth service
+func TestHub_SendToUser_NoClients(t *testing.T) {
 	store := &db.Store{}
 	authSvc := &auth.Service{}
 	hub := NewHub(store, authSvc)
-	
-	// Create a test message
+
 	msg := message{
 		Type: "stroke",
 		Stroke: &Stroke{
@@ -64,47 +63,139 @@ func TestHub_Broadcast(t *testing.T) {
 			Width:  2,
 		},
 	}
-	
-	// Broadcast should not panic with no clients
-	hub.broadcast(msg)
-	
-	// This is a basic test - in a real scenario, we'd need to mock WebSocket connections
-	// to test actual message sending
+
+	// Should not panic with no clients
+	hub.sendToUser(1, msg)
 }
 
-func TestHub_ConcurrentOperations(t *testing.T) {
-	// Create a mock store and auth service
+func TestHub_SendToUser_Isolation(t *testing.T) {
+	t.Logf("setup: two users, user A has two connections (multi-tab), user B has one")
 	store := &db.Store{}
 	authSvc := &auth.Service{}
 	hub := NewHub(store, authSvc)
-	
-	// Test concurrent register/unregister
+
+	connA1 := &websocket.Conn{}
+	connA2 := &websocket.Conn{}
+	connB := &websocket.Conn{}
+	hub.add(connA1, 1)
+	hub.add(connA2, 1)
+	hub.add(connB, 2)
+
+	var mu sync.Mutex
+	delivered := map[*websocket.Conn]int{}
+	hub.writeFn = func(c *websocket.Conn, data []byte) error {
+		mu.Lock()
+		delivered[c]++
+		mu.Unlock()
+		return nil
+	}
+
+	strokeMsg := message{
+		Type: "stroke",
+		Stroke: &Stroke{
+			ID:              10,
+			Points:          []Point{{X: 1, Y: 2}},
+			Color:           "#111111",
+			Width:           3,
+			ClientID:        "a",
+			StartedAtUnixMs: 100,
+		},
+	}
+	hub.sendToUser(1, strokeMsg)
+
+	mu.Lock()
+	a1 := delivered[connA1]
+	a2 := delivered[connA2]
+	b := delivered[connB]
+	mu.Unlock()
+
+	if a1 != 1 || a2 != 1 {
+		t.Fatalf("expected both user A connections to receive stroke (got A1=%d A2=%d); isolation requires multi-tab echo for owning user", a1, a2)
+	}
+	if b != 0 {
+		t.Fatalf("expected user B to receive 0 stroke messages, got %d; cross-user isolation violated", b)
+	}
+
+	// Reset and verify delete isolation
+	mu.Lock()
+	delivered = map[*websocket.Conn]int{}
+	mu.Unlock()
+
+	delID := int64(10)
+	deleteMsg := message{Type: "delete", Delete: &delID}
+	hub.sendToUser(1, deleteMsg)
+
+	mu.Lock()
+	a1 = delivered[connA1]
+	a2 = delivered[connA2]
+	b = delivered[connB]
+	mu.Unlock()
+
+	if a1 != 1 || a2 != 1 {
+		t.Fatalf("expected both user A connections to receive delete (got A1=%d A2=%d)", a1, a2)
+	}
+	if b != 0 {
+		t.Fatalf("expected user B to receive 0 delete messages, got %d; delete isolation violated", b)
+	}
+}
+
+func TestHub_SendToUser_OnlyTargetUser(t *testing.T) {
+	t.Logf("setup: send to user B must not reach user A")
+	hub := NewHub(&db.Store{}, &auth.Service{})
+	connA := &websocket.Conn{}
+	connB := &websocket.Conn{}
+	hub.add(connA, 1)
+	hub.add(connB, 2)
+
+	var mu sync.Mutex
+	delivered := map[*websocket.Conn]int{}
+	hub.writeFn = func(c *websocket.Conn, data []byte) error {
+		mu.Lock()
+		delivered[c]++
+		mu.Unlock()
+		return nil
+	}
+
+	delID := int64(99)
+	hub.sendToUser(2, message{Type: "delete", Delete: &delID})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if delivered[connB] != 1 {
+		t.Fatalf("expected user B recipient count 1, got %d", delivered[connB])
+	}
+	if delivered[connA] != 0 {
+		t.Fatalf("expected user A recipient count 0, got %d; must not receive other user's deletes", delivered[connA])
+	}
+}
+
+func TestHub_ConcurrentOperations(t *testing.T) {
+	store := &db.Store{}
+	authSvc := &auth.Service{}
+	hub := NewHub(store, authSvc)
+
 	done := make(chan bool)
-	
-	// Start multiple goroutines
+
 	for i := 0; i < 10; i++ {
-		go func() {
+		go func(userID int64) {
 			conn := &websocket.Conn{}
-			hub.add(conn)
+			hub.add(conn, userID)
 			time.Sleep(1 * time.Millisecond)
 			hub.remove(conn)
 			done <- true
-		}()
+		}(int64(i + 1))
 	}
-	
-	// Wait for all goroutines to complete
+
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	
-	// Should have no clients left
+
 	if len(hub.clients) != 0 {
 		t.Fatalf("Expected 0 clients after concurrent operations, got %d", len(hub.clients))
 	}
 }
 
 func TestMessage_JSON(t *testing.T) {
-	// Test stroke message
 	strokeMsg := message{
 		Type: "stroke",
 		Stroke: &Stroke{
@@ -114,29 +205,26 @@ func TestMessage_JSON(t *testing.T) {
 			Width:  2,
 		},
 	}
-	
-	// Marshal to JSON
+
 	jsonData, err := json.Marshal(strokeMsg)
 	if err != nil {
 		t.Fatalf("Failed to marshal stroke message: %v", err)
 	}
-	
-	// Unmarshal back
+
 	var unmarshaled message
 	err = json.Unmarshal(jsonData, &unmarshaled)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal stroke message: %v", err)
 	}
-	
-	// Check values
+
 	if unmarshaled.Type != "stroke" {
 		t.Fatalf("Expected type 'stroke', got '%s'", unmarshaled.Type)
 	}
-	
+
 	if unmarshaled.Stroke.ID != 1 {
 		t.Fatalf("Expected stroke ID 1, got %d", unmarshaled.Stroke.ID)
 	}
-	
+
 	if len(unmarshaled.Stroke.Points) != 2 {
 		t.Fatalf("Expected 2 points, got %d", len(unmarshaled.Stroke.Points))
 	}
@@ -149,41 +237,38 @@ func TestStroke_JSON(t *testing.T) {
 		Color:  "#000000",
 		Width:  2,
 	}
-	
-	// Marshal to JSON
+
 	jsonData, err := json.Marshal(stroke)
 	if err != nil {
 		t.Fatalf("Failed to marshal stroke: %v", err)
 	}
-	
-	// Unmarshal back
+
 	var unmarshaled Stroke
 	err = json.Unmarshal(jsonData, &unmarshaled)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal stroke: %v", err)
 	}
-	
-	// Check values
+
 	if unmarshaled.ID != 1 {
 		t.Fatalf("Expected ID 1, got %d", unmarshaled.ID)
 	}
-	
+
 	if len(unmarshaled.Points) != 2 {
 		t.Fatalf("Expected 2 points, got %d", len(unmarshaled.Points))
 	}
-	
+
 	if unmarshaled.Points[0].X != 10 {
 		t.Fatalf("Expected first point X 10, got %f", unmarshaled.Points[0].X)
 	}
-	
+
 	if unmarshaled.Points[0].Y != 20 {
 		t.Fatalf("Expected first point Y 20, got %f", unmarshaled.Points[0].Y)
 	}
-	
+
 	if unmarshaled.Color != "#000000" {
 		t.Fatalf("Expected color '#000000', got '%s'", unmarshaled.Color)
 	}
-	
+
 	if unmarshaled.Width != 2 {
 		t.Fatalf("Expected width 2, got %d", unmarshaled.Width)
 	}
@@ -191,25 +276,22 @@ func TestStroke_JSON(t *testing.T) {
 
 func TestPoint_JSON(t *testing.T) {
 	point := Point{X: 10.5, Y: 20.5}
-	
-	// Marshal to JSON
+
 	jsonData, err := json.Marshal(point)
 	if err != nil {
 		t.Fatalf("Failed to marshal point: %v", err)
 	}
-	
-	// Unmarshal back
+
 	var unmarshaled Point
 	err = json.Unmarshal(jsonData, &unmarshaled)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal point: %v", err)
 	}
-	
-	// Check values
+
 	if unmarshaled.X != 10.5 {
 		t.Fatalf("Expected X 10.5, got %f", unmarshaled.X)
 	}
-	
+
 	if unmarshaled.Y != 20.5 {
 		t.Fatalf("Expected Y 20.5, got %f", unmarshaled.Y)
 	}
