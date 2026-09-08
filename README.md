@@ -335,6 +335,36 @@ Startup always wires **target comparison** for the fixed MVP set `hiragana5` (�
 | `[recognize.templates]` | Template load (`loaded count=5 version=…`) |
 | `[httpapi.Recognize]` | `mode=heuristic\|target`, `target=`, result codes — no stroke dumps |
 
+## Learning schema & migrations
+
+SQLite schema changes are **versioned** and applied fail-closed on `db.Open`. Applied versions live in `schema_migrations`. Startup logs `INFO [main] schema_version=N learn_seed=hiragana5`.
+
+| Version | Name | Contents |
+|---------|------|----------|
+| 1 | `baseline_board` | Free-board tables (`users`, `strokes`, `stroke_points`, `boardRev` / tombstones / `board_ops`) |
+| 2 | `learning_domain` | Curriculum + attempts (`characters`, `lessons`, `practice_attempts`, `attempt_strokes`, assessments, progress) |
+
+**Free-board vs attempts:** Board strokes (`strokes` / `stroke_points`) are a scratchpad with `boardRev` / `opId`. Practice attempts use separate `attempt_strokes` tables — board clear/undo/erase does **not** delete attempt history. Match scores stored on assessments remain `score_kind=match` (not calibrated confidence).
+
+**Seed:** Every Open upserts stub `hiragana5` characters (あいうえお) and published lesson `lesson:hiragana5` (Prompt 10 may replace content; ids/set stay stable).
+
+### Operator recovery (rollback)
+
+Migrations are **forward-only** in production (no automatic `Down` on startup).
+
+1. Before upgrading the binary: `cp data.db data.db.bak`
+2. Start new binary — pending versions apply on Open
+3. On migrate failure: restore `cp data.db.bak data.db`, pin the previous binary, investigate logs (`ERROR [db.migrate] failed version=…`)
+4. Forward fixes: add a new numbered migration; never edit already-applied migration bodies
+
+### Logging prefixes (learning / migrate)
+| Prefix | Meaning |
+|--------|---------|
+| `[db.migrate]` | Apply / up-to-date / failed version |
+| `[db.seed]` | Idempotent hiragana5 seed |
+| `INFO [main] schema_version=` | Final version + `learn_seed=hiragana5` |
+| `[learn.*]` | Attempt/assessment repo DEBUG/INFO (ids/status/counts — no coordinates) |
+
 ## Troubleshooting
 
 ### Common Issues
@@ -357,6 +387,8 @@ Verbose server log prefixes for privacy and persistence:
 | `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), `mode=heuristic\|target`, stroke/point/candidate counts — no coordinates |
 | `[recognize]` / `[recognize.Assess]` | Startup `recognize_debug=…`; DEBUG assess/recognize; gated dumps when `RECOGNIZE_DEBUG=1` (non-production) |
 | `INFO [main] recognizer=` | `target_compare` + `set=hiragana5` at process start |
+| `INFO [main] schema_version=` | Applied migration version + hiragana5 seed marker |
+| `[db.migrate]` / `[db.seed]` | Schema apply / curriculum seed |
 | `[practiceCanvas]` | DEV-only client debug: attach/detach, resize css/dpr/backing, stroke start/commit/cancel (point counts only) |
 
 Example privacy check while two users practice: user A's stroke logs should show `sendToUser` recipient counts only for A's open tabs, never B's.
@@ -392,7 +424,9 @@ drawing-board/
 ├── cmd/server/          # Go backend server
 ├── internal/            # Go internal packages
 │   ├── auth/           # Authentication logic
-│   ├── db/             # Database layer
+│   ├── db/             # SQLite store, versioned migrations, learning repos
+│   │   └── migrations/ # Numbered schema Up steps
+│   ├── learn/          # Learning-domain types + repository interfaces
 │   ├── httpapi/        # HTTP API handlers
 │   ├── limits/         # Shared stroke/recognize input bounds
 │   ├── metrics/        # Process-local reject/ok counters

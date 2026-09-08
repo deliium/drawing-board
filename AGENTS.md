@@ -18,7 +18,8 @@ Personal Japanese handwriting practice app (Vue + Go + SQLite). Strokes are priv
 ```text
 cmd/server/           # backend entrypoint
 internal/auth/        # sessions, passwords
-internal/db/          # SQLite store
+internal/db/          # SQLite store + versioned migrations + learning repos
+internal/learn/       # learning-domain types + repository interfaces
 internal/httpapi/     # REST API
 internal/ws/          # WebSocket hub
 internal/limits/      # shared validators
@@ -42,6 +43,9 @@ docker/               # compose / nginx helpers
 | `internal/ws/handler.go` | WS upgrade, ingest, ack/echo, boardRev mutates |
 | `internal/httpapi/handlers.go` | REST strokes / recognize |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
+| `internal/db/migrate.go` | versioned schema runner + `schema_migrations` |
+| `internal/db/learn_store.go` | SQLite learning repos (attempts/assessments/progress) |
+| `internal/learn/` | learning-domain types + repository interfaces |
 | `web/src/pages/BoardPage.vue` | Practice canvas UI (tools/WS/recognize) |
 | `web/src/composables/usePracticeCanvas.ts` | Pointer lifecycle, DPR resize redraw, Escape cancel |
 | `web/src/canvas/*` | CSS-logical coords, stroke paint (incl. dots), hit-test |
