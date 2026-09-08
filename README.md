@@ -133,7 +133,7 @@ npm run dev
 
 ### Getting Started
 1. **Open the app** — unauthenticated visits land on the public auth page (`/#/login`, or `/#/register` to create an account).
-2. **Create account or sign in** — email and password (minimum 8 characters). A session cookie (`sid`) is set; the client sends `credentials: 'include'`.
+2. **Create account or sign in** — email and password (8–72 bytes). A session cookie (`sid`) is set; the client sends `credentials: 'include'`.
 3. **Practice** — after auth you are redirected to the private board. Use the pencil tool to write characters on the canvas.
 4. **Save** — strokes are persisted for your account as you draw (WebSocket echo assigns server ids).
 5. **Logout** — use Logout on the board to clear the session and return to the auth page.
@@ -168,12 +168,23 @@ DB_PATH=file:data.db?_fk=1
 # Server configuration  
 ADDR=:8080
 
-# Security (change this in production!)
-COOKIE_KEY=please-change-this-32-bytes-min
+# Session cookie signing key (≥32 bytes). Changing this invalidates existing cookies.
+COOKIE_KEY=your-secure-random-cookie-key-here
+
+# Production-secure cookies (Secure flag) + fail-fast COOKIE_KEY validation:
+# APP_ENV=production
+# or COOKIE_SECURE=true|1|yes
+
+# Log level for auth/session lines (DEBUG|INFO|WARN|ERROR). Default shows DEBUG.
+# LOG_LEVEL=info
 
 # ONNX model for advanced recognition
 ONNX_MODEL=./models/handwriting.onnx
 ```
+
+Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min` / `please-change-this-32-bytes-min`).
+
+If TLS terminates at Nginx in front of Go, the public site must still be HTTPS for browsers to send `Secure` cookies.
 
 ### Production Build
 ```bash
@@ -197,11 +208,11 @@ ONNX_MODEL=./models/handwriting.onnx go run ./cmd/server
 ## API Reference
 
 ### Authentication Endpoints
-Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`). Auth handlers log with prefixes `[auth.Register]`, `[auth.Login]`, `[auth.Logout]`, `[auth.Me]` (level filtered via `LOG_LEVEL`).
+Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when production-secure mode is on). Register/login **rotate** the session (`Sessions.New` after invalidating any prior `sid`). Auth handlers log with prefixes `[auth.Register]`, `[auth.Login]`, `[auth.Logout]`, `[auth.Me]`, `[auth.hash]`, `[auth.startSession]` (level filtered via `LOG_LEVEL`). Operator signal: `INFO [main] cookie_secure=…`.
 
-- `POST /api/register` — Create account `{ email, password }` (password min 8). Success `200` `{ id, email }` + session cookie.
-- `POST /api/login` — Sign in `{ email, password }`. Success `200` `{ id, email }` + session cookie.
-- `POST /api/logout` — Clear session cookie. Success `200` `{ "ok": "true" }`.
+- `POST /api/register` — Create account `{ email, password }` (password min 8, max 72 UTF-8 bytes). Success `200` `{ id, email }` + rotated session cookie. New passwords are stored with **bcrypt** (cost 12).
+- `POST /api/login` — Sign in `{ email, password }`. Success `200` `{ id, email }` + rotated session cookie. Legacy unsalted SHA-256 hashes are verified with constant-time compare and transparently upgraded to bcrypt on successful login (login still succeeds if the upgrade write fails; it retries next login).
+- `POST /api/logout` — Clear session values and expire the cookie (same Path/HttpOnly/SameSite/Secure). Success `200` `{ "ok": "true" }`. CookieStore sessions are client-side signed blobs: logout cannot revoke a stolen cookie copy until expiry or `COOKIE_KEY` rotation.
 - `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }`.
 
 Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
@@ -212,11 +223,12 @@ Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
 | 400 | `missing_fields` | Empty email or password |
 | 400 | `invalid_email` | Email fails basic format check |
 | 400 | `password_too_short` | Password shorter than 8 characters |
+| 400 | `password_too_long` | Password longer than 72 bytes (bcrypt input limit) |
 | 400 | `registration_failed` | Unable to create account (includes duplicate email; does **not** return `email exists`) |
 | 401 | `invalid_credentials` | Login failed (unknown email or wrong password — same response) |
 | 401 | `unauthorized` | `/api/me` without a valid session |
 
-Password hashing is currently unsalted SHA-256; stronger KDF migration (Argon2id/bcrypt) is a follow-up hardening item. Do not treat this as production-grade password storage yet.
+Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-256 hashes can log in and are upgraded automatically. Logs never include passwords, raw cookies, or full hashes (`hash_kind=bcrypt|legacy` and `userID=` only).
 
 ### Drawing Endpoints
 - `GET /api/strokes` - Get user's saved strokes (authenticated)
@@ -380,11 +392,15 @@ The development setup provides:
 ### Environment Variables
 ```bash
 # Backend environment variables
-PORT=8080                    # Server port
+ADDR=:8080                      # Listen address (preferred over unused PORT)
 DB_PATH=/data/drawing-board.db  # Database file path
-SESSION_SECRET=your-secret-key  # Session encryption key
+COOKIE_KEY=replace-me-with-a-long-random-cookie-key  # ≥32 bytes; required
+APP_ENV=production              # Enables Secure cookies + COOKIE_KEY validation (prod compose)
+# COOKIE_SECURE=true            # Alternative to APP_ENV=production
 ONNX_MODEL=./models/handwriting.onnx  # ONNX model path (optional)
 ```
+
+Production `docker-compose.yml` sets `APP_ENV=production` and `COOKIE_KEY` (not `SESSION_SECRET`). Dev compose uses a ≥32-byte `COOKIE_KEY` without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser.
 
 ## License
 MIT License - see LICENSE file for details.

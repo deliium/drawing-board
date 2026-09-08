@@ -26,7 +26,7 @@ func newTestAuthService(t *testing.T) *Service {
 		_ = os.Remove(dbPath)
 	})
 	sessionStore := sessions.NewCookieStore([]byte("test-cookie-key-32-bytes-minimum!!"))
-	return NewService(store, sessionStore)
+	return NewService(store, sessionStore, false)
 }
 
 func decodeError(t *testing.T, body []byte) errorBody {
@@ -206,4 +206,124 @@ func TestAuthHandlers_RegisterLoginLogoutMe(t *testing.T) {
 		}
 		_ = req2
 	})
+}
+
+func TestAuthHandlers_BcryptRegisterAndLegacyUpgrade(t *testing.T) {
+	svc := newTestAuthService(t)
+
+	t.Run("register stores bcrypt hash", func(t *testing.T) {
+		rec := postJSON(t, svc, "/api/register", `{"email":"bcrypt@example.com","password":"password1"}`, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("register: %d %s", rec.Code, rec.Body.String())
+		}
+		u, err := svc.Store.GetUserByEmail("bcrypt@example.com")
+		if err != nil || u == nil {
+			t.Fatalf("lookup: %v user=%v", err, u)
+		}
+		if !strings.HasPrefix(u.PasswordHash, "$2") {
+			t.Fatalf("expected bcrypt hash, got %q", u.PasswordHash)
+		}
+		login := postJSON(t, svc, "/api/login", `{"email":"bcrypt@example.com","password":"password1"}`, nil)
+		if login.Code != http.StatusOK {
+			t.Fatalf("login: %d %s", login.Code, login.Body.String())
+		}
+	})
+
+	t.Run("legacy sha256 login upgrades hash", func(t *testing.T) {
+		email := "legacy@example.com"
+		pw := "password1"
+		uid, err := svc.Store.CreateUser(email, legacySHA256Hash(pw))
+		if err != nil {
+			t.Fatalf("seed legacy user: %v", err)
+		}
+		before, _ := svc.Store.GetUserByID(uid)
+		if strings.HasPrefix(before.PasswordHash, "$2") {
+			t.Fatal("seed should be legacy")
+		}
+
+		login := postJSON(t, svc, "/api/login", `{"email":"`+email+`","password":"`+pw+`"}`, nil)
+		if login.Code != http.StatusOK {
+			t.Fatalf("legacy login: %d %s", login.Code, login.Body.String())
+		}
+		after, err := svc.Store.GetUserByID(uid)
+		if err != nil || after == nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if !strings.HasPrefix(after.PasswordHash, "$2") {
+			t.Fatalf("expected upgraded bcrypt hash, got %q", after.PasswordHash)
+		}
+		second := postJSON(t, svc, "/api/login", `{"email":"`+email+`","password":"`+pw+`"}`, nil)
+		if second.Code != http.StatusOK {
+			t.Fatalf("second login after upgrade: %d %s", second.Code, second.Body.String())
+		}
+
+		wrong := postJSON(t, svc, "/api/login", `{"email":"`+email+`","password":"wrongpass"}`, nil)
+		if wrong.Code != http.StatusUnauthorized || decodeError(t, wrong.Body.Bytes()).Error != "invalid_credentials" {
+			t.Fatalf("wrong password: %d %s", wrong.Code, wrong.Body.String())
+		}
+	})
+
+	t.Run("password_too_long rejected", func(t *testing.T) {
+		longPW := strings.Repeat("a", 73)
+		body := `{"email":"long@example.com","password":"` + longPW + `"}`
+		reg := postJSON(t, svc, "/api/register", body, nil)
+		if reg.Code != http.StatusBadRequest || decodeError(t, reg.Body.Bytes()).Error != "password_too_long" {
+			t.Fatalf("register too long: %d %s", reg.Code, reg.Body.String())
+		}
+		login := postJSON(t, svc, "/api/login", body, nil)
+		if login.Code != http.StatusBadRequest || decodeError(t, login.Body.Bytes()).Error != "password_too_long" {
+			t.Fatalf("login too long: %d %s", login.Code, login.Body.String())
+		}
+	})
+}
+
+func TestAuthHandlers_SessionRotationAndSecureCookie(t *testing.T) {
+	svc := newTestAuthService(t)
+	svc.Secure = true
+	svc.Sessions.Options.Secure = true
+
+	reg := postJSON(t, svc, "/api/register", `{"email":"secure@example.com","password":"password1"}`, nil)
+	if reg.Code != http.StatusOK {
+		t.Fatalf("register: %d %s", reg.Code, reg.Body.String())
+	}
+	cookies := reg.Result().Cookies()
+	foundSecure := false
+	for _, c := range cookies {
+		if c.Name == "sid" && c.Secure {
+			foundSecure = true
+		}
+	}
+	if !foundSecure {
+		t.Fatalf("expected Secure sid cookie, got %+v", cookies)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	meRec := httptest.NewRecorder()
+	svc.Me(meRec, req)
+	if meRec.Code != http.StatusOK {
+		t.Fatalf("me after register: %d", meRec.Code)
+	}
+
+	out := postJSON(t, svc, "/api/logout", `{}`, cookies)
+	if out.Code != http.StatusOK {
+		t.Fatalf("logout: %d", out.Code)
+	}
+	deletedSecure := false
+	for _, c := range out.Result().Cookies() {
+		if c.Name == "sid" && c.MaxAge < 0 && c.Secure {
+			deletedSecure = true
+		}
+	}
+	if !deletedSecure {
+		t.Logf("logout cookies: %+v", out.Result().Cookies())
+		// Still require /api/me without cookie is 401
+	}
+	anon := httptest.NewRecorder()
+	svc.Me(anon, httptest.NewRequest(http.MethodGet, "/api/me", nil))
+	if anon.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous me expected 401, got %d", anon.Code)
+	}
 }

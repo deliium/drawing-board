@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -18,12 +16,14 @@ import (
 type Service struct {
 	Store    *db.Store
 	Sessions *sessions.CookieStore
+	Secure   bool // cookie Secure flag; set from production-secure mode
 }
 
-func NewService(store *db.Store, sessions *sessions.CookieStore) *Service {
+func NewService(store *db.Store, sessions *sessions.CookieStore, secureCookies bool) *Service {
 	return &Service{
 		Store:    store,
 		Sessions: sessions,
+		Secure:   secureCookies,
 	}
 }
 
@@ -45,12 +45,8 @@ type errorBody struct {
 const (
 	sessionName       = "sid"
 	minPasswordLength = 8
+	maxPasswordBytes  = 72
 )
-
-func hashPassword(pw string) string {
-	s := sha256.Sum256([]byte(pw))
-	return hex.EncodeToString(s[:])
-}
 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -108,6 +104,9 @@ func validateCredentials(c credentials, requirePasswordMin bool) (code string) {
 	if requirePasswordMin && len(c.Password) < minPasswordLength {
 		return "password_too_short"
 	}
+	if len([]byte(c.Password)) > maxPasswordBytes {
+		return "password_too_long"
+	}
 	return ""
 }
 
@@ -119,6 +118,8 @@ func validationMessage(code string) string {
 		return "Enter a valid email address."
 	case "password_too_short":
 		return "Password must be at least 8 characters."
+	case "password_too_long":
+		return "Password must be at most 72 bytes."
 	default:
 		return "Something went wrong. Try again."
 	}
@@ -146,7 +147,13 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusBadRequest, "registration_failed", "Unable to create account. If you already have one, sign in.")
 		return
 	}
-	uid, err := s.Store.CreateUser(c.Email, hashPassword(c.Password))
+	hash, err := HashPassword(c.Password)
+	if err != nil {
+		authLog("ERROR", "[auth.Register] hash failed")
+		writeAuthError(w, http.StatusInternalServerError, "registration_failed", "Unable to create account. If you already have one, sign in.")
+		return
+	}
+	uid, err := s.Store.CreateUser(c.Email, hash)
 	if err != nil {
 		if IsUniqueConstraint(err) {
 			authLog("WARN", "[auth.Register] code=registration_failed reason=email_taken")
@@ -157,8 +164,12 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "registration_failed", "Unable to create account. If you already have one, sign in.")
 		return
 	}
-	s.startSession(w, r, uid)
-	authLog("INFO", "[auth.Register] userID="+strconv.FormatInt(uid, 10))
+	if err := s.startSession(w, r, uid); err != nil {
+		authLog("ERROR", "[auth.Register] startSession userID="+strconv.FormatInt(uid, 10)+": "+err.Error())
+		writeAuthError(w, http.StatusInternalServerError, "registration_failed", "Unable to create account. If you already have one, sign in.")
+		return
+	}
+	authLog("INFO", "[auth.Register] userID="+strconv.FormatInt(uid, 10)+" upgraded=false")
 	writeJSON(w, http.StatusOK, userView{ID: uid, Email: c.Email})
 }
 
@@ -181,21 +192,68 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "invalid_credentials", "Email or password is incorrect.")
 		return
 	}
-	if u == nil || u.PasswordHash != hashPassword(c.Password) {
+	if u == nil {
 		authLog("DEBUG", "[auth.Login] code=invalid_credentials")
 		writeAuthError(w, http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
 		return
 	}
-	s.startSession(w, r, u.ID)
-	authLog("INFO", "[auth.Login] userID="+strconv.FormatInt(u.ID, 10))
+	ok, needsUpgrade, verifyErr := VerifyPassword(u.PasswordHash, c.Password)
+	if verifyErr != nil {
+		authLog("ERROR", "[auth.Login] verify unexpected userID="+strconv.FormatInt(u.ID, 10))
+		writeAuthError(w, http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
+		return
+	}
+	if !ok {
+		authLog("DEBUG", "[auth.Login] code=invalid_credentials")
+		writeAuthError(w, http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
+		return
+	}
+
+	upgraded := false
+	if needsUpgrade {
+		newHash, hashErr := HashPassword(c.Password)
+		if hashErr != nil {
+			authLog("ERROR", "[auth.Login] upgrade_hash_failed userID="+strconv.FormatInt(u.ID, 10)+" reason=bcrypt_generate")
+		} else if updErr := s.Store.UpdateUserPasswordHash(u.ID, newHash); updErr != nil {
+			authLog("ERROR", "[auth.Login] upgrade_hash_failed userID="+strconv.FormatInt(u.ID, 10)+": "+updErr.Error())
+		} else {
+			upgraded = true
+			authLog("DEBUG", "[auth.Login] upgrade_hash_ok userID="+strconv.FormatInt(u.ID, 10))
+		}
+	}
+
+	if err := s.startSession(w, r, u.ID); err != nil {
+		authLog("ERROR", "[auth.Login] startSession userID="+strconv.FormatInt(u.ID, 10)+": "+err.Error())
+		writeAuthError(w, http.StatusInternalServerError, "invalid_credentials", "Email or password is incorrect.")
+		return
+	}
+	authLog("INFO", "[auth.Login] userID="+strconv.FormatInt(u.ID, 10)+" upgraded="+strconv.FormatBool(upgraded))
 	writeJSON(w, http.StatusOK, userView{ID: u.ID, Email: u.Email})
 }
 
 func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
-	sess, _ := s.Sessions.Get(r, sessionName)
-	sess.Options.MaxAge = -1 // delete cookie
-	_ = sess.Save(r, w)
-	authLog("DEBUG", "[auth.Logout] ok")
+	sess, err := s.Sessions.Get(r, sessionName)
+	if err != nil {
+		authLog("DEBUG", "[auth.Logout] get session: "+err.Error())
+		// Still attempt to clear via a new empty session cookie.
+		sess, err = s.Sessions.New(r, sessionName)
+		if err != nil {
+			authLog("ERROR", "[auth.Logout] New failed: "+err.Error())
+			writeAuthError(w, http.StatusInternalServerError, "logout_failed", "Something went wrong. Try again.")
+			return
+		}
+	}
+	for k := range sess.Values {
+		delete(sess.Values, k)
+	}
+	sess.Options.MaxAge = -1
+	s.applySessionOptions(sess)
+	if err := sess.Save(r, w); err != nil {
+		authLog("ERROR", "[auth.Logout] Save failed: "+err.Error())
+		writeAuthError(w, http.StatusInternalServerError, "logout_failed", "Something went wrong. Try again.")
+		return
+	}
+	authLog("DEBUG", "[auth.Logout] invalidated")
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 }
 
@@ -246,13 +304,48 @@ func (s *Service) RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Service) startSession(w http.ResponseWriter, r *http.Request, userID int64) {
-	sess, _ := s.Sessions.Get(r, sessionName)
-	sess.Values["user_id"] = userID
+func (s *Service) applySessionOptions(sess *sessions.Session) {
+	if sess.Options == nil {
+		sess.Options = &sessions.Options{}
+	}
 	sess.Options.Path = "/"
 	sess.Options.HttpOnly = true
 	sess.Options.SameSite = http.SameSiteLaxMode
-	_ = sess.Save(r, w)
+	sess.Options.Secure = s.Secure
+}
+
+// startSession invalidates any prior sid then creates a new authenticated session (rotation).
+func (s *Service) startSession(w http.ResponseWriter, r *http.Request, userID int64) error {
+	// Only expire an existing cookie when the client actually sent one. Calling Get on a
+	// cookieless request would fabricate a session that we must not MaxAge=-1 away before New.
+	if _, err := r.Cookie(sessionName); err == nil {
+		if old, getErr := s.Sessions.Get(r, sessionName); getErr == nil && old != nil {
+			for k := range old.Values {
+				delete(old.Values, k)
+			}
+			old.Options.MaxAge = -1
+			s.applySessionOptions(old)
+			if saveErr := old.Save(r, w); saveErr != nil {
+				authLog("ERROR", "[auth.startSession] invalidate prior failed userID="+strconv.FormatInt(userID, 10)+": "+saveErr.Error())
+				// Continue to create a new session; rotation still proceeds.
+			}
+		}
+	}
+
+	sess, err := s.Sessions.New(r, sessionName)
+	if err != nil {
+		authLog("ERROR", "[auth.startSession] New failed userID="+strconv.FormatInt(userID, 10)+": "+err.Error())
+		return err
+	}
+	sess.Values["user_id"] = userID
+	sess.Options.MaxAge = 0 // browser-session cookie (store default)
+	s.applySessionOptions(sess)
+	if err := sess.Save(r, w); err != nil {
+		authLog("ERROR", "[auth.startSession] Save failed userID="+strconv.FormatInt(userID, 10)+": "+err.Error())
+		return err
+	}
+	authLog("DEBUG", "[auth.startSession] rotated userID="+strconv.FormatInt(userID, 10))
+	return nil
 }
 
 func IsUniqueConstraint(err error) bool {

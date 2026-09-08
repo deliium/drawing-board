@@ -145,6 +145,22 @@ func (s *Store) CreateUser(email, passwordHash string) (int64, error) {
 	return res.LastInsertId()
 }
 
+// UpdateUserPasswordHash rewrites users.password_hash for transparent legacy→bcrypt upgrades.
+func (s *Store) UpdateUserPasswordHash(userID int64, passwordHash string) error {
+	res, err := s.SQL.Exec("UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("UpdateUserPasswordHash: no user id=%d", userID)
+	}
+	return nil
+}
+
 func (s *Store) GetUserByEmail(email string) (*User, error) {
 	row := s.SQL.QueryRow("SELECT id, email, password_hash, created_at FROM users WHERE email = ?", email)
 	u := User{}

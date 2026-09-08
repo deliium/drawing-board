@@ -58,8 +58,15 @@ const ERROR_COPY: Record<string, string> = {
   missing_fields: 'Enter email and password.',
   invalid_email: 'Enter a valid email address.',
   password_too_short: 'Password must be at least 8 characters.',
+  password_too_long: 'Password must be at most 72 bytes.',
   registration_failed: 'Unable to create account. If you already have one, sign in.',
   invalid_credentials: 'Email or password is incorrect.',
+}
+
+const maxPasswordBytes = 72
+
+function passwordByteLength(value: string): number {
+  return new TextEncoder().encode(value).length
 }
 
 function validEmail(value: string): boolean {
@@ -94,6 +101,12 @@ function validateClient(): boolean {
   if (password.value.length < 8) {
     next.password = ERROR_COPY.password_too_short
     formError.value = ERROR_COPY.password_too_short
+    fieldErrors.value = next
+    return false
+  }
+  if (passwordByteLength(password.value) > maxPasswordBytes) {
+    next.password = ERROR_COPY.password_too_long
+    formError.value = ERROR_COPY.password_too_long
     fieldErrors.value = next
     return false
   }

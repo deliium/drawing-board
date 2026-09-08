@@ -11,7 +11,7 @@ func TestNewService(t *testing.T) {
 	store := &db.Store{}
 	sessionStore := sessions.NewCookieStore([]byte("test-secret"))
 	
-	service := NewService(store, sessionStore)
+	service := NewService(store, sessionStore, false)
 	if service == nil {
 		t.Fatal("Service should not be nil")
 	}
@@ -28,7 +28,7 @@ func TestNewService(t *testing.T) {
 func TestService_Structure(t *testing.T) {
 	store := &db.Store{}
 	sessionStore := sessions.NewCookieStore([]byte("test-secret"))
-	service := NewService(store, sessionStore)
+	service := NewService(store, sessionStore, false)
 	
 	// Test that service has expected fields
 	if service.Store == nil {

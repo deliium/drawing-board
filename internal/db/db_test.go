@@ -48,6 +48,35 @@ func TestCreateUser(t *testing.T) {
 	}
 }
 
+func TestUpdateUserPasswordHash(t *testing.T) {
+	tmpFile := "test_update_password_hash.db"
+	defer os.Remove(tmpFile)
+
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+
+	uid, err := store.CreateUser("hash@example.com", "legacy-hash")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.UpdateUserPasswordHash(uid, "$2a$12$updatedhashplaceholder........"); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	u, err := store.GetUserByID(uid)
+	if err != nil || u == nil {
+		t.Fatalf("get: %v", err)
+	}
+	if u.PasswordHash != "$2a$12$updatedhashplaceholder........" {
+		t.Fatalf("hash not updated: %q", u.PasswordHash)
+	}
+	if err := store.UpdateUserPasswordHash(99999, "x"); err == nil {
+		t.Fatal("expected error for missing user")
+	}
+}
+
 func TestGetUserByEmail(t *testing.T) {
 	tmpFile := "test_get_user.db"
 	defer os.Remove(tmpFile)

@@ -109,4 +109,19 @@ describe('AuthPage behavior', () => {
     })
     expect(root.querySelector('h1')?.textContent).toContain('Create account')
   })
+
+  it('rejects passwords longer than 72 UTF-8 bytes client-side', async () => {
+    const { root } = await mountAuth('register')
+    const email = root.querySelector('#auth-email') as HTMLInputElement
+    const password = root.querySelector('#auth-password') as HTMLInputElement
+    await setInput(email, 'long@example.com')
+    await setInput(password, 'a'.repeat(73))
+    const form = root.querySelector('form') as HTMLFormElement
+    form.requestSubmit?.()
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush()
+    const alert = root.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('72 bytes')
+    expect(apiFetch).not.toHaveBeenCalled()
+  })
 })

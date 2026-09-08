@@ -24,17 +24,31 @@ func main() {
 		addr = flag.String("addr", getEnv("ADDR", ":8080"), "http service address")
 		staticDir = flag.String("static", getEnv("STATIC_DIR", ""), "directory to serve static files from (optional)")
 		dbPath = flag.String("db", getEnv("DB_PATH", "data.db"), "sqlite dsn or file path")
-		cookieKey = flag.String("cookie", getEnv("COOKIE_KEY", "change-me-please-32-bytes-min"), "cookie auth key")
+		cookieKey = flag.String("cookie", getEnv("COOKIE_KEY", auth.CookieKeyDefaultSentinel), "cookie auth key")
 		onnxModel = flag.String("onnx_model", getEnv("ONNX_MODEL", "./models/handwriting.onnx"), "path to ONNX model")
 	)
 	flag.Parse()
+
+	secureCookies := auth.ProductionSecureMode(os.Getenv("APP_ENV"), os.Getenv("COOKIE_SECURE"))
+	log.Printf("INFO [main] cookie_secure=%t", secureCookies)
+	if err := auth.ValidateCookieKey(*cookieKey, secureCookies); err != nil {
+		log.Fatalf("FATAL [main] COOKIE_KEY validation failed: %v", err)
+	}
+	if !secureCookies && auth.IsWeakCookieKey(*cookieKey) {
+		log.Printf("WARN [main] weak COOKIE_KEY in non-production mode (empty, short, or default sentinel)")
+	}
 
 	store, err := db.Open(*dbPath)
 	if err != nil { log.Fatalf("open db: %v", err) }
 
 	sessionStore := sessions.NewCookieStore([]byte(*cookieKey))
-	sessionStore.Options = &sessions.Options{ Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode }
-	authSvc := &auth.Service{ Store: store, Sessions: sessionStore }
+	sessionStore.Options = &sessions.Options{
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secureCookies,
+	}
+	authSvc := auth.NewService(store, sessionStore, secureCookies)
 	
 	var recognizer recognize.Recognizer
 	if *onnxModel != "" {
