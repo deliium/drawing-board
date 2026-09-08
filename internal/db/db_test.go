@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"os"
 	"testing"
 )
@@ -392,5 +393,146 @@ func TestSaveStrokeIdempotent(t *testing.T) {
 	}
 	if strokes[0].OpID != "op-aaa-bbb-ccc-ddd-eeeeeeeeeeee" {
 		t.Fatalf("opId: %q", strokes[0].OpID)
+	}
+}
+
+func TestBoardRev_CreateStaleAndIdempotent(t *testing.T) {
+	tmpFile := "test_board_rev_create.db"
+	defer os.Remove(tmpFile)
+
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+
+	uid, err := store.CreateUser("board@example.com", "hash")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	pts := []StrokePoint{{X: 1, Y: 2}, {X: 3, Y: 4}}
+	r1, err := store.ApplyStrokeCreate(uid, 0, "op-create-1", "#111111", 2, 100, pts)
+	if err != nil || !r1.Created || r1.BoardRev != 1 {
+		t.Fatalf("create1: %+v err=%v", r1, err)
+	}
+
+	r2, err := store.ApplyStrokeCreate(uid, 0, "op-create-2", "#222222", 2, 100, pts)
+	if !errors.Is(err, ErrStaleBoard) || r2.BoardRev != 1 {
+		t.Fatalf("expected stale_board rev=1, got %+v err=%v", r2, err)
+	}
+
+	r3, err := store.ApplyStrokeCreate(uid, 1, "op-create-1", "#333333", 5, 200, pts)
+	if err != nil || !r3.Idempotent || r3.StrokeID != r1.StrokeID || r3.BoardRev != 1 {
+		t.Fatalf("idempotent: %+v err=%v", r3, err)
+	}
+}
+
+func TestBoardRev_ClearTombstonesCreate(t *testing.T) {
+	tmpFile := "test_board_rev_clear.db"
+	defer os.Remove(tmpFile)
+
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+
+	uid, err := store.CreateUser("clear@example.com", "hash")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	pts := []StrokePoint{{X: 1, Y: 2}, {X: 3, Y: 4}}
+	r1, err := store.ApplyStrokeCreate(uid, 0, "op-will-clear", "#111111", 2, 100, pts)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	clr, err := store.ApplyClear(uid, r1.BoardRev, "op-clear-1")
+	if err != nil || !clr.Cleared || clr.BoardRev != 2 {
+		t.Fatalf("clear: %+v err=%v", clr, err)
+	}
+	snap, err := store.ListStrokesWithRev(uid)
+	if err != nil || len(snap.Strokes) != 0 || snap.BoardRev != 2 {
+		t.Fatalf("snap: %+v err=%v", snap, err)
+	}
+	r2, err := store.ApplyStrokeCreate(uid, 2, "op-will-clear", "#111111", 2, 100, pts)
+	if !errors.Is(err, ErrOpCancelled) {
+		t.Fatalf("expected op_cancelled, got %+v err=%v", r2, err)
+	}
+}
+
+func TestBoardRev_DeleteByOpIdBeforeCreate(t *testing.T) {
+	tmpFile := "test_board_rev_delete_opid.db"
+	defer os.Remove(tmpFile)
+
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+
+	uid, err := store.CreateUser("delop@example.com", "hash")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	del, err := store.ApplyStrokeDelete(uid, 0, "op-del-1", 0, "op-pending-create")
+	if err != nil || del.BoardRev != 1 {
+		t.Fatalf("delete: %+v err=%v", del, err)
+	}
+	r, err := store.ApplyStrokeCreate(uid, 1, "op-pending-create", "#111111", 2, 100, []StrokePoint{{X: 1, Y: 1}, {X: 2, Y: 2}})
+	if !errors.Is(err, ErrOpCancelled) {
+		t.Fatalf("expected cancelled, got %+v err=%v", r, err)
+	}
+}
+
+func TestBoardRev_IdempotentClear(t *testing.T) {
+	tmpFile := "test_board_rev_idem_clear.db"
+	defer os.Remove(tmpFile)
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+	uid, err := store.CreateUser("idemclear@example.com", "hash")
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	_, err = store.ApplyStrokeCreate(uid, 0, "c1", "#111111", 2, 1, []StrokePoint{{X: 1, Y: 1}, {X: 2, Y: 2}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	r1, err := store.ApplyClear(uid, 1, "clear-same")
+	if err != nil || r1.BoardRev != 2 {
+		t.Fatalf("clear1: %+v err=%v", r1, err)
+	}
+	r2, err := store.ApplyClear(uid, 2, "clear-same")
+	if err != nil || !r2.Idempotent || r2.BoardRev != 2 {
+		t.Fatalf("clear idempotent: %+v err=%v", r2, err)
+	}
+}
+
+func TestBoardRev_DeleteByIdBumpsOnce(t *testing.T) {
+	tmpFile := "test_board_rev_del_id.db"
+	defer os.Remove(tmpFile)
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+	uid, err := store.CreateUser("delid@example.com", "hash")
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	cr, err := store.ApplyStrokeCreate(uid, 0, "stroke-op", "#111111", 2, 1, []StrokePoint{{X: 1, Y: 1}, {X: 2, Y: 2}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	d1, err := store.ApplyStrokeDelete(uid, cr.BoardRev, "del-op", cr.StrokeID, "")
+	if err != nil || d1.BoardRev != 2 {
+		t.Fatalf("delete: %+v err=%v", d1, err)
+	}
+	d2, err := store.ApplyStrokeDelete(uid, 2, "del-op", cr.StrokeID, "")
+	if err != nil || !d2.Idempotent || d2.BoardRev != 2 {
+		t.Fatalf("delete idempotent: %+v err=%v", d2, err)
 	}
 }

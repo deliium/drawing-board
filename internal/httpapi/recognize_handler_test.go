@@ -188,3 +188,43 @@ func TestRecognize_RateLimited(t *testing.T) {
 	}
 }
 
+func TestRecognize_StaleRevision(t *testing.T) {
+	metrics.ResetForTest()
+	api, store, authSvc := newTestAPI(t, "test-recognize-stale.db")
+	api.Recognizer = recognize.NewSimpleRecognizer()
+	api.RecognizeLimiter = limits.NewLimiter(1000, 1000)
+
+	userID, err := store.CreateUser("stale@example.com", "hash")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	_, err = store.ApplyStrokeCreate(userID, 0, "op-s1", "#1d4ed8", 4, 1, []db.StrokePoint{{X: 10, Y: 10}, {X: 50, Y: 10}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	payload := `{"topN":10,"width":300,"height":300,"boardRev":0}`
+	req := sessionRequest(t, authSvc, http.MethodPost, "/api/recognize", userID)
+	req.Body = io.NopCloser(strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	api.Recognize(rec, req)
+	if rec.Code != 409 {
+		t.Fatalf("expected 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body staleRevisionBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Error != "stale_revision" || body.BoardRev != 1 {
+		t.Fatalf("unexpected body: %+v", body)
+	}
+
+	payloadOK := `{"topN":10,"width":300,"height":300,"boardRev":1}`
+	req2 := sessionRequest(t, authSvc, http.MethodPost, "/api/recognize", userID)
+	req2.Body = io.NopCloser(strings.NewReader(payloadOK))
+	rec2 := httptest.NewRecorder()
+	api.Recognize(rec2, req2)
+	if rec2.Code != 200 {
+		t.Fatalf("expected 200, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+}

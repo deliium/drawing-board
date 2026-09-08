@@ -2,12 +2,14 @@ package ws
 
 import (
 	"encoding/json"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/limits"
 	"github.com/gorilla/websocket"
 )
 
@@ -334,3 +336,159 @@ func TestSendAck_ToConnOnly(t *testing.T) {
 	}
 }
 
+func TestHandleStroke_StaleBoardAndClear(t *testing.T) {
+	tmpFile := "test_ws_board_rev.db"
+	defer os.Remove(tmpFile)
+	store, err := db.Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+
+	uid, err := store.CreateUser("wsrev@example.com", "hash")
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	_, err = store.ApplyStrokeCreate(uid, 0, "op-seed", "#111111", 2, 1, []db.StrokePoint{{X: 1, Y: 1}, {X: 2, Y: 2}})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	hub := NewHub(store, &auth.Service{})
+	prev := globalHub
+	globalHub = hub
+	defer func() { globalHub = prev }()
+	SetStrokeLimiterForTest(limits.NewLimiter(1000, 1000))
+
+	conn := &websocket.Conn{}
+	hub.add(conn, uid)
+	var mu sync.Mutex
+	var frames []message
+	hub.writeFn = func(c *websocket.Conn, data []byte) error {
+		var m message
+		_ = json.Unmarshal(data, &m)
+		mu.Lock()
+		frames = append(frames, m)
+		mu.Unlock()
+		return nil
+	}
+
+	staleBase := int64(0)
+	handleStrokeMessage(conn, uid, message{
+		Type:    "stroke",
+		OpID:    "op-stale-create",
+		BaseRev: &staleBase,
+		Stroke: &Stroke{
+			Points:   []Point{{X: 3, Y: 3}, {X: 4, Y: 4}},
+			Color:    "#222222",
+			Width:    2,
+			ClientID: "c",
+		},
+	})
+	mu.Lock()
+	if len(frames) == 0 || frames[0].OK == nil || *frames[0].OK || frames[0].Error != "stale_board" {
+		mu.Unlock()
+		t.Fatalf("expected stale_board ack, got %+v", frames)
+	}
+	mu.Unlock()
+
+	frames = nil
+	clearBase := int64(1)
+	handleClearMessage(conn, uid, message{
+		Type:    "clear",
+		OpID:    "op-clear-ws",
+		BaseRev: &clearBase,
+	})
+	mu.Lock()
+	foundClearAck := false
+	foundClearEcho := false
+	for _, f := range frames {
+		if f.Type == "ack" && f.OK != nil && *f.OK && f.Clear != nil && *f.Clear && f.BoardRev != nil && *f.BoardRev == 2 {
+			foundClearAck = true
+		}
+		if f.Type == "clear" && f.BoardRev != nil && *f.BoardRev == 2 {
+			foundClearEcho = true
+		}
+	}
+	mu.Unlock()
+	if !foundClearAck || !foundClearEcho {
+		t.Fatalf("expected clear ack+echo boardRev=2, got %+v", frames)
+	}
+
+	frames = nil
+	lateBase := int64(2)
+	handleStrokeMessage(conn, uid, message{
+		Type:    "stroke",
+		OpID:    "op-seed",
+		BaseRev: &lateBase,
+		Stroke: &Stroke{
+			Points:   []Point{{X: 5, Y: 5}, {X: 6, Y: 6}},
+			Color:    "#333333",
+			Width:    2,
+			ClientID: "c",
+		},
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if len(frames) == 0 || frames[0].Error != "op_cancelled" {
+		t.Fatalf("expected op_cancelled after clear tombstone, got %+v", frames)
+	}
+}
+
+func TestHandleDelete_ByOpIdBeforeCreate(t *testing.T) {
+	tmpFile := "test_ws_delete_opid.db"
+	defer os.Remove(tmpFile)
+	store, err := db.Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+	uid, err := store.CreateUser("wsdel@example.com", "hash")
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+
+	hub := NewHub(store, &auth.Service{})
+	prev := globalHub
+	globalHub = hub
+	defer func() { globalHub = prev }()
+	SetStrokeLimiterForTest(limits.NewLimiter(1000, 1000))
+
+	conn := &websocket.Conn{}
+	var frames []message
+	hub.writeFn = func(c *websocket.Conn, data []byte) error {
+		var m message
+		_ = json.Unmarshal(data, &m)
+		frames = append(frames, m)
+		return nil
+	}
+
+	base := int64(0)
+	handleDeleteMessage(conn, uid, message{
+		Type:       "delete",
+		OpID:       "op-del-pending",
+		BaseRev:    &base,
+		DeleteOpID: "op-not-yet",
+	})
+	base2 := int64(1)
+	handleStrokeMessage(conn, uid, message{
+		Type:    "stroke",
+		OpID:    "op-not-yet",
+		BaseRev: &base2,
+		Stroke: &Stroke{
+			Points:   []Point{{X: 1, Y: 1}, {X: 2, Y: 2}},
+			Color:    "#111111",
+			Width:    2,
+			ClientID: "c",
+		},
+	})
+	var cancelled bool
+	for _, f := range frames {
+		if f.Type == "ack" && f.Error == "op_cancelled" {
+			cancelled = true
+		}
+	}
+	if !cancelled {
+		t.Fatalf("expected op_cancelled for late create, got %+v", frames)
+	}
+}
