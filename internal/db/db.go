@@ -75,7 +75,7 @@ func openAndInit(filename string, enableFK bool) (*sql.DB, error) {
 		_, _ = db.Exec("PRAGMA journal_mode=DELETE;")
 	}
 	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil { return db, fmt.Errorf("pragma busy_timeout: %w", err) }
-	if err := migrate(db); err != nil { return db, fmt.Errorf("migrate: %w", err) }
+	if err := runMigrations(db); err != nil { return db, fmt.Errorf("migrate: %w", err) }
 	return db, nil
 }
 
@@ -110,67 +110,6 @@ func normalizeSQLitePath(dsnOrPath string) (filename string, enableFK bool) {
 	}
 
 	return s, true
-}
-
-func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
-	CREATE TABLE IF NOT EXISTS users (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		email TEXT NOT NULL UNIQUE,
-		password_hash TEXT NOT NULL,
-		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-	);
-	CREATE TABLE IF NOT EXISTS strokes (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-		color TEXT NOT NULL,
-		width INTEGER NOT NULL,
-		started_at_unix_ms INTEGER NOT NULL,
-		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-	);
-	CREATE TABLE IF NOT EXISTS stroke_points (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		stroke_id INTEGER NOT NULL REFERENCES strokes(id) ON DELETE CASCADE,
-		x REAL NOT NULL,
-		y REAL NOT NULL
-	);
-	CREATE INDEX IF NOT EXISTS idx_strokes_user ON strokes(user_id);
-	CREATE INDEX IF NOT EXISTS idx_stroke_points_stroke ON stroke_points(stroke_id);
-	`)
-	if err != nil {
-		return err
-	}
-	// Existing DBs: add nullable op_id for idempotent WS creates (ignore if already present).
-	if _, err := db.Exec(`ALTER TABLE strokes ADD COLUMN op_id TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
-			return err
-		}
-	}
-	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_strokes_user_op ON strokes(user_id, op_id) WHERE op_id IS NOT NULL`)
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec(`
-	CREATE TABLE IF NOT EXISTS user_board_state (
-		user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-		board_rev INTEGER NOT NULL DEFAULT 0
-	);
-	CREATE TABLE IF NOT EXISTS stroke_op_tombstones (
-		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-		op_id TEXT NOT NULL,
-		reason TEXT NOT NULL,
-		at_rev INTEGER NOT NULL,
-		PRIMARY KEY (user_id, op_id)
-	);
-	CREATE TABLE IF NOT EXISTS board_ops (
-		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-		op_id TEXT NOT NULL,
-		kind TEXT NOT NULL,
-		at_rev INTEGER NOT NULL,
-		PRIMARY KEY (user_id, op_id)
-	);
-	`)
-	return err
 }
 
 func (s *Store) CreateUser(email, passwordHash string) (int64, error) {

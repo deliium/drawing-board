@@ -25,6 +25,7 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - WebSocket stroke persist + echo with `opId` ack, `boardRev`/`baseRev` ordering, and idempotent SQLite creates
 - REST list strokes (`boardRev` envelope); recognize revision-gated; clear available via WS (primary) or REST helper
 - Recognition: deterministic target comparison for five hiragana (`hiragana5`); optional free-board heuristic ranking with match scores (not ML/ONNX)
+- Durable learning schema (characters/lessons/attempts/assessments/progress) via versioned SQLite migrations, separate from free-board strokes
 - Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
 
 ## Non-Functional Requirements

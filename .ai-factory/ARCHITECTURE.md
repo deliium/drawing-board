@@ -17,7 +17,9 @@ drawing-board/
 ├── cmd/server/                 # process entry (wiring, env, listen)
 ├── internal/
 │   ├── auth/                   # register/login/logout/me, password hashing, sessions
-│   ├── db/                     # SQLite store, migrations, stroke CRUD/idempotency
+│   ├── db/                     # SQLite store, versioned migrations, board + learning repos
+│   │   └── migrations/         # numbered Up steps (baseline board, learning domain)
+│   ├── learn/                  # learning-domain types + repository interfaces
 │   ├── httpapi/                # REST handlers (strokes, recognize, CSRF helpers)
 │   ├── ws/                     # WebSocket hub, CheckOrigin, ingest, ack/echo
 │   ├── limits/                 # shared validation bounds (stroke, recognize, opId)
@@ -41,11 +43,15 @@ drawing-board/
 
 - ✅ `cmd/server` wires `internal/*` packages; packages do not import `cmd/`
 - ✅ `httpapi` and `ws` may call `db`, `auth`, `limits`, `recognize`, `metrics`
+- ✅ `httpapi` / future attempt handlers depend on `internal/learn` interfaces; SQLite impl lives in `internal/db`
+- ✅ Free-board stroke tables stay isolated from attempt stroke tables (no shared FK / clear coupling)
+- ✅ Schema evolves only via versioned migrations in `internal/db/migrations` (fail-closed on `Open`)
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
 - ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; pages compose UI + call services
 - ❌ Do not add a global WS broadcast path — delivery is `sendToUser(userID, …)` only
 - ❌ Do not put recognition rasterization / large allocations before `limits.CheckCanvas` / validators
 - ❌ Frontend must not treat unmatched inbound stroke creates as authoritative canvas state
+- ❌ Do not put lesson/attempt types into `internal/recognize` (recognize stays pure scoring)
 
 ## Layer/Module Communication
 
@@ -59,7 +65,8 @@ drawing-board/
 2. **Validate at the edge** — shared `limits` for recognize body params and WS stroke meta/points/`opId`
 3. **Ack before trust** — client queue retries until ack/nack/budget; reload trusts REST
 4. **Honest recognition** — MVP assessment is deterministic target comparison for five hiragana; free-board heuristic scores are match-score ranking aids, not calibrated confidence or ONNX/ML
-5. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+5. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
+6. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 

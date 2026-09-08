@@ -5,6 +5,9 @@ Hard requirements for this repository. More specific files under `.ai-factory/ru
 - Strokes are **private per user** — never broadcast WebSocket stroke/delete events globally; use `sendToUser`.
 - Recognition MVP is **deterministic target comparison** for a fixed five-hiragana set (`hiragana5`) — not unrestricted kanji OCR and not a loaded ML model.
 - Free-board open-set ranking (if retained) is **heuristic match scores only** — never AI, ML confidence, calibrated confidence, or an ONNX/MNIST “upgrade” claim (`go test ./internal/docguard` must stay green).
+- **Attempt strokes ≠ board strokes** — practice attempts use separate tables; board clear/undo/erase must not mutate attempt history.
+- SQLite schema changes use **versioned, fail-closed migrations** (`schema_migrations`); do not reintroduce ad-hoc unversioned DDL on `Open`.
+- Do **not** add SRS/classroom/cohort tables without a dedicated plan.
 - Mutating WebSocket messages require a client `opId` (≤36) and `baseRev` (strict equality with per-user `boardRev`); creates are idempotent on active `(user_id, op_id)`; clear/tombstone yields `op_cancelled` on late creates.
 - Prefer soft reject (`ack` nack / `error` frame) over disconnect for validation failures; log reject codes without stroke coordinates.
 - Credentialed CORS and WebSocket upgrades allow **exact** origins only — no `*`.
