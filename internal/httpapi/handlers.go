@@ -3,12 +3,14 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
@@ -40,13 +42,36 @@ type Stroke struct {
 }
 
 type RecognizeRequest struct {
-	TopN   *int `json:"topN"`
-	Width  int  `json:"width"`
-	Height int  `json:"height"`
+	TopN     *int  `json:"topN"`
+	Width    int   `json:"width"`
+	Height   int   `json:"height"`
+	BoardRev *int64 `json:"boardRev"`
 }
 
 type RecognizeResponse struct {
+	BoardRev   int64                 `json:"boardRev"`
 	Candidates []recognize.Candidate `json:"candidates"`
+}
+
+type StrokesListResponse struct {
+	BoardRev int64    `json:"boardRev"`
+	Strokes  []Stroke `json:"strokes"`
+}
+
+type ClearRequest struct {
+	OpID     string `json:"opId,omitempty"`
+	BaseRev  *int64 `json:"baseRev,omitempty"`
+}
+
+type ClearResponse struct {
+	OK       bool  `json:"ok"`
+	BoardRev int64 `json:"boardRev"`
+}
+
+type staleRevisionBody struct {
+	Error    string `json:"error"`
+	Message  string `json:"message,omitempty"`
+	BoardRev int64  `json:"boardRev"`
 }
 
 type apiErrorBody struct {
@@ -97,14 +122,14 @@ func (a *API) ListStrokes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiLog("DEBUG", "[httpapi.ListStrokes] userID=%d", uid)
-	rows, err := a.Store.ListStrokesByUser(uid)
+	snap, err := a.Store.ListStrokesWithRev(uid)
 	if err != nil {
 		apiLog("ERROR", "[httpapi.ListStrokes] store userID=%d: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to list strokes")
 		return
 	}
-	out := make([]Stroke, 0, len(rows))
-	for _, s := range rows {
+	out := make([]Stroke, 0, len(snap.Strokes))
+	for _, s := range snap.Strokes {
 		pts := make([]StrokePoint, 0, len(s.Points))
 		for _, p := range s.Points {
 			pts = append(pts, StrokePoint{X: p.X, Y: p.Y})
@@ -119,7 +144,8 @@ func (a *API) ListStrokes(w http.ResponseWriter, r *http.Request) {
 			OpID:            s.OpID,
 		})
 	}
-	writeJSON(w, 200, out)
+	apiLog("INFO", "[httpapi.ListStrokes] userID=%d boardRev=%d strokes=%d", uid, snap.BoardRev, len(out))
+	writeJSON(w, 200, StrokesListResponse{BoardRev: snap.BoardRev, Strokes: out})
 }
 
 func (a *API) ClearStrokes(w http.ResponseWriter, r *http.Request) {
@@ -129,21 +155,58 @@ func (a *API) ClearStrokes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiLog("DEBUG", "[httpapi.ClearStrokes] userID=%d", uid)
-	before, listErr := a.Store.ListStrokesByUser(uid)
-	if listErr != nil {
-		apiLog("ERROR", "[httpapi.ClearStrokes] list-before userID=%d: %v", uid, listErr)
+
+	var req ClearRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		dec := json.NewDecoder(r.Body)
+		if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeAPIError(w, 400, "bad_json", "invalid JSON body")
+			return
+		}
 	}
-	if err := a.Store.ClearStrokesByUser(uid); err != nil {
+
+	opID := req.OpID
+	if opID == "" {
+		opID = fmt.Sprintf("rest-clear-%d", time.Now().UnixNano())
+		if len(opID) > limits.MaxOpIDLen {
+			opID = opID[:limits.MaxOpIDLen]
+		}
+	}
+	if err := limits.ValidateOpID(opID); err != nil {
+		writeAPIError(w, 400, limits.ErrorCode(err), limits.SafeMessage(err))
+		return
+	}
+
+	var baseRev int64
+	if req.BaseRev != nil {
+		baseRev = *req.BaseRev
+	} else {
+		cur, err := a.Store.GetBoardRev(uid)
+		if err != nil {
+			apiLog("ERROR", "[httpapi.ClearStrokes] get-rev userID=%d: %v", uid, err)
+			writeAPIError(w, 500, "internal_error", "failed to clear strokes")
+			return
+		}
+		baseRev = cur
+	}
+
+	result, err := a.Store.ApplyClear(uid, baseRev, opID)
+	if err != nil {
+		if errors.Is(err, db.ErrStaleBoard) {
+			apiLog("WARN", "[httpapi.ClearStrokes] userID=%d code=stale_board boardRev=%d", uid, result.BoardRev)
+			writeJSON(w, 409, staleRevisionBody{
+				Error:    "stale_revision",
+				Message:  "board revision mismatch",
+				BoardRev: result.BoardRev,
+			})
+			return
+		}
 		apiLog("ERROR", "[httpapi.ClearStrokes] store userID=%d: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to clear strokes")
 		return
 	}
-	count := 0
-	if listErr == nil {
-		count = len(before)
-	}
-	apiLog("INFO", "[httpapi.ClearStrokes] clear completed userID=%d count=%d", uid, count)
-	writeJSON(w, 200, map[string]string{"ok": "true"})
+	apiLog("INFO", "[httpapi.ClearStrokes] clear completed userID=%d boardRev=%d", uid, result.BoardRev)
+	writeJSON(w, 200, ClearResponse{OK: true, BoardRev: result.BoardRev})
 }
 
 func (a *API) DeleteStroke(w http.ResponseWriter, r *http.Request) {
@@ -159,13 +222,36 @@ func (a *API) DeleteStroke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiLog("DEBUG", "[httpapi.DeleteStroke] userID=%d id=%d", uid, id)
-	if err := a.Store.DeleteStroke(uid, id); err != nil {
+
+	cur, err := a.Store.GetBoardRev(uid)
+	if err != nil {
+		apiLog("ERROR", "[httpapi.DeleteStroke] get-rev userID=%d: %v", uid, err)
+		writeAPIError(w, 500, "internal_error", "failed to delete stroke")
+		return
+	}
+	opID := fmt.Sprintf("rest-del-%d", time.Now().UnixNano())
+	if len(opID) > limits.MaxOpIDLen {
+		opID = opID[:limits.MaxOpIDLen]
+	}
+	apiLog("INFO", "[FIX][httpapi.DeleteStroke] routing through ApplyStrokeDelete userID=%d id=%d baseRev=%d opId=%s",
+		uid, id, cur, opID)
+	result, err := a.Store.ApplyStrokeDelete(uid, cur, opID, id, "")
+	if err != nil {
+		if errors.Is(err, db.ErrStaleBoard) {
+			apiLog("WARN", "[httpapi.DeleteStroke] userID=%d code=stale_board boardRev=%d", uid, result.BoardRev)
+			writeJSON(w, 409, staleRevisionBody{
+				Error:    "stale_revision",
+				Message:  "board revision mismatch",
+				BoardRev: result.BoardRev,
+			})
+			return
+		}
 		apiLog("ERROR", "[httpapi.DeleteStroke] store userID=%d id=%d: %v", uid, id, err)
 		writeAPIError(w, 500, "internal_error", "failed to delete stroke")
 		return
 	}
-	apiLog("INFO", "[httpapi.DeleteStroke] delete success userID=%d id=%d", uid, id)
-	writeJSON(w, 200, map[string]any{"ok": true, "id": id})
+	apiLog("INFO", "[httpapi.DeleteStroke] delete success userID=%d id=%d boardRev=%d", uid, id, result.BoardRev)
+	writeJSON(w, 200, map[string]any{"ok": true, "id": id, "boardRev": result.BoardRev})
 }
 
 func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
@@ -214,14 +300,31 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 		a.rejectRecognize(w, uid, limits.ErrorCode(err), limits.SafeMessage(err))
 		return
 	}
+	if req.BoardRev == nil {
+		a.rejectRecognize(w, uid, "bad_json", "boardRev required")
+		return
+	}
 
-	strokes, err := a.Store.ListStrokesByUser(uid)
+	snap, err := a.Store.ListStrokesWithRev(uid)
 	if err != nil {
 		metrics.Add("recognize_requests_total{result=error}", 1)
 		apiLog("ERROR", "[httpapi.Recognize] userID=%d store: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to load strokes")
 		return
 	}
+	if *req.BoardRev != snap.BoardRev {
+		metrics.Add("recognize_requests_total{result=reject}", 1)
+		metrics.Add("recognize_reject_total{code=stale_revision}", 1)
+		apiLog("WARN", "[httpapi.Recognize] userID=%d result=reject code=stale_revision boardRev=%d req=%d",
+			uid, snap.BoardRev, *req.BoardRev)
+		writeJSON(w, 409, staleRevisionBody{
+			Error:    "stale_revision",
+			Message:  "board revision mismatch",
+			BoardRev: snap.BoardRev,
+		})
+		return
+	}
+	strokes := snap.Strokes
 
 	totalPoints := 0
 	for _, s := range strokes {
@@ -265,9 +368,9 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	metrics.Add("recognize_requests_total{result=ok}", 1)
-	apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok strokes=%d points=%d candidates=%d",
-		uid, len(strokes), totalPoints, len(cands))
-	writeJSON(w, 200, RecognizeResponse{Candidates: cands})
+	apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok boardRev=%d strokes=%d points=%d candidates=%d",
+		uid, snap.BoardRev, len(strokes), totalPoints, len(cands))
+	writeJSON(w, 200, RecognizeResponse{BoardRev: snap.BoardRev, Candidates: cands})
 }
 
 func (a *API) rejectRecognize(w http.ResponseWriter, uid int64, code, message string) {

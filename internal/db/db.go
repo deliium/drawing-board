@@ -147,6 +147,29 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_strokes_user_op ON strokes(user_id, op_id) WHERE op_id IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`
+	CREATE TABLE IF NOT EXISTS user_board_state (
+		user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		board_rev INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE IF NOT EXISTS stroke_op_tombstones (
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		op_id TEXT NOT NULL,
+		reason TEXT NOT NULL,
+		at_rev INTEGER NOT NULL,
+		PRIMARY KEY (user_id, op_id)
+	);
+	CREATE TABLE IF NOT EXISTS board_ops (
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		op_id TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		at_rev INTEGER NOT NULL,
+		PRIMARY KEY (user_id, op_id)
+	);
+	`)
 	return err
 }
 

@@ -171,11 +171,11 @@ func TestClearAndDelete_OnlyTouchCallerData(t *testing.T) {
 		if rec.Code != 200 {
 			t.Fatalf("expected 200, got %d", rec.Code)
 		}
-		var out []Stroke
+		var out StrokesListResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if len(out) != 1 || out[0].ID != idB {
+		if len(out.Strokes) != 1 || out.Strokes[0].ID != idB {
 			t.Fatalf("list must return only user B stroke id=%d, got %+v", idB, out)
 		}
 	})

@@ -108,7 +108,7 @@ func TestRecognize_HappyPath(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
-	payload := `{"topN":10,"width":300,"height":300}`
+	payload := `{"topN":10,"width":300,"height":300,"boardRev":0}`
 	req := sessionRequest(t, authSvc, http.MethodPost, "/api/recognize", userID)
 	req.Body = io.NopCloser(strings.NewReader(payload))
 	rec := httptest.NewRecorder()
@@ -122,6 +122,9 @@ func TestRecognize_HappyPath(t *testing.T) {
 	}
 	if len(out.Candidates) == 0 {
 		t.Fatal("expected candidates")
+	}
+	if out.BoardRev != 0 {
+		t.Fatalf("expected boardRev 0, got %d", out.BoardRev)
 	}
 }
 
@@ -164,7 +167,7 @@ func TestRecognize_RateLimited(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		req := sessionRequest(t, authSvc, http.MethodPost, "/api/recognize", userID)
-		req.Body = io.NopCloser(strings.NewReader(`{"topN":10,"width":300,"height":300}`))
+		req.Body = io.NopCloser(strings.NewReader(`{"topN":10,"width":300,"height":300,"boardRev":0}`))
 		rec := httptest.NewRecorder()
 		api.Recognize(rec, req)
 		if rec.Code != 200 {
@@ -172,7 +175,7 @@ func TestRecognize_RateLimited(t *testing.T) {
 		}
 	}
 	req := sessionRequest(t, authSvc, http.MethodPost, "/api/recognize", userID)
-	req.Body = io.NopCloser(strings.NewReader(`{"topN":10,"width":300,"height":300}`))
+	req.Body = io.NopCloser(strings.NewReader(`{"topN":10,"width":300,"height":300,"boardRev":0}`))
 	rec := httptest.NewRecorder()
 	api.Recognize(rec, req)
 	if rec.Code != 429 {
@@ -184,3 +187,4 @@ func TestRecognize_RateLimited(t *testing.T) {
 		t.Fatalf("got %q", body.Error)
 	}
 }
+

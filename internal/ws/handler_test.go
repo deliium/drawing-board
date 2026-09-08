@@ -322,7 +322,7 @@ func TestSendAck_ToConnOnly(t *testing.T) {
 	}
 
 	id := int64(42)
-	hub.sendAck(connA, "op-1", true, &id, nil, "", "")
+	hub.sendAck(connA, "op-1", true, nil, &id, nil, nil, "", "")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -333,3 +333,4 @@ func TestSendAck_ToConnOnly(t *testing.T) {
 		t.Fatalf("ack must not fan out to other tabs via sendAck, got %d", delivered[connB])
 	}
 }
+
