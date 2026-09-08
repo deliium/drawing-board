@@ -11,9 +11,10 @@
 - [x] **HTTP/WebSocket perimeter** — origin allowlist, CSRF, compose/Nginx defaults
 - [x] **Recognition and stroke input hardening** — shared limits, rate limits, safe logging/metrics
 - [x] **Reliable stroke WS persistence** — `opId` + ack + idempotent SQLite + client queue/reconnect/status UX
+- [x] **Authoritative board operations (revision-consistent create/undo/erase/clear/recognize)** — per-user `boardRev` / `baseRev`, WS clear, recognize gated to Saved
 - [ ] **Honest ONNX recognition (Prompt 08)** — real model load path or remove misleading ONNX upgrade framing; keep heuristic honesty
 - [ ] **Durable offline stroke vault** — IndexedDB/service-worker queue surviving full reload (explicitly out of scope for reliable-WS v1)
-- [ ] **Cross-tab live create sync** — optional same-account multi-tab create fan-in (deletes already echo by id)
+- [ ] **Cross-tab live create sync** — optional same-account multi-tab create fan-in (deletes/clear already echo)
 
 ## Completed
 
@@ -26,3 +27,4 @@
 | HTTP/WebSocket perimeter | 2026-09-08 |
 | Recognition and stroke input hardening | 2026-09-08 |
 | Reliable stroke WS persistence | 2026-09-08 |
+| Authoritative board operations (revision-consistent create/undo/erase/clear/recognize) | 2026-09-08 |

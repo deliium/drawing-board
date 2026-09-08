@@ -47,9 +47,9 @@ drawing-board/
 
 ## Layer/Module Communication
 
-- **REST:** cookie session → `httpapi` handlers → `db.Store` / `recognize`
-- **WebSocket:** cookie + allowlisted Origin → `ws.Hub` → validate (`limits`) → persist → `sendAck` to sender → `sendToUser` echo
-- **Frontend:** `apiFetch` (CSRF header) for REST; `wsClient` queue/ack for mutations; `GET /api/strokes` on load clears session queue
+- **REST:** cookie session → `httpapi` handlers → `db.Store` / `recognize` (list returns `{boardRev,strokes}`; recognize is revision-gated)
+- **WebSocket:** cookie + allowlisted Origin → `ws.Hub` → validate (`limits`) → `ApplyStrokeCreate|Delete|Clear` → `sendAck` to sender → `sendToUser` echo (includes `boardRev`)
+- **Frontend:** `apiFetch` (CSRF header) for REST reads/recognize; `wsClient` queue/ack for create/delete/clear; `GET /api/strokes` on load clears session queue and sets `boardRev`
 
 ## Key Principles
 
@@ -77,21 +77,21 @@ id, created, err := store.SaveStrokeIdempotent(userID, opID, color, width, start
 ### Ack then echo (WebSocket)
 
 ```go
-hub.sendAck(conn, opID, true, &id, nil, "", "")
-hub.sendToUser(uid, strokeMessage)
+hub.sendAck(conn, opID, true, &boardRev, &id, nil, nil, "", "")
+hub.sendToUser(uid, strokeMessage) // includes boardRev
 ```
 
 ### Client enqueue (frontend)
 
 ```ts
-ws.send({ type: 'stroke', opId, stroke: payload })
+ws.send({ type: 'stroke', opId, baseRev: ws.getBoardRev(), stroke: payload })
 // never silently drop when socket is closed — queue + reconnect
 ```
 
 ## Anti-Patterns
 
 - ❌ Reintroducing collaborative multi-user live canvas semantics
-- ❌ Dual-writing deletes via REST and WS for the same undo/eraser action
+- ❌ Dual-writing deletes/clear via REST and WS for the same UI action (Vue uses WS; REST clear is scripts/tests only)
 - ❌ Allocating `width×height` recognize buffers before canvas bounds checks
 - ❌ Documenting the heuristic recognizer as “AI” or calibrated confidence
 - ❌ Using `Access-Control-Allow-Origin: *` with credentialed requests

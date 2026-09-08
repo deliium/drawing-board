@@ -135,7 +135,7 @@ npm run dev
 1. **Open the app** — unauthenticated visits land on the public auth page (`/#/login`, or `/#/register` to create an account).
 2. **Create account or sign in** — email and password (8–72 bytes). A session cookie (`sid`) is set; the client sends `credentials: 'include'`.
 3. **Practice** — after auth you are redirected to the private board. Use the pencil tool to write characters on the canvas.
-4. **Save** — strokes are queued and persisted over WebSocket with per-operation `opId` acknowledgements (header shows Connecting / Saving / Saved / Offline / Sync error).
+4. **Save** — strokes are queued and persisted over WebSocket with per-operation `opId` acknowledgements and monotonic `boardRev` / `baseRev` ordering (header shows Connecting / Saving / Saved / Offline / Sync error).
 5. **Logout** — use Logout on the board to clear the session and return to the auth page.
 
 Registration and login are **not** on the board header; they live only on the public auth routes.
@@ -254,16 +254,16 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 | Secure cookies missing on `http://localhost` compose | Use HTTPS at the browser, or avoid `APP_ENV=production` for plain-HTTP demos |
 
 ### Drawing Endpoints
-- `GET /api/strokes` - Get user's saved strokes (authenticated)
-- `POST /api/strokes/clear` - Clear all user's strokes (authenticated)
-- `POST /api/strokes/delete?id={id}` - Delete specific stroke (authenticated)
+- `GET /api/strokes` — `{ "boardRev": <n>, "strokes": [...] }` for the authenticated user (reload source of truth)
+- `POST /api/strokes/clear` — revision-gated clear via the same store helper as WS (`opId`/`baseRev` optional in body; server may generate). Returns `{ "ok": true, "boardRev": <n> }`. **Vue board uses WS `clear`** so other tabs receive a live echo; REST clear is for scripts/tests and does not fan out over the hub
+- `POST /api/strokes/delete?id={id}` — thin REST delete wrapper (UI uses WS delete)
 
 ### Recognition Endpoint
-- `POST /api/recognize` — Recognize drawn characters `{ topN: 10, width: 300, height: 300 }` (authenticated). Body is params only (strokes come from the user store). Max body **4 KiB**.
+- `POST /api/recognize` — Recognize drawn characters `{ topN: 10, width: 300, height: 300, boardRev: <n> }` (authenticated). Body is params only (strokes come from the user store at that revision). Max body **4 KiB**. Success: `{ "boardRev": <n>, "candidates": [...] }`. Mismatch: `409` `{ "error": "stale_revision", "message": "…", "boardRev": <current> }`.
 
 | HTTP | Code | Meaning |
 |------|------|---------|
-| 400 | `bad_json` | Body not JSON |
+| 400 | `bad_json` | Body not JSON (includes missing `boardRev`) |
 | 400 | `payload_too_large` | Body exceeds 4 KiB |
 | 400 | `invalid_dimensions` | `width`/`height` outside 1…2048 or pixel product too large |
 | 400 | `invalid_top_n` | Present `topN` outside 1…32 (omitted → default 10) |
@@ -271,39 +271,52 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 | 400 | `too_many_points` | Per-stroke or total point caps exceeded |
 | 400 | `invalid_stroke_data` | NaN/Inf/out-of-range coords in stored strokes |
 | 401 | `unauthorized` | No session |
+| 409 | `stale_revision` | Request `boardRev` ≠ store revision |
 | 429 | `rate_limited` | Per-user recognize rate exceeded (30/min, burst 5; **per process replica**) |
 | 503 | `recognizer_unavailable` | No recognizer configured |
 | 500 | `internal_error` | Store/recognizer failure (no raw error text) |
 
-Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (`topN: 10`, ~300px canvas, width 1–20) is unchanged.
+Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (`topN: 10`, ~300px canvas, width 1–20) is unchanged. Recognize is enabled in the UI only when sync status is **Saved**, the WS queue is empty, and there is at least one stroke.
 
 ### WebSocket
 - `WS /ws` - Authenticated **private persist + echo** channel (cookie session required)
 
 The hub delivers messages only to connections belonging to the same `user_id` (multi-tab same account receives echoes; other users never see your strokes). This is **not** a collaborative/shared board.
 
-Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**60/min**, burst 20; per process replica). Points per stroke ≤ **2048**; coords in **-512…4096**; line width **1…20**; color `#RGB` / `#RRGGBB` / `#RRGGBBAA`. Each mutating message requires a client `opId` (≤ **36** chars). Creates are idempotent on `(user_id, op_id)` in SQLite.
+Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**60/min**, burst 20; per process replica). Points per stroke ≤ **2048**; coords in **-512…4096**; line width **1…20**; color `#RGB` / `#RRGGBB` / `#RRGGBBAA`. Each mutating message requires a client `opId` (≤ **36** chars) and `baseRev` (strict equality with the server’s monotonic per-user `boardRev`). Creates are idempotent on active `(user_id, op_id)`; after clear/tombstone the same create `opId` returns `op_cancelled`.
 
 **WebSocket Messages:**
 ```json
-// Send stroke (idempotent persist for the authenticated user; ack to sender; echo to that user's connections)
-{"type":"stroke","opId":"550e8400-e29b-41d4-a716-446655440000","stroke":{"points":[{"x":10,"y":20}],"color":"#1d4ed8","width":4,"clientId":"abc","startedAtUnixMs":1690000000000}}
+// Create (idempotent while active; ack + echo include boardRev)
+{"type":"stroke","opId":"550e8400-e29b-41d4-a716-446655440000","baseRev":12,"stroke":{"points":[{"x":10,"y":20}],"color":"#1d4ed8","width":4,"clientId":"abc","startedAtUnixMs":1690000000000}}
 
-// Delete stroke (scoped to the authenticated user; ack to sender; echo to that user's connections)
-{"type":"delete","opId":"550e8400-e29b-41d4-a716-446655440001","delete":123}
+// Delete by stroke id
+{"type":"delete","opId":"550e8400-e29b-41d4-a716-446655440001","baseRev":12,"delete":123}
 
-// Acknowledgement (confirmation for the originating connection)
-{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":true,"strokeId":456}
-{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440001","ok":true,"delete":123}
+// Delete / cancel by create opId (pending or persisted)
+{"type":"delete","opId":"550e8400-e29b-41d4-a716-446655440002","baseRev":12,"deleteOpId":"550e8400-e29b-41d4-a716-446655440000"}
+
+// Clear board (tombstones prior create opIds; Vue primary path)
+{"type":"clear","opId":"550e8400-e29b-41d4-a716-446655440003","baseRev":12}
+
+// Acknowledgements
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":true,"boardRev":13,"strokeId":456}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440001","ok":true,"boardRev":13,"delete":123}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440003","ok":true,"boardRev":13,"clear":true}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":false,"error":"stale_board","message":"board revision mismatch","boardRev":14}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":false,"error":"op_cancelled","message":"create cancelled","boardRev":13}
 {"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":false,"error":"rate_limited","message":"too many strokes"}
+
+// Clear echo to the user's other tabs
+{"type":"clear","opId":"550e8400-e29b-41d4-a716-446655440003","boardRev":13,"clear":true}
 
 // Frame-level rejection without a bound opId (not persisted)
 {"type":"error","error":"bad_json","message":"invalid JSON message"}
 ```
 
-WS error / nack codes include `bad_json`, `payload_too_large`, `invalid_stroke`, `invalid_op_id`, `too_many_points`, `invalid_coordinates`, `rate_limited`, `internal_error`. Soft validation prefers an `ack` nack (when `opId` is known) or `error` frame over disconnect; oversize frames may close the connection after the read-limit error.
+WS error / nack codes include `bad_json`, `payload_too_large`, `invalid_stroke`, `invalid_op_id`, `too_many_points`, `invalid_coordinates`, `rate_limited`, `stale_board`, `op_cancelled`, `internal_error`. Soft validation prefers an `ack` nack (when `opId` is known) or `error` frame over disconnect; oversize frames may close the connection after the read-limit error.
 
-The Vue client keeps a **bounded in-memory queue** (32 ops), reconnects with exponential backoff, and retries until ack / nack / attempt budget. Header status: **Connecting… / Saving… / Saved / Offline — retrying… / Sync error**. Unmatched inbound strokes remain non-authoritative (ignores foreign live creates). Full page reload uses `GET /api/strokes` as source of truth and drops the session queue (no durable offline storage in this iteration). DEV builds `console.debug` WS frames without toasts.
+The Vue client keeps a **bounded in-memory queue** (32 ops), reconnects with exponential backoff, and retries until ack / nack / attempt budget. Each outbound mutate stamps `baseRev` from the latest known `boardRev`. Header status: **Connecting… / Saving… / Saved / Offline — retrying… / Sync error**. Recognize stays disabled until **Saved** with an empty queue. Undo/erase work for pending (`deleteOpId` / drop) and acknowledged strokes. Unmatched inbound stroke creates remain non-authoritative. Full page reload uses `GET /api/strokes` (`boardRev` + strokes) as source of truth and drops the session queue (no durable offline storage in this iteration). On `stale_board`, the client reloads from REST. DEV builds `console.debug` WS frames without toasts.
 
 **Operator extras (optional Nginx):** `client_max_body_size` on `/api/recognize`, `limit_req` for multi-instance deployments. In-process limits are per replica only.
 ## Recognition System
@@ -336,7 +349,7 @@ Verbose server log prefixes for privacy and persistence:
 
 | Prefix | Meaning |
 |--------|---------|
-| `[ws.Handle]` | Connect/disconnect (`userID`, remote), inbound stroke/delete, save/delete INFO, upgrade/read errors, stroke reject codes |
+| `[ws.Handle]` | Connect/disconnect (`userID`, remote), inbound stroke/delete/clear + `baseRev`, save/delete/clear INFO with `boardRev`, upgrade/read errors, reject codes |
 | `[ws.sendToUser]` | Delivery to one user's connections; `recipients=` should stay within that account (e.g. 1–N tabs) |
 | `[httpapi.ListStrokes]` / `[httpapi.ClearStrokes]` / `[httpapi.DeleteStroke]` | Authenticated REST entry (`userID`), clear count, delete success, store errors |
 | `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), stroke/point/candidate counts — no coordinates |

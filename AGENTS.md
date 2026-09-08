@@ -37,11 +37,12 @@ docker/               # compose / nginx helpers
 | File | Purpose |
 |------|---------|
 | `cmd/server/main.go` | Server wiring, env, listen |
-| `internal/ws/handler.go` | WS upgrade, ingest, ack/echo |
+| `internal/ws/handler.go` | WS upgrade, ingest, ack/echo, boardRev mutates |
 | `internal/httpapi/handlers.go` | REST strokes / recognize |
+| `internal/db/board.go` | boardRev transactional create/delete/clear |
 | `web/src/pages/BoardPage.vue` | Practice canvas UI |
-| `web/src/services/wsClient.ts` | WS queue / reconnect / status |
-| `web/src/services/strokeSync.ts` | Merge ack/echo into local strokes |
+| `web/src/services/wsClient.ts` | WS queue / reconnect / status / baseRev |
+| `web/src/services/strokeSync.ts` | Merge ack/echo/clear into local strokes |
 | `Makefile` | Dev/build/docker targets |
 | `README.md` | Operator + API contract |
 

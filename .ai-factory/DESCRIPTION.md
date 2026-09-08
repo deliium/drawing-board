@@ -22,8 +22,8 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 
 - Public login/register; private board after session
 - Pencil / eraser / undo / clear on canvas
-- WebSocket stroke persist + echo with `opId` ack and idempotent SQLite creates
-- REST list/clear strokes; recognize via `POST /api/recognize`
+- WebSocket stroke persist + echo with `opId` ack, `boardRev`/`baseRev` ordering, and idempotent SQLite creates
+- REST list strokes (`boardRev` envelope); recognize revision-gated; clear available via WS (primary) or REST helper
 - Heuristic pattern recognizer (default); optional `ONNX_MODEL` path currently falls back to heuristic
 - Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
 
