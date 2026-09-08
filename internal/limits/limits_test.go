@@ -89,6 +89,25 @@ func TestValidateStrokeMeta(t *testing.T) {
 	}
 }
 
+func TestValidateOpID(t *testing.T) {
+	if err := ValidateOpID("550e8400-e29b-41d4-a716-446655440000"); err != nil {
+		t.Fatalf("valid uuid: %v", err)
+	}
+	if err := ValidateOpID(""); !errors.Is(err, ErrInvalidOpID) {
+		t.Fatalf("empty: %v", err)
+	}
+	long := strings.Repeat("a", MaxOpIDLen+1)
+	if err := ValidateOpID(long); !errors.Is(err, ErrInvalidOpID) {
+		t.Fatalf("too long: %v", err)
+	}
+	if err := ValidateOpID("bad\nid"); !errors.Is(err, ErrInvalidOpID) {
+		t.Fatalf("control: %v", err)
+	}
+	if got := ErrorCode(ErrInvalidOpID); got != "invalid_op_id" {
+		t.Fatalf("ErrorCode: %s", got)
+	}
+}
+
 func TestValidateStrokePoints(t *testing.T) {
 	if err := ValidateStrokePoints(nil); !errors.Is(err, ErrInvalidStroke) {
 		t.Fatalf("empty: %v", err)

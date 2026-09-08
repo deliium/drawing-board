@@ -135,7 +135,7 @@ npm run dev
 1. **Open the app** — unauthenticated visits land on the public auth page (`/#/login`, or `/#/register` to create an account).
 2. **Create account or sign in** — email and password (8–72 bytes). A session cookie (`sid`) is set; the client sends `credentials: 'include'`.
 3. **Practice** — after auth you are redirected to the private board. Use the pencil tool to write characters on the canvas.
-4. **Save** — strokes are persisted for your account as you draw (WebSocket echo assigns server ids).
+4. **Save** — strokes are queued and persisted over WebSocket with per-operation `opId` acknowledgements (header shows Connecting / Saving / Saved / Offline / Sync error).
 5. **Logout** — use Logout on the board to clear the session and return to the auth page.
 
 Registration and login are **not** on the board header; they live only on the public auth routes.
@@ -282,23 +282,28 @@ Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (
 
 The hub delivers messages only to connections belonging to the same `user_id` (multi-tab same account receives echoes; other users never see your strokes). This is **not** a collaborative/shared board.
 
-Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**60/min**, burst 20; per process replica). Points per stroke ≤ **2048**; coords in **-512…4096**; line width **1…20**; color `#RGB` / `#RRGGBB` / `#RRGGBBAA`.
+Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**60/min**, burst 20; per process replica). Points per stroke ≤ **2048**; coords in **-512…4096**; line width **1…20**; color `#RGB` / `#RRGGBB` / `#RRGGBBAA`. Each mutating message requires a client `opId` (≤ **36** chars). Creates are idempotent on `(user_id, op_id)` in SQLite.
 
 **WebSocket Messages:**
 ```json
-// Send stroke (saved for the authenticated user, then echoed to that user's connections)
-{"type":"stroke","stroke":{"points":[{"x":10,"y":20}],"color":"#1d4ed8","width":4,"clientId":"abc","startedAtUnixMs":1690000000000}}
+// Send stroke (idempotent persist for the authenticated user; ack to sender; echo to that user's connections)
+{"type":"stroke","opId":"550e8400-e29b-41d4-a716-446655440000","stroke":{"points":[{"x":10,"y":20}],"color":"#1d4ed8","width":4,"clientId":"abc","startedAtUnixMs":1690000000000}}
 
-// Delete stroke (scoped to the authenticated user, echoed to that user's connections)
-{"type":"delete","delete":123}
+// Delete stroke (scoped to the authenticated user; ack to sender; echo to that user's connections)
+{"type":"delete","opId":"550e8400-e29b-41d4-a716-446655440001","delete":123}
 
-// Validation / rate-limit rejection (not persisted; not echoed as a stroke)
-{"type":"error","error":"too_many_points","message":"too many points"}
+// Acknowledgement (confirmation for the originating connection)
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":true,"strokeId":456}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440001","ok":true,"delete":123}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":false,"error":"rate_limited","message":"too many strokes"}
+
+// Frame-level rejection without a bound opId (not persisted)
+{"type":"error","error":"bad_json","message":"invalid JSON message"}
 ```
 
-WS error codes include `bad_json`, `payload_too_large`, `invalid_stroke`, `too_many_points`, `invalid_coordinates`, `rate_limited`. Soft validation prefers an error frame over disconnect; oversize frames may close the connection after the read-limit error.
+WS error / nack codes include `bad_json`, `payload_too_large`, `invalid_stroke`, `invalid_op_id`, `too_many_points`, `invalid_coordinates`, `rate_limited`, `internal_error`. Soft validation prefers an `ack` nack (when `opId` is known) or `error` frame over disconnect; oversize frames may close the connection after the read-limit error.
 
-The frontend treats unmatched inbound strokes as non-authoritative (ignores foreign live strokes) and only merges echoes that match a pending local stroke. DEV builds `console.debug` WS error frames without toasts.
+The Vue client keeps a **bounded in-memory queue** (32 ops), reconnects with exponential backoff, and retries until ack / nack / attempt budget. Header status: **Connecting… / Saving… / Saved / Offline — retrying… / Sync error**. Unmatched inbound strokes remain non-authoritative (ignores foreign live creates). Full page reload uses `GET /api/strokes` as source of truth and drops the session queue (no durable offline storage in this iteration). DEV builds `console.debug` WS frames without toasts.
 
 **Operator extras (optional Nginx):** `client_max_body_size` on `/api/recognize`, `limit_req` for multi-instance deployments. In-process limits are per replica only.
 ## Recognition System

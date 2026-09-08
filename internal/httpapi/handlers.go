@@ -36,6 +36,7 @@ type Stroke struct {
 	Width           int           `json:"width"`
 	ClientID        string        `json:"clientId"`
 	StartedAtUnixMs int64         `json:"startedAtUnixMs"`
+	OpID            string        `json:"opId,omitempty"`
 }
 
 type RecognizeRequest struct {
@@ -108,7 +109,15 @@ func (a *API) ListStrokes(w http.ResponseWriter, r *http.Request) {
 		for _, p := range s.Points {
 			pts = append(pts, StrokePoint{X: p.X, Y: p.Y})
 		}
-		out = append(out, Stroke{ID: s.ID, Points: pts, Color: s.Color, Width: s.Width, ClientID: "", StartedAtUnixMs: s.StartedAtUnixMs})
+		out = append(out, Stroke{
+			ID:              s.ID,
+			Points:          pts,
+			Color:           s.Color,
+			Width:           s.Width,
+			ClientID:        "",
+			StartedAtUnixMs: s.StartedAtUnixMs,
+			OpID:            s.OpID,
+		})
 	}
 	writeJSON(w, 200, out)
 }

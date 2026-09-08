@@ -69,14 +69,18 @@ type Stroke struct {
 	Width           int     `json:"width"`
 	ClientID        string  `json:"clientId"`
 	StartedAtUnixMs int64   `json:"startedAtUnixMs"`
+	OpID            string  `json:"opId,omitempty"`
 }
 
 type message struct {
-	Type    string  `json:"type"`
-	Stroke  *Stroke `json:"stroke,omitempty"`
-	Delete  *int64  `json:"delete,omitempty"`
-	Error   string  `json:"error,omitempty"`
-	Message string  `json:"message,omitempty"`
+	Type     string  `json:"type"`
+	OpID     string  `json:"opId,omitempty"`
+	Stroke   *Stroke `json:"stroke,omitempty"`
+	Delete   *int64  `json:"delete,omitempty"`
+	StrokeID *int64  `json:"strokeId,omitempty"`
+	OK       *bool   `json:"ok,omitempty"`
+	Error    string  `json:"error,omitempty"`
+	Message  string  `json:"message,omitempty"`
 }
 
 // writeMessageFn writes a text frame to a connection. Tests may override Hub.writeFn.
@@ -144,6 +148,40 @@ func (h *Hub) sendToUser(userID int64, v interface{}) {
 		}
 	}
 	log.Printf("[ws.sendToUser] DEBUG userID=%d recipients=%d", userID, recipients)
+}
+
+func (h *Hub) sendToConn(conn *websocket.Conn, v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("[ws.sendToConn] ERROR marshal: %v", err)
+		return
+	}
+	write := h.writeFn
+	if write == nil {
+		write = defaultWriteMessage
+	}
+	if err := write(conn, b); err != nil {
+		if !isBenignNetErr(err) {
+			log.Printf("[ws.sendToConn] ERROR write: %v", err)
+		}
+	}
+}
+
+func (h *Hub) sendAck(conn *websocket.Conn, opID string, ok bool, strokeID *int64, deleteID *int64, errCode, errMsg string) {
+	ack := message{
+		Type:    "ack",
+		OpID:    opID,
+		OK:      &ok,
+		Error:   errCode,
+		Message: errMsg,
+	}
+	if strokeID != nil {
+		ack.StrokeID = strokeID
+	}
+	if deleteID != nil {
+		ack.Delete = deleteID
+	}
+	h.sendToConn(conn, ack)
 }
 
 func (h *Hub) sendErrorToConn(conn *websocket.Conn, code, msg string) {
@@ -269,18 +307,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		case "stroke":
 			handleStrokeMessage(conn, uid, m)
 		case "delete":
-			if m.Delete == nil || *m.Delete <= 0 {
-				log.Printf("[ws.Handle] WARN reject type=delete userID=%d code=invalid_stroke", uid)
-				globalHub.sendErrorToConn(conn, "invalid_stroke", "invalid delete id")
-				continue
-			}
-			log.Printf("[ws.Handle] DEBUG inbound type=delete userID=%d id=%d", uid, *m.Delete)
-			if err := globalHub.Store.DeleteStroke(uid, *m.Delete); err != nil {
-				log.Printf("[ws.Handle] ERROR delete stroke userID=%d id=%d: %v", uid, *m.Delete, err)
-			} else {
-				log.Printf("[ws.Handle] INFO delete applied userID=%d id=%d", uid, *m.Delete)
-			}
-			globalHub.sendToUser(uid, m)
+			handleDeleteMessage(conn, uid, m)
 		default:
 			log.Printf("[ws.Handle] DEBUG inbound type=%s userID=%d (ignored)", m.Type, uid)
 		}
@@ -288,12 +315,20 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleStrokeMessage(conn *websocket.Conn, uid int64, m message) {
+	opID := m.OpID
+	if opID == "" && m.Stroke != nil {
+		opID = m.Stroke.OpID
+	}
+	if err := limits.ValidateOpID(opID); err != nil {
+		nackStroke(conn, uid, opID, limits.ErrorCode(err), limits.SafeMessage(err))
+		return
+	}
 	if m.Stroke == nil {
-		rejectStroke(conn, uid, "invalid_stroke", "missing stroke object")
+		nackStroke(conn, uid, opID, "invalid_stroke", "missing stroke object")
 		return
 	}
 	if !strokeLimiter.Allow(uid) {
-		rejectStroke(conn, uid, "rate_limited", "too many strokes")
+		nackStroke(conn, uid, opID, "rate_limited", "too many strokes")
 		return
 	}
 
@@ -302,16 +337,16 @@ func handleStrokeMessage(conn *websocket.Conn, uid int64, m message) {
 		pts = append(pts, limits.FloatPoint{X: p.X, Y: p.Y})
 	}
 	if err := limits.ValidateStrokePoints(pts); err != nil {
-		rejectStroke(conn, uid, limits.ErrorCode(err), limits.SafeMessage(err))
+		nackStroke(conn, uid, opID, limits.ErrorCode(err), limits.SafeMessage(err))
 		return
 	}
 	if err := limits.ValidateStrokeMeta(m.Stroke.Width, m.Stroke.Color, m.Stroke.ClientID); err != nil {
-		rejectStroke(conn, uid, limits.ErrorCode(err), limits.SafeMessage(err))
+		nackStroke(conn, uid, opID, limits.ErrorCode(err), limits.SafeMessage(err))
 		return
 	}
 
 	pointCount := len(m.Stroke.Points)
-	log.Printf("[ws.Handle] DEBUG inbound type=stroke userID=%d points=%d", uid, pointCount)
+	log.Printf("[ws.Handle] DEBUG inbound type=stroke userID=%d opId=%s points=%d", uid, opID, pointCount)
 	if m.Stroke.StartedAtUnixMs == 0 {
 		m.Stroke.StartedAtUnixMs = time.Now().UnixMilli()
 	}
@@ -319,16 +354,57 @@ func handleStrokeMessage(conn *websocket.Conn, uid int64, m message) {
 	for _, p := range m.Stroke.Points {
 		dbPts = append(dbPts, db.StrokePoint{X: p.X, Y: p.Y})
 	}
-	id, err := globalHub.Store.SaveStroke(uid, m.Stroke.Color, m.Stroke.Width, m.Stroke.StartedAtUnixMs, dbPts)
+	id, created, err := globalHub.Store.SaveStrokeIdempotent(uid, opID, m.Stroke.Color, m.Stroke.Width, m.Stroke.StartedAtUnixMs, dbPts)
 	if err != nil {
-		log.Printf("[ws.Handle] ERROR save stroke userID=%d: %v", uid, err)
-		rejectStroke(conn, uid, "internal_error", "failed to save stroke")
+		log.Printf("[ws.Handle] ERROR save stroke userID=%d opId=%s: %v", uid, opID, err)
+		nackStroke(conn, uid, opID, "internal_error", "failed to save stroke")
 		return
 	}
 	m.Stroke.ID = id
-	log.Printf("[ws.Handle] INFO stroke saved userID=%d id=%d", uid, id)
-	metrics.Add("ws_stroke_total{result=ok}", 1)
+	m.Stroke.OpID = opID
+	m.OpID = opID
+	if created {
+		log.Printf("[ws.Handle] INFO stroke saved userID=%d id=%d opId=%s", uid, id, opID)
+		metrics.Add("ws_stroke_total{result=ok}", 1)
+	} else {
+		log.Printf("[ws.Handle] INFO stroke idempotent hit userID=%d id=%d opId=%s", uid, id, opID)
+		metrics.Add("ws_stroke_total{result=idempotent}", 1)
+	}
+	globalHub.sendAck(conn, opID, true, &id, nil, "", "")
 	globalHub.sendToUser(uid, m)
+}
+
+func handleDeleteMessage(conn *websocket.Conn, uid int64, m message) {
+	opID := m.OpID
+	if err := limits.ValidateOpID(opID); err != nil {
+		ok := false
+		globalHub.sendAck(conn, opID, ok, nil, nil, limits.ErrorCode(err), limits.SafeMessage(err))
+		log.Printf("[ws.Handle] WARN reject type=delete userID=%d code=%s", uid, limits.ErrorCode(err))
+		return
+	}
+	if m.Delete == nil || *m.Delete <= 0 {
+		log.Printf("[ws.Handle] WARN reject type=delete userID=%d opId=%s code=invalid_stroke", uid, opID)
+		globalHub.sendAck(conn, opID, false, nil, nil, "invalid_stroke", "invalid delete id")
+		return
+	}
+	delID := *m.Delete
+	log.Printf("[ws.Handle] DEBUG inbound type=delete userID=%d id=%d opId=%s", uid, delID, opID)
+	if err := globalHub.Store.DeleteStroke(uid, delID); err != nil {
+		log.Printf("[ws.Handle] ERROR delete stroke userID=%d id=%d opId=%s: %v", uid, delID, opID, err)
+		globalHub.sendAck(conn, opID, false, nil, &delID, "internal_error", "failed to delete stroke")
+		return
+	}
+	log.Printf("[ws.Handle] INFO delete applied userID=%d id=%d opId=%s", uid, delID, opID)
+	globalHub.sendAck(conn, opID, true, nil, &delID, "", "")
+	echo := message{Type: "delete", Delete: &delID, OpID: opID}
+	globalHub.sendToUser(uid, echo)
+}
+
+func nackStroke(conn *websocket.Conn, uid int64, opID, code, message string) {
+	log.Printf("[ws.Handle] WARN reject type=stroke userID=%d opId=%s code=%s", uid, opID, code)
+	metrics.Add("ws_stroke_total{result=reject}", 1)
+	metrics.Add("ws_stroke_reject_total{code="+code+"}", 1)
+	globalHub.sendAck(conn, opID, false, nil, nil, code, message)
 }
 
 func rejectStroke(conn *websocket.Conn, uid int64, code, message string) {

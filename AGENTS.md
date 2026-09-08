@@ -1,0 +1,74 @@
+# AGENTS.md
+
+> Structural map for AI agents. Keep factual; update when layout changes. Product detail lives in `.ai-factory/DESCRIPTION.md` and `README.md`.
+
+## Project Overview
+
+Personal Japanese handwriting practice app (Vue + Go + SQLite). Strokes are private per user; WebSocket is persist/echo, not collaboration.
+
+## Tech Stack
+
+- **Programming language:** Go 1.22+, TypeScript
+- **Framework:** Gorilla mux/WebSocket; Vue 3 + Vite
+- **Database:** SQLite
+- **ORM:** none (raw SQL in `internal/db`)
+
+## Project Structure
+
+```text
+cmd/server/           # backend entrypoint
+internal/auth/        # sessions, passwords
+internal/db/          # SQLite store
+internal/httpapi/     # REST API
+internal/ws/          # WebSocket hub
+internal/limits/      # shared validators
+internal/recognize/   # handwriting recognition
+internal/security/    # CORS/CSRF/origins
+internal/metrics/     # counters
+internal/docguard/    # README honesty tests
+web/src/              # Vue SPA
+web/tests/            # Vitest
+.ai-factory/          # plans, patches, AI context
+docker/               # compose / nginx helpers
+```
+
+## Key Entry Points
+
+| File | Purpose |
+|------|---------|
+| `cmd/server/main.go` | Server wiring, env, listen |
+| `internal/ws/handler.go` | WS upgrade, ingest, ack/echo |
+| `internal/httpapi/handlers.go` | REST strokes / recognize |
+| `web/src/pages/BoardPage.vue` | Practice canvas UI |
+| `web/src/services/wsClient.ts` | WS queue / reconnect / status |
+| `web/src/services/strokeSync.ts` | Merge ack/echo into local strokes |
+| `Makefile` | Dev/build/docker targets |
+| `README.md` | Operator + API contract |
+
+## Documentation
+
+| Document | Path | Description |
+|----------|------|-------------|
+| README | `README.md` | Product, API, WS, security, troubleshooting |
+| Plans | `.ai-factory/plans/` | Completed feature plans |
+| Patches | `.ai-factory/patches/` | Self-improvement notes |
+
+## AI Context Files
+
+| File | Purpose |
+|------|---------|
+| `AGENTS.md` | This map |
+| `.ai-factory/DESCRIPTION.md` | Stack and product summary |
+| `.ai-factory/ARCHITECTURE.md` | Module boundaries and dependency rules |
+| `.ai-factory/RULES.md` | Hard project axioms |
+| `.ai-factory/rules/base.md` | Day-to-day conventions |
+| `.ai-factory/ROADMAP.md` | Milestone checklist |
+| `.ai-factory/config.yaml` | AI Factory paths/language/git |
+
+## Agent Rules
+
+- Prefer small, focused diffs; do not expand scope beyond the asked task.
+- Decompose shell commands — avoid `cd x && y` when sequential tool calls work.
+- Example incorrect: `git checkout main && git pull`
+- Example correct: first `git checkout main`, then `git pull origin main`
+- Follow `.ai-factory/RULES.md` and architecture dependency rules when implementing.

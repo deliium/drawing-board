@@ -26,13 +26,14 @@ type User struct {
 type StrokePoint struct { X float64; Y float64 }
 
 type Stroke struct {
-	ID int64
-	UserID int64
-	Color string
-	Width int
+	ID              int64
+	UserID          int64
+	Color           string
+	Width           int
 	StartedAtUnixMs int64
-	Points []StrokePoint
-	CreatedAt time.Time
+	OpID            string
+	Points          []StrokePoint
+	CreatedAt       time.Time
 }
 
 func Open(path string) (*Store, error) {
@@ -136,6 +137,16 @@ func migrate(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_strokes_user ON strokes(user_id);
 	CREATE INDEX IF NOT EXISTS idx_stroke_points_stroke ON stroke_points(stroke_id);
 	`)
+	if err != nil {
+		return err
+	}
+	// Existing DBs: add nullable op_id for idempotent WS creates (ignore if already present).
+	if _, err := db.Exec(`ALTER TABLE strokes ADD COLUMN op_id TEXT`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return err
+		}
+	}
+	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_strokes_user_op ON strokes(user_id, op_id) WHERE op_id IS NOT NULL`)
 	return err
 }
 
@@ -182,39 +193,113 @@ func (s *Store) GetUserByID(id int64) (*User, error) {
 }
 
 func (s *Store) SaveStroke(userID int64, color string, width int, startedAtUnixMs int64, points []StrokePoint) (int64, error) {
+	id, _, err := s.SaveStrokeIdempotent(userID, "", color, width, startedAtUnixMs, points)
+	return id, err
+}
+
+// SaveStrokeIdempotent inserts a stroke. When opID is non-empty, a second insert with the same
+// (user_id, op_id) returns the existing stroke id with created=false.
+func (s *Store) SaveStrokeIdempotent(userID int64, opID, color string, width int, startedAtUnixMs int64, points []StrokePoint) (strokeID int64, created bool, err error) {
 	tx, err := s.SQL.Begin()
-	if err != nil { return 0, err }
-	defer func(){ if err != nil { _ = tx.Rollback() } }()
-	res, err := tx.Exec("INSERT INTO strokes(user_id, color, width, started_at_unix_ms) VALUES(?, ?, ?, ?)", userID, color, width, startedAtUnixMs)
-	if err != nil { return 0, err }
-	strokeID, err := res.LastInsertId()
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, false, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var res sql.Result
+	if opID == "" {
+		res, err = tx.Exec(
+			"INSERT INTO strokes(user_id, color, width, started_at_unix_ms) VALUES(?, ?, ?, ?)",
+			userID, color, width, startedAtUnixMs,
+		)
+	} else {
+		res, err = tx.Exec(
+			"INSERT INTO strokes(user_id, color, width, started_at_unix_ms, op_id) VALUES(?, ?, ?, ?, ?)",
+			userID, color, width, startedAtUnixMs, opID,
+		)
+	}
+	if err != nil {
+		if opID != "" && isUniqueConstraintErr(err) {
+			_ = tx.Rollback()
+			existing, lookupErr := s.strokeIDByOp(userID, opID)
+			if lookupErr != nil {
+				return 0, false, lookupErr
+			}
+			return existing, false, nil
+		}
+		return 0, false, err
+	}
+	strokeID, err = res.LastInsertId()
+	if err != nil {
+		return 0, false, err
+	}
 	if len(points) > 0 {
-		stmt, err := tx.Prepare("INSERT INTO stroke_points(stroke_id, x, y) VALUES(?, ?, ?)")
-		if err != nil { return 0, err }
+		stmt, prepErr := tx.Prepare("INSERT INTO stroke_points(stroke_id, x, y) VALUES(?, ?, ?)")
+		if prepErr != nil {
+			err = prepErr
+			return 0, false, err
+		}
 		for _, p := range points {
-			if _, err := stmt.Exec(strokeID, p.X, p.Y); err != nil { _ = stmt.Close(); return 0, err }
+			if _, err = stmt.Exec(strokeID, p.X, p.Y); err != nil {
+				_ = stmt.Close()
+				return 0, false, err
+			}
 		}
 		_ = stmt.Close()
 	}
-	if err := tx.Commit(); err != nil { return 0, err }
-	return strokeID, nil
+	if err = tx.Commit(); err != nil {
+		return 0, false, err
+	}
+	return strokeID, true, nil
+}
+
+func (s *Store) strokeIDByOp(userID int64, opID string) (int64, error) {
+	var id int64
+	err := s.SQL.QueryRow(
+		"SELECT id FROM strokes WHERE user_id = ? AND op_id = ?",
+		userID, opID,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") || strings.Contains(msg, "constraint failed")
 }
 
 func (s *Store) ListStrokesByUser(userID int64) ([]Stroke, error) {
-	rows, err := s.SQL.Query("SELECT id, color, width, started_at_unix_ms, created_at FROM strokes WHERE user_id = ? ORDER BY id", userID)
-	if err != nil { return nil, err }
+	rows, err := s.SQL.Query("SELECT id, color, width, started_at_unix_ms, created_at, COALESCE(op_id, '') FROM strokes WHERE user_id = ? ORDER BY id", userID)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var out []Stroke
 	for rows.Next() {
 		var st Stroke
 		st.UserID = userID
-		if err := rows.Scan(&st.ID, &st.Color, &st.Width, &st.StartedAtUnixMs, &st.CreatedAt); err != nil { return nil, err }
+		if err := rows.Scan(&st.ID, &st.Color, &st.Width, &st.StartedAtUnixMs, &st.CreatedAt, &st.OpID); err != nil {
+			return nil, err
+		}
 		pr, err := s.SQL.Query("SELECT x, y FROM stroke_points WHERE stroke_id = ? ORDER BY id", st.ID)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		for pr.Next() {
 			var x, y float64
-			if err := pr.Scan(&x, &y); err != nil { pr.Close(); return nil, err }
+			if err := pr.Scan(&x, &y); err != nil {
+				pr.Close()
+				return nil, err
+			}
 			st.Points = append(st.Points, StrokePoint{X: x, Y: y})
 		}
 		pr.Close()

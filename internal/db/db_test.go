@@ -350,3 +350,47 @@ func TestListStrokesByUser_CrossUserIsolation(t *testing.T) {
 		t.Fatalf("Expected 1 stroke for user A, got %d", len(strokesA))
 	}
 }
+
+func TestSaveStrokeIdempotent(t *testing.T) {
+	tmpFile := "test_save_stroke_idempotent.db"
+	defer os.Remove(tmpFile)
+
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.SQL.Close()
+
+	userID, err := store.CreateUser("idem@example.com", "password123")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	pts := []StrokePoint{{X: 1, Y: 2}, {X: 3, Y: 4}}
+	id1, created1, err := store.SaveStrokeIdempotent(userID, "op-aaa-bbb-ccc-ddd-eeeeeeeeeeee", "#111111", 2, 100, pts)
+	if err != nil || !created1 || id1 == 0 {
+		t.Fatalf("first save: id=%d created=%v err=%v", id1, created1, err)
+	}
+
+	id2, created2, err := store.SaveStrokeIdempotent(userID, "op-aaa-bbb-ccc-ddd-eeeeeeeeeeee", "#222222", 5, 200, pts)
+	if err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	if created2 {
+		t.Fatal("second save should be idempotent hit")
+	}
+	if id2 != id1 {
+		t.Fatalf("expected same id %d, got %d", id1, id2)
+	}
+
+	strokes, err := store.ListStrokesByUser(userID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(strokes) != 1 {
+		t.Fatalf("expected 1 stroke, got %d", len(strokes))
+	}
+	if strokes[0].OpID != "op-aaa-bbb-ccc-ddd-eeeeeeeeeeee" {
+		t.Fatalf("opId: %q", strokes[0].OpID)
+	}
+}

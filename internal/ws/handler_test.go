@@ -296,3 +296,40 @@ func TestPoint_JSON(t *testing.T) {
 		t.Fatalf("Expected Y 20.5, got %f", unmarshaled.Y)
 	}
 }
+
+func TestSendAck_ToConnOnly(t *testing.T) {
+	store := &db.Store{}
+	authSvc := &auth.Service{}
+	hub := NewHub(store, authSvc)
+
+	connA := &websocket.Conn{}
+	connB := &websocket.Conn{}
+	hub.add(connA, 1)
+	hub.add(connB, 1)
+
+	var mu sync.Mutex
+	delivered := map[*websocket.Conn]int{}
+	hub.writeFn = func(c *websocket.Conn, data []byte) error {
+		mu.Lock()
+		delivered[c]++
+		mu.Unlock()
+		var m message
+		_ = json.Unmarshal(data, &m)
+		if m.Type != "ack" || m.OpID != "op-1" || m.OK == nil || !*m.OK {
+			t.Errorf("unexpected ack payload: %+v", m)
+		}
+		return nil
+	}
+
+	id := int64(42)
+	hub.sendAck(connA, "op-1", true, &id, nil, "", "")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if delivered[connA] != 1 {
+		t.Fatalf("expected ack only on connA, got %d", delivered[connA])
+	}
+	if delivered[connB] != 0 {
+		t.Fatalf("ack must not fan out to other tabs via sendAck, got %d", delivered[connB])
+	}
+}

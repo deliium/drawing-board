@@ -36,6 +36,7 @@ const (
 
 	MaxColorLen    = 32
 	MaxClientIDLen = 64
+	MaxOpIDLen     = 36
 
 	RecognizeRatePerMin = 30
 	RecognizeBurst      = 5
@@ -44,13 +45,14 @@ const (
 )
 
 var (
-	ErrInvalidDimensions = errors.New("invalid_dimensions")
-	ErrInvalidTopN       = errors.New("invalid_top_n")
-	ErrTooManyStrokes    = errors.New("too_many_strokes")
-	ErrTooManyPoints     = errors.New("too_many_points")
-	ErrInvalidStrokeData = errors.New("invalid_stroke_data")
-	ErrInvalidStroke     = errors.New("invalid_stroke")
+	ErrInvalidDimensions  = errors.New("invalid_dimensions")
+	ErrInvalidTopN        = errors.New("invalid_top_n")
+	ErrTooManyStrokes     = errors.New("too_many_strokes")
+	ErrTooManyPoints      = errors.New("too_many_points")
+	ErrInvalidStrokeData  = errors.New("invalid_stroke_data")
+	ErrInvalidStroke      = errors.New("invalid_stroke")
 	ErrInvalidCoordinates = errors.New("invalid_coordinates")
+	ErrInvalidOpID        = errors.New("invalid_op_id")
 )
 
 var colorRe = regexp.MustCompile(`(?i)^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$`)
@@ -105,6 +107,22 @@ func ValidateStrokeMeta(width int, color, clientID string) error {
 	for _, r := range clientID {
 		if unicode.IsControl(r) {
 			return fmt.Errorf("%w: clientId has control chars", ErrInvalidStroke)
+		}
+	}
+	return nil
+}
+
+// ValidateOpID requires a non-empty operation id within MaxOpIDLen with no control chars.
+func ValidateOpID(opID string) error {
+	if opID == "" {
+		return fmt.Errorf("%w: opId required", ErrInvalidOpID)
+	}
+	if len(opID) > MaxOpIDLen {
+		return fmt.Errorf("%w: opId too long", ErrInvalidOpID)
+	}
+	for _, r := range opID {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("%w: opId has control chars", ErrInvalidOpID)
 		}
 	}
 	return nil
@@ -183,6 +201,8 @@ func ErrorCode(err error) string {
 		return "invalid_stroke"
 	case errors.Is(err, ErrInvalidCoordinates):
 		return "invalid_coordinates"
+	case errors.Is(err, ErrInvalidOpID):
+		return "invalid_op_id"
 	default:
 		return "invalid_stroke"
 	}
@@ -206,6 +226,8 @@ func SafeMessage(err error) string {
 		return "stored stroke data is invalid"
 	case errors.Is(err, ErrInvalidCoordinates):
 		return "coordinates out of range"
+	case errors.Is(err, ErrInvalidOpID):
+		return "invalid operation id"
 	case errors.Is(err, ErrInvalidStroke):
 		return "invalid stroke"
 	default:

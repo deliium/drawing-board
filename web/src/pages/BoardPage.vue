@@ -3,7 +3,11 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiFetch } from '../services/apiClient'
 import { trackMetric } from '../services/migrationHealth'
-import { createWsClient, type InboundAppMessage } from '../services/wsClient'
+import {
+  createWsClient,
+  type InboundAppMessage,
+  type SyncStatus,
+} from '../services/wsClient'
 import { applyIncomingMessage, type Point, type Stroke } from '../services/strokeSync'
 import { sessionContext, setAuthenticatedUser } from '../services/sessionContext'
 
@@ -19,29 +23,53 @@ function boardDebug(...args: unknown[]) {
   if (wsDebug) console.debug('[BoardPage.ws]', ...args)
 }
 
+function newOpId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `op-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+const statusLabels: Record<SyncStatus, string> = {
+  connecting: 'Connecting…',
+  saving: 'Saving…',
+  saved: 'Saved',
+  offline: 'Offline — retrying…',
+  error: 'Sync error',
+}
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const color = ref('#1d4ed8')
 const width = ref(4)
 const tool = ref<'pencil' | 'eraser'>('pencil')
 const candidates = ref<Candidate[] | null>(null)
 const strokes = ref<Stroke[]>([])
-const wsReady = ref(false)
+const syncStatus = ref<SyncStatus>('connecting')
 const user = computed(() => sessionContext.user)
 const clientId = Math.random().toString(36).slice(2)
+const statusLabel = computed(() => statusLabels[syncStatus.value])
 
-const ws = createWsClient(
-  (msg: InboundAppMessage) => {
+const ws = createWsClient({
+  onMessage: (msg: InboundAppMessage) => {
     trackMetric('ws.message', 1)
     handleIncoming(msg)
   },
-  (ready) => {
-    wsReady.value = ready
+  onStatusChange: (status) => {
+    syncStatus.value = status
   },
-)
+  onQueueReject: (reason) => {
+    boardDebug('queue reject', reason)
+    syncStatus.value = 'error'
+  },
+})
 
 function handleIncoming(message: InboundAppMessage) {
-  const result = applyIncomingMessage(strokes.value, message as Parameters<typeof applyIncomingMessage>[1])
-  if (result.action === 'ignored-foreign-stroke' || result.action === 'ignored-unknown-delete') {
+  const result = applyIncomingMessage(strokes.value, message)
+  if (
+    result.action === 'ignored-foreign-stroke' ||
+    result.action === 'ignored-unknown-delete' ||
+    result.action === 'ignored-duplicate-ack'
+  ) {
     boardDebug('ignore inbound', result.action, result.reason)
     return
   }
@@ -51,8 +79,10 @@ function handleIncoming(message: InboundAppMessage) {
 
 async function loadStrokes() {
   if (!user.value) return
+  ws.clearPending()
   try {
-    strokes.value = await apiFetch<Stroke[]>('/api/strokes')
+    const rows = await apiFetch<Stroke[]>('/api/strokes')
+    strokes.value = rows.map((s) => ({ ...s, sync: 'saved' as const }))
   } catch {
     strokes.value = []
   }
@@ -64,6 +94,7 @@ async function doLogout() {
   } catch {
     // still clear local session so the learner can reach the auth page
   }
+  ws.clearPending()
   ws.close()
   setAuthenticatedUser(null)
   strokes.value = []
@@ -74,6 +105,7 @@ async function doLogout() {
 
 async function doClear() {
   await apiFetch('/api/strokes/clear', { method: 'POST' })
+  ws.clearPending()
   strokes.value = []
 }
 
@@ -114,13 +146,20 @@ function hitTest(p: Point, s: Stroke): boolean {
   return false
 }
 
+function enqueueDelete(strokeId: number) {
+  const opId = newOpId()
+  ws.send({ type: 'delete', opId, delete: strokeId })
+}
+
 function doUndo() {
   if (!strokes.value.length) return
   const last = strokes.value[strokes.value.length - 1]
   strokes.value = strokes.value.slice(0, -1)
+  if (last.opId && (!last.id || last.sync === 'pending' || last.sync === 'saving')) {
+    ws.dropOp(last.opId)
+  }
   if (last.id && last.id > 0) {
-    apiFetch(`/api/strokes/delete?id=${last.id}`, { method: 'POST' }).catch(() => {})
-    ws.send({ type: 'delete', delete: last.id })
+    enqueueDelete(last.id)
   }
 }
 
@@ -181,8 +220,7 @@ function setupDrawing() {
       const target = [...strokes.value].reverse().find((s) => hitTest(p, s))
       if (target?.id) {
         strokes.value = strokes.value.filter((st) => st.id !== target.id)
-        ws.send({ type: 'delete', delete: target.id })
-        apiFetch(`/api/strokes/delete?id=${target.id}`, { method: 'POST' }).catch(() => {})
+        enqueueDelete(target.id)
       }
       return
     }
@@ -211,15 +249,33 @@ function setupDrawing() {
     }
     drawing = false
     if (points.length >= 2) {
+      const opId = newOpId()
       const stroke: Stroke = {
         points: [...points],
         color: color.value,
         width: width.value,
         clientId,
         startedAtUnixMs: Date.now(),
+        opId,
+        sync: 'pending',
       }
-      strokes.value = [...strokes.value, stroke]
-      ws.send({ type: 'stroke', stroke })
+      const queued = ws.send({
+        type: 'stroke',
+        opId,
+        stroke: {
+          points: stroke.points,
+          color: stroke.color,
+          width: stroke.width,
+          clientId: stroke.clientId,
+          startedAtUnixMs: stroke.startedAtUnixMs,
+          opId,
+        },
+      })
+      if (!queued) {
+        boardDebug('stroke not queued; queue full')
+        return
+      }
+      strokes.value = [...strokes.value, { ...stroke, sync: 'saving' }]
     }
     points = []
     ctx.closePath()
@@ -250,14 +306,17 @@ watch(
   user,
   (next) => {
     if (!next) {
+      ws.clearPending()
       ws.close()
       return
     }
-    const wsUrl = location.port === '5173'
-      ? `ws://${location.hostname}:5173/ws`
-      : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+    const wsUrl =
+      location.port === '5173'
+        ? `ws://${location.hostname}:5173/ws`
+        : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
     boardDebug('connect session', wsUrl)
     ws.connect(wsUrl)
+    loadStrokes()
   },
   { immediate: true },
 )
@@ -298,8 +357,8 @@ onMounted(() => {
       <button :disabled="tool === 'pencil'" @click="tool = 'pencil'">Pencil</button>
       <button :disabled="tool === 'eraser'" @click="tool = 'eraser'">Eraser</button>
       <button :disabled="strokes.length === 0" @click="doUndo">Undo</button>
-      <span style="margin-left: auto; opacity: 0.7">
-        {{ wsReady ? 'Practice ready' : 'Connecting…' }}
+      <span style="margin-left: auto; opacity: 0.7" :data-sync-status="syncStatus">
+        {{ statusLabel }}
       </span>
       <button @click="doClear">Clear</button>
       <button @click="doLogout">Logout</button>
