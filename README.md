@@ -132,10 +132,13 @@ npm run dev
 ## Usage Guide
 
 ### Getting Started
-1. **Register**: Create a new account with your email and password
-2. **Login**: Sign in to open your private practice session
-3. **Practice**: Use the pencil tool to write characters on the canvas
-4. **Save**: Strokes are persisted for your account as you draw (WebSocket echo assigns server ids)
+1. **Open the app** — unauthenticated visits land on the public auth page (`/#/login`, or `/#/register` to create an account).
+2. **Create account or sign in** — email and password (minimum 8 characters). A session cookie (`sid`) is set; the client sends `credentials: 'include'`.
+3. **Practice** — after auth you are redirected to the private board. Use the pencil tool to write characters on the canvas.
+4. **Save** — strokes are persisted for your account as you draw (WebSocket echo assigns server ids).
+5. **Logout** — use Logout on the board to clear the session and return to the auth page.
+
+Registration and login are **not** on the board header; they live only on the public auth routes.
 
 ### Drawing Tools
 - **Color Picker**: Choose any color for your pencil
@@ -148,8 +151,8 @@ npm run dev
 ### Handwriting Recognition
 1. **Draw a character** on the canvas (try 一, 二, 三, 十)
 2. **Click "Recognize"** button
-3. **View results** showing possible characters with confidence scores
-4. **Try different patterns** to see how the AI recognizes various shapes
+3. **View results** showing possible characters with heuristic match scores (not calibrated confidence)
+4. **Try different patterns** to see how the recognizer ranks candidates
 
 ### Keyboard Shortcuts
 - **Ctrl+Z** (Windows/Linux) or **Cmd+Z** (Mac): Undo last stroke
@@ -194,10 +197,26 @@ ONNX_MODEL=./models/handwriting.onnx go run ./cmd/server
 ## API Reference
 
 ### Authentication Endpoints
-- `POST /api/register` - Register new user `{ email, password }`
-- `POST /api/login` - Login user `{ email, password }`
-- `POST /api/logout` - Logout current user
-- `GET /api/me` - Get current user info
+Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`). Auth handlers log with prefixes `[auth.Register]`, `[auth.Login]`, `[auth.Logout]`, `[auth.Me]` (level filtered via `LOG_LEVEL`).
+
+- `POST /api/register` — Create account `{ email, password }` (password min 8). Success `200` `{ id, email }` + session cookie.
+- `POST /api/login` — Sign in `{ email, password }`. Success `200` `{ id, email }` + session cookie.
+- `POST /api/logout` — Clear session cookie. Success `200` `{ "ok": "true" }`.
+- `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }`.
+
+Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
+
+| HTTP | Code | Meaning |
+|------|------|---------|
+| 400 | `bad_json` | Body not JSON |
+| 400 | `missing_fields` | Empty email or password |
+| 400 | `invalid_email` | Email fails basic format check |
+| 400 | `password_too_short` | Password shorter than 8 characters |
+| 400 | `registration_failed` | Unable to create account (includes duplicate email; does **not** return `email exists`) |
+| 401 | `invalid_credentials` | Login failed (unknown email or wrong password — same response) |
+| 401 | `unauthorized` | `/api/me` without a valid session |
+
+Password hashing is currently unsalted SHA-256; stronger KDF migration (Argon2id/bcrypt) is a follow-up hardening item. Do not treat this as production-grade password storage yet.
 
 ### Drawing Endpoints
 - `GET /api/strokes` - Get user's saved strokes (authenticated)
