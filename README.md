@@ -156,7 +156,10 @@ Registration and login are **not** on the board header; they live only on the pu
 
 ### Keyboard Shortcuts
 - **Ctrl+Z** (Windows/Linux) or **Cmd+Z** (Mac): Undo last stroke
-- **Escape**: Cancel current drawing operation
+- **Escape**: Cancel an in-progress pencil stroke (does not enqueue a create); same abort as `pointercancel`
+
+### Practice canvas coordinates
+Stroke points are stored in **CSS logical pixels** relative to the canvas layout box. The backing store uses `devicePixelRatio` (`backing = round(css × dpr)`) with a matching 2d transform so drawing stays sharp on high-DPI displays without rewriting historical coordinates. Recognize POST `width`/`height` are the **logical CSS** size (matching stroke space), not backing-store pixels. One-point taps are persisted and rendered as dots and can be erased.
 
 ## Advanced Setup
 
@@ -342,6 +345,7 @@ The application includes two recognition systems:
 3. **WebSocket connection failed**: Ensure backend is running on port 8080 and you are signed in
 4. **Frontend not loading**: Check if `npm run dev` is running on port 5173
 5. **Seeing another user's strokes**: Should not happen; verify you are on a build with per-user `sendToUser` (not global broadcast) and check logs below
+6. **Blank canvas after resize/zoom but strokes still listed**: Backing-store resize clears the bitmap; the practice canvas should redraw from `strokes` immediately. In DEV builds check `[practiceCanvas] resize … wiped=true` then a redraw; if the canvas stays blank, hard-reload so `GET /api/strokes` repaints.
 
 ### Debug Mode
 
@@ -354,6 +358,7 @@ Verbose server log prefixes for privacy and persistence:
 | `[httpapi.ListStrokes]` / `[httpapi.ClearStrokes]` / `[httpapi.DeleteStroke]` | Authenticated REST entry (`userID`), clear count, delete success, store errors |
 | `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), stroke/point/candidate counts — no coordinates |
 | `[recognize]` | Startup `recognize_debug=…`; gated diagnostics when `RECOGNIZE_DEBUG=1` (non-production) |
+| `[practiceCanvas]` | DEV-only client debug: attach/detach, resize css/dpr/backing, stroke start/commit/cancel (point counts only) |
 
 Example privacy check while two users practice: user A's stroke logs should show `sendToUser` recipient counts only for A's open tabs, never B's.
 

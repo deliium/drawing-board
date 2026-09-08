@@ -27,6 +27,8 @@ drawing-board/
 │   └── docguard/               # README honesty regression tests
 ├── web/
 │   ├── src/pages/              # AuthPage, BoardPage
+│   ├── src/canvas/             # CSS/DPR coords, drawStrokes, hitTest
+│   ├── src/composables/        # usePracticeCanvas (pointer/resize lifecycle)
 │   ├── src/services/           # apiFetch, wsClient, strokeSync
 │   ├── src/stores/             # client state
 │   ├── src/router/             # auth/guest guards
@@ -40,7 +42,7 @@ drawing-board/
 - ✅ `cmd/server` wires `internal/*` packages; packages do not import `cmd/`
 - ✅ `httpapi` and `ws` may call `db`, `auth`, `limits`, `recognize`, `metrics`
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
-- ✅ Vue `services/` owns network I/O; pages compose UI + call services
+- ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; pages compose UI + call services
 - ❌ Do not add a global WS broadcast path — delivery is `sendToUser(userID, …)` only
 - ❌ Do not put recognition rasterization / large allocations before `limits.CheckCanvas` / validators
 - ❌ Frontend must not treat unmatched inbound stroke creates as authoritative canvas state

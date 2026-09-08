@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { logicalSizeForRecognize } from '../canvas/coords'
+import { hitTest } from '../canvas/hitTest'
+import { usePracticeCanvas } from '../composables/usePracticeCanvas'
 import { apiFetch } from '../services/apiClient'
 import { trackMetric } from '../services/migrationHealth'
 import {
@@ -51,6 +54,7 @@ const clearInFlight = ref(false)
 const recognizeInFlight = ref(false)
 const recognizeAttempt = ref(0)
 const user = computed(() => sessionContext.user)
+const canvasEnabled = computed(() => Boolean(user.value))
 const clientId = Math.random().toString(36).slice(2)
 const statusLabel = computed(() => statusLabels[syncStatus.value])
 
@@ -150,9 +154,89 @@ function doClear() {
   }
 }
 
+function onStrokeComplete(points: Point[]) {
+  const opId = newOpId()
+  const stroke: Stroke = {
+    points: [...points],
+    color: color.value,
+    width: width.value,
+    clientId,
+    startedAtUnixMs: Date.now(),
+    opId,
+    sync: 'pending',
+  }
+  const queued = ws.send({
+    type: 'stroke',
+    opId,
+    baseRev: ws.getBoardRev(),
+    stroke: {
+      points: stroke.points,
+      color: stroke.color,
+      width: stroke.width,
+      clientId: stroke.clientId,
+      startedAtUnixMs: stroke.startedAtUnixMs,
+      opId,
+    },
+  })
+  if (!queued) {
+    boardDebug('stroke not queued; queue full or sync error')
+    return
+  }
+  strokes.value = [...strokes.value, { ...stroke, sync: 'saving' }]
+}
+
+function enqueueDeleteById(strokeId: number) {
+  const opId = newOpId()
+  ws.send({ type: 'delete', opId, baseRev: ws.getBoardRev(), delete: strokeId })
+}
+
+function enqueueDeleteByOpId(createOpId: string) {
+  const opId = newOpId()
+  ws.send({ type: 'delete', opId, baseRev: ws.getBoardRev(), deleteOpId: createOpId })
+}
+
+function removeStrokeLocally(target: Stroke) {
+  strokes.value = strokes.value.filter((st) => st !== target && st.opId !== target.opId)
+  if (target.opId && (!target.id || target.sync === 'pending' || target.sync === 'saving')) {
+    ws.dropOp(target.opId)
+    enqueueDeleteByOpId(target.opId)
+    return
+  }
+  if (target.id && target.id > 0) {
+    enqueueDeleteById(target.id)
+  }
+}
+
+function onEraseAt(point: Point) {
+  const target = [...strokes.value].reverse().find((s) => hitTest(point, s))
+  if (target) {
+    removeStrokeLocally(target)
+  }
+}
+
+function doUndo() {
+  if (!strokes.value.length || syncStatus.value === 'error') return
+  const last = strokes.value[strokes.value.length - 1]
+  removeStrokeLocally(last)
+}
+
+const practiceCanvas = usePracticeCanvas({
+  canvasRef,
+  enabled: canvasEnabled,
+  strokes,
+  tool,
+  color,
+  width,
+  syncStatus,
+  onStrokeComplete,
+  onEraseAt,
+})
+
 async function recognize() {
   const canvas = canvasRef.value
   if (!canvas || !recognizeEnabled.value) return
+  const logical =
+    practiceCanvas.getLogicalSize() ?? logicalSizeForRecognize(canvas)
   const requestedRev = ws.getBoardRev()
   const attempt = ++recognizeAttempt.value
   recognizeInFlight.value = true
@@ -161,8 +245,8 @@ async function recognize() {
       method: 'POST',
       body: JSON.stringify({
         topN: 10,
-        width: canvas.width,
-        height: canvas.height,
+        width: logical.width,
+        height: logical.height,
         boardRev: requestedRev,
       }),
     })
@@ -196,189 +280,8 @@ async function recognize() {
   }
 }
 
-function hitTest(p: Point, s: Stroke): boolean {
-  const threshold = Math.max(6, s.width + 4)
-  for (let i = 0; i < s.points.length - 1; i += 1) {
-    const a = s.points[i]
-    const b = s.points[i + 1]
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const len2 = dx * dx + dy * dy
-    if (len2 === 0) continue
-    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
-    const cx = a.x + t * dx
-    const cy = a.y + t * dy
-    if (Math.hypot(p.x - cx, p.y - cy) <= threshold) return true
-  }
-  return false
-}
-
-function enqueueDeleteById(strokeId: number) {
-  const opId = newOpId()
-  ws.send({ type: 'delete', opId, baseRev: ws.getBoardRev(), delete: strokeId })
-}
-
-function enqueueDeleteByOpId(createOpId: string) {
-  const opId = newOpId()
-  ws.send({ type: 'delete', opId, baseRev: ws.getBoardRev(), deleteOpId: createOpId })
-}
-
-function removeStrokeLocally(target: Stroke) {
-  strokes.value = strokes.value.filter((st) => st !== target && st.opId !== target.opId)
-  if (target.opId && (!target.id || target.sync === 'pending' || target.sync === 'saving')) {
-    ws.dropOp(target.opId)
-    enqueueDeleteByOpId(target.opId)
-    return
-  }
-  if (target.id && target.id > 0) {
-    enqueueDeleteById(target.id)
-  }
-}
-
-function doUndo() {
-  if (!strokes.value.length || syncStatus.value === 'error') return
-  const last = strokes.value[strokes.value.length - 1]
-  removeStrokeLocally(last)
-}
-
-function syncCanvasSize() {
-  const canvas = canvasRef.value
-  if (!canvas) return
-  const rect = canvas.getBoundingClientRect()
-  const targetWidth = Math.round(rect.width)
-  const targetHeight = Math.round(rect.height)
-  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-    canvas.width = targetWidth
-    canvas.height = targetHeight
-  }
-}
-
-watch(
-  strokes,
-  (next) => {
-    const canvas = canvasRef.value
-    if (!canvas) return
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
-    if (!ctx) return
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    for (const s of next) {
-      if (s.points.length < 2) continue
-      ctx.strokeStyle = s.color
-      ctx.lineWidth = s.width
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      ctx.beginPath()
-      ctx.moveTo(s.points[0].x, s.points[0].y)
-      for (let i = 1; i < s.points.length; i += 1) ctx.lineTo(s.points[i].x, s.points[i].y)
-      ctx.stroke()
-    }
-  },
-  { deep: true },
-)
-
-function setupDrawing() {
-  const canvas = canvasRef.value
-  if (!canvas || !user.value) return () => {}
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return () => {}
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-
-  const rect = () => canvas.getBoundingClientRect()
-  let drawing = false
-  let points: Point[] = []
-  const toPoint = (e: PointerEvent): Point => ({
-    x: e.clientX - rect().left,
-    y: e.clientY - rect().top,
-  })
-
-  const onDown = (e: PointerEvent) => {
-    if (syncStatus.value === 'error') return
-    const p = toPoint(e)
-    if (tool.value === 'eraser') {
-      const target = [...strokes.value].reverse().find((s) => hitTest(p, s))
-      if (target) {
-        removeStrokeLocally(target)
-      }
-      return
-    }
-    drawing = true
-    points = [p]
-    ctx.strokeStyle = color.value
-    ctx.lineWidth = width.value
-    ctx.beginPath()
-    ctx.moveTo(p.x, p.y)
-    canvas.setPointerCapture(e.pointerId)
-  }
-
-  const onMove = (e: PointerEvent) => {
-    if (!drawing || tool.value !== 'pencil') return
-    const p = toPoint(e)
-    points.push(p)
-    ctx.lineTo(p.x, p.y)
-    ctx.stroke()
-  }
-
-  const onUp = () => {
-    if (!drawing || tool.value !== 'pencil') {
-      drawing = false
-      points = []
-      return
-    }
-    drawing = false
-    if (points.length >= 2) {
-      const opId = newOpId()
-      const stroke: Stroke = {
-        points: [...points],
-        color: color.value,
-        width: width.value,
-        clientId,
-        startedAtUnixMs: Date.now(),
-        opId,
-        sync: 'pending',
-      }
-      const queued = ws.send({
-        type: 'stroke',
-        opId,
-        baseRev: ws.getBoardRev(),
-        stroke: {
-          points: stroke.points,
-          color: stroke.color,
-          width: stroke.width,
-          clientId: stroke.clientId,
-          startedAtUnixMs: stroke.startedAtUnixMs,
-          opId,
-        },
-      })
-      if (!queued) {
-        boardDebug('stroke not queued; queue full or sync error')
-        return
-      }
-      strokes.value = [...strokes.value, { ...stroke, sync: 'saving' }]
-    }
-    points = []
-    ctx.closePath()
-  }
-
-  canvas.addEventListener('pointerdown', onDown)
-  canvas.addEventListener('pointermove', onMove)
-  canvas.addEventListener('pointerup', onUp)
-  canvas.addEventListener('pointercancel', onUp)
-
-  return () => {
-    canvas.removeEventListener('pointerdown', onDown)
-    canvas.removeEventListener('pointermove', onMove)
-    canvas.removeEventListener('pointerup', onUp)
-    canvas.removeEventListener('pointercancel', onUp)
-  }
-}
-
 onMounted(() => {
   loadStrokes()
-  syncCanvasSize()
-  const onResize = () => syncCanvasSize()
-  window.addEventListener('resize', onResize)
-  onUnmounted(() => window.removeEventListener('resize', onResize))
 })
 
 watch(
@@ -396,15 +299,6 @@ watch(
     boardDebug('connect session', wsUrl)
     ws.connect(wsUrl)
     loadStrokes()
-  },
-  { immediate: true },
-)
-
-watch(
-  [canvasRef, user],
-  () => {
-    const cleanup = setupDrawing()
-    return cleanup
   },
   { immediate: true },
 )
