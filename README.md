@@ -183,6 +183,10 @@ COOKIE_KEY=your-secure-random-cookie-key-here
 # Log level for auth/session/perimeter lines (DEBUG|INFO|WARN|ERROR). Default shows DEBUG.
 # LOG_LEVEL=info
 
+# Handwriting diagnostic dumps (coordinates / ASCII canvas). Off by default.
+# Ignored when APP_ENV=production. Startup logs INFO [recognize] recognize_debug=true|false.
+# RECOGNIZE_DEBUG=1
+
 # ONNX model for advanced recognition
 ONNX_MODEL=./models/handwriting.onnx
 ```
@@ -255,12 +259,30 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 - `POST /api/strokes/delete?id={id}` - Delete specific stroke (authenticated)
 
 ### Recognition Endpoint
-- `POST /api/recognize` - Recognize drawn characters `{ topN: 10, width: 300, height: 300 }`
+- `POST /api/recognize` — Recognize drawn characters `{ topN: 10, width: 300, height: 300 }` (authenticated). Body is params only (strokes come from the user store). Max body **4 KiB**.
+
+| HTTP | Code | Meaning |
+|------|------|---------|
+| 400 | `bad_json` | Body not JSON |
+| 400 | `payload_too_large` | Body exceeds 4 KiB |
+| 400 | `invalid_dimensions` | `width`/`height` outside 1…2048 or pixel product too large |
+| 400 | `invalid_top_n` | Present `topN` outside 1…32 (omitted → default 10) |
+| 400 | `too_many_strokes` | More than 64 stored strokes |
+| 400 | `too_many_points` | Per-stroke or total point caps exceeded |
+| 400 | `invalid_stroke_data` | NaN/Inf/out-of-range coords in stored strokes |
+| 401 | `unauthorized` | No session |
+| 429 | `rate_limited` | Per-user recognize rate exceeded (30/min, burst 5; **per process replica**) |
+| 503 | `recognizer_unavailable` | No recognizer configured |
+| 500 | `internal_error` | Store/recognizer failure (no raw error text) |
+
+Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (`topN: 10`, ~300px canvas, width 1–20) is unchanged.
 
 ### WebSocket
 - `WS /ws` - Authenticated **private persist + echo** channel (cookie session required)
 
 The hub delivers messages only to connections belonging to the same `user_id` (multi-tab same account receives echoes; other users never see your strokes). This is **not** a collaborative/shared board.
+
+Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**60/min**, burst 20; per process replica). Points per stroke ≤ **2048**; coords in **-512…4096**; line width **1…20**; color `#RGB` / `#RRGGBB` / `#RRGGBBAA`.
 
 **WebSocket Messages:**
 ```json
@@ -269,9 +291,16 @@ The hub delivers messages only to connections belonging to the same `user_id` (m
 
 // Delete stroke (scoped to the authenticated user, echoed to that user's connections)
 {"type":"delete","delete":123}
+
+// Validation / rate-limit rejection (not persisted; not echoed as a stroke)
+{"type":"error","error":"too_many_points","message":"too many points"}
 ```
 
-The frontend treats unmatched inbound strokes as non-authoritative (ignores foreign live strokes) and only merges echoes that match a pending local stroke.
+WS error codes include `bad_json`, `payload_too_large`, `invalid_stroke`, `too_many_points`, `invalid_coordinates`, `rate_limited`. Soft validation prefers an error frame over disconnect; oversize frames may close the connection after the read-limit error.
+
+The frontend treats unmatched inbound strokes as non-authoritative (ignores foreign live strokes) and only merges echoes that match a pending local stroke. DEV builds `console.debug` WS error frames without toasts.
+
+**Operator extras (optional Nginx):** `client_max_body_size` on `/api/recognize`, `limit_req` for multi-instance deployments. In-process limits are per replica only.
 ## Recognition System
 
 The application includes two recognition systems:
@@ -291,7 +320,7 @@ The application includes two recognition systems:
 
 ### Common Issues
 1. **"Address already in use"**: Stop existing server processes with `pkill -f "go run"`
-2. **Recognition not working**: Check server logs for recognition debug output
+2. **Recognition not working**: Check `[httpapi.Recognize]` logs; enable `RECOGNIZE_DEBUG=1` locally only if you need feature dumps
 3. **WebSocket connection failed**: Ensure backend is running on port 8080 and you are signed in
 4. **Frontend not loading**: Check if `npm run dev` is running on port 5173
 5. **Seeing another user's strokes**: Should not happen; verify you are on a build with per-user `sendToUser` (not global broadcast) and check logs below
@@ -302,21 +331,19 @@ Verbose server log prefixes for privacy and persistence:
 
 | Prefix | Meaning |
 |--------|---------|
-| `[ws.Handle]` | Connect/disconnect (`userID`, remote), inbound stroke/delete, save/delete INFO, upgrade/read errors |
+| `[ws.Handle]` | Connect/disconnect (`userID`, remote), inbound stroke/delete, save/delete INFO, upgrade/read errors, stroke reject codes |
 | `[ws.sendToUser]` | Delivery to one user's connections; `recipients=` should stay within that account (e.g. 1–N tabs) |
 | `[httpapi.ListStrokes]` / `[httpapi.ClearStrokes]` / `[httpapi.DeleteStroke]` | Authenticated REST entry (`userID`), clear count, delete success, store errors |
+| `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), stroke/point/candidate counts — no coordinates |
+| `[recognize]` | Startup `recognize_debug=…`; gated diagnostics when `RECOGNIZE_DEBUG=1` (non-production) |
 
 Example privacy check while two users practice: user A's stroke logs should show `sendToUser` recipient counts only for A's open tabs, never B's.
 
 Frontend (Vite dev): browser console uses `[wsClient]` and `[BoardPage.ws]` for connect/send/ignore reasons.
 
-Recognition still logs feature/candidate analysis:
-```
-Recognition analysis for 2 strokes:
-  Features: horizontal_lines=1.0, vertical_lines=1.0, diagonal_lines=0.0
-  Patterns: has_cross=1.0, has_three_horizontal=0.0, has_two_horizontal=0.0
-  Generated 2 candidates: 十(0.95), ＋(0.80)
-```
+Default recognition logs are structured counts only (`[httpapi.Recognize] userID=… result=ok|reject code=… strokes=… candidates=…`) — **never** stroke coordinates or ASCII canvases. WS rejects log `[ws.Handle] WARN reject type=stroke userID=… code=…`.
+
+For local handwriting diagnostics (features, ASCII preview, sample coords), set `RECOGNIZE_DEBUG=1` in non-production. Production ignores the flag and logs `INFO [recognize] recognize_debug=false` (with a WARN if the flag was set).
 
 ## Development
 
@@ -345,6 +372,8 @@ drawing-board/
 │   ├── auth/           # Authentication logic
 │   ├── db/             # Database layer
 │   ├── httpapi/        # HTTP API handlers
+│   ├── limits/         # Shared stroke/recognize input bounds
+│   ├── metrics/        # Process-local reject/ok counters
 │   ├── recognize/      # Recognition algorithms
 │   └── ws/             # WebSocket handling
 ├── web/                # Vue 3 frontend
@@ -416,6 +445,7 @@ COOKIE_KEY=replace-me-with-a-long-random-cookie-key  # ≥32 bytes; required
 APP_ENV=production              # Enables Secure cookies + COOKIE_KEY validation (prod compose)
 ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in production; no wildcards
 # COOKIE_SECURE=true            # Alternative to APP_ENV=production
+# RECOGNIZE_DEBUG=1             # Local handwriting diagnostics only (ignored in production)
 ONNX_MODEL=./models/handwriting.onnx  # ONNX model path (optional)
 ```
 

@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiFetch } from '../services/apiClient'
 import { trackMetric } from '../services/migrationHealth'
-import { createWsClient, type WsMessage } from '../services/wsClient'
+import { createWsClient, type InboundAppMessage } from '../services/wsClient'
 import { applyIncomingMessage, type Point, type Stroke } from '../services/strokeSync'
 import { sessionContext, setAuthenticatedUser } from '../services/sessionContext'
 
@@ -30,7 +30,7 @@ const user = computed(() => sessionContext.user)
 const clientId = Math.random().toString(36).slice(2)
 
 const ws = createWsClient(
-  (msg: WsMessage) => {
+  (msg: InboundAppMessage) => {
     trackMetric('ws.message', 1)
     handleIncoming(msg)
   },
@@ -39,7 +39,7 @@ const ws = createWsClient(
   },
 )
 
-function handleIncoming(message: WsMessage) {
+function handleIncoming(message: InboundAppMessage) {
   const result = applyIncomingMessage(strokes.value, message as Parameters<typeof applyIncomingMessage>[1])
   if (result.action === 'ignored-foreign-stroke' || result.action === 'ignored-unknown-delete') {
     boardDebug('ignore inbound', result.action, result.reason)
@@ -87,8 +87,13 @@ async function recognize() {
     })
     candidates.value = result.candidates || []
     trackMetric('recognize.success', 1)
-  } catch {
+  } catch (err) {
     candidates.value = []
+    trackMetric('recognize.reject', 1)
+    if (wsDebug) {
+      const msg = err instanceof Error ? err.message : 'recognize failed'
+      console.debug('[BoardPage] recognize rejected:', msg)
+    }
   }
 }
 

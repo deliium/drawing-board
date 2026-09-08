@@ -9,7 +9,8 @@ export type StrokePayload = {
 
 export type StrokeMessage = { type: 'stroke'; stroke: StrokePayload }
 export type DeleteMessage = { type: 'delete'; delete: number }
-export type WsMessage = StrokeMessage | DeleteMessage
+export type ErrorMessage = { type: 'error'; error: string; message?: string }
+export type WsMessage = StrokeMessage | DeleteMessage | ErrorMessage
 
 const debugEnabled =
   typeof import.meta !== 'undefined' &&
@@ -22,8 +23,10 @@ function debug(...args: unknown[]) {
   }
 }
 
+export type InboundAppMessage = StrokeMessage | DeleteMessage
+
 export function createWsClient(
-  onMessage: (msg: WsMessage) => void,
+  onMessage: (msg: InboundAppMessage) => void,
   onReadyChange?: (ready: boolean) => void,
 ) {
   let ws: WebSocket | null = null
@@ -50,6 +53,10 @@ export function createWsClient(
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as WsMessage
+        if (msg.type === 'error') {
+          debug('inbound error frame', msg.error, msg.message)
+          return
+        }
         debug('inbound', msg.type)
         onMessage(msg)
       } catch {
@@ -58,7 +65,7 @@ export function createWsClient(
     }
   }
 
-  const send = (msg: WsMessage) => {
+  const send = (msg: Exclude<WsMessage, ErrorMessage>) => {
     if (ws?.readyState === WebSocket.OPEN) {
       debug('send', msg.type)
       ws.send(JSON.stringify(msg))
