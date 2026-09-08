@@ -59,6 +59,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
+	schemaVer, err := store.SchemaVersion()
+	if err != nil {
+		log.Fatalf("FATAL [main] schema_version: %v", err)
+	}
+	log.Printf("INFO [main] schema_version=%d learn_seed=hiragana5", schemaVer)
+	_ = db.NewLearnStore(store) // constructed for Prompt 11 attempt APIs; unused by HTTP yet
 
 	sessionStore := sessions.NewCookieStore([]byte(*cookieKey))
 	sessionStore.Options = &sessions.Options{

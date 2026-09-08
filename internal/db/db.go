@@ -76,6 +76,8 @@ func openAndInit(filename string, enableFK bool) (*sql.DB, error) {
 	}
 	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil { return db, fmt.Errorf("pragma busy_timeout: %w", err) }
 	if err := runMigrations(db); err != nil { return db, fmt.Errorf("migrate: %w", err) }
+	store := &Store{SQL: db}
+	if err := SeedHiragana5(store); err != nil { return db, fmt.Errorf("seed: %w", err) }
 	return db, nil
 }
 
