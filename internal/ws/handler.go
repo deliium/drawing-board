@@ -6,11 +6,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/limits"
+	"github.com/deliium/drawing-board/internal/metrics"
 	"github.com/deliium/drawing-board/internal/security"
 	"github.com/gorilla/websocket"
 )
@@ -22,6 +25,7 @@ var (
 		WriteBufferSize: 1024,
 		CheckOrigin:     checkOrigin,
 	}
+	strokeLimiter = limits.NewLimiter(limits.StrokeIngestPerMin, limits.StrokeIngestBurst)
 )
 
 func checkOrigin(r *http.Request) bool {
@@ -48,6 +52,11 @@ func SetAllowedOriginsForTest(origins []string) {
 	allowedOrigins = append([]string(nil), origins...)
 }
 
+// SetStrokeLimiterForTest replaces the stroke ingest limiter (tests only).
+func SetStrokeLimiterForTest(l *limits.Limiter) {
+	strokeLimiter = l
+}
+
 type Point struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
@@ -63,9 +72,11 @@ type Stroke struct {
 }
 
 type message struct {
-	Type   string  `json:"type"`
-	Stroke *Stroke `json:"stroke"`
-	Delete *int64  `json:"delete"` // stroke id to delete
+	Type    string  `json:"type"`
+	Stroke  *Stroke `json:"stroke,omitempty"`
+	Delete  *int64  `json:"delete,omitempty"`
+	Error   string  `json:"error,omitempty"`
+	Message string  `json:"message,omitempty"`
 }
 
 // writeMessageFn writes a text frame to a connection. Tests may override Hub.writeFn.
@@ -135,6 +146,22 @@ func (h *Hub) sendToUser(userID int64, v interface{}) {
 	log.Printf("[ws.sendToUser] DEBUG userID=%d recipients=%d", userID, recipients)
 }
 
+func (h *Hub) sendErrorToConn(conn *websocket.Conn, code, msg string) {
+	b, err := json.Marshal(message{
+		Type:    "error",
+		Error:   code,
+		Message: msg,
+	})
+	if err != nil {
+		return
+	}
+	write := h.writeFn
+	if write == nil {
+		write = defaultWriteMessage
+	}
+	_ = write(conn, b)
+}
+
 var globalHub *Hub
 
 // Init configures the global hub and WebSocket origin allowlist.
@@ -165,7 +192,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[ws.Handle] DEBUG disconnect userID=%d remote=%s", uid, r.RemoteAddr)
 	}()
 
-	conn.SetReadLimit(1 << 20)
+	conn.SetReadLimit(int64(limits.MaxWSMessageBytes))
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -210,7 +237,12 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	for {
 		t, data, err := conn.ReadMessage()
 		if err != nil {
-			if !isBenignNetErr(err) && !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+			if isWSReadLimitError(err) {
+				log.Printf("[ws.Handle] WARN reject type=frame userID=%d code=payload_too_large", uid)
+				metrics.Add("ws_stroke_total{result=reject}", 1)
+				metrics.Add("ws_stroke_reject_total{code=payload_too_large}", 1)
+				globalHub.sendErrorToConn(conn, "payload_too_large", "message too large")
+			} else if !isBenignNetErr(err) && !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				log.Printf("[ws.Handle] ERROR read userID=%d: %v", uid, err)
 			}
 			select {
@@ -226,34 +258,20 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 
 		var m message
 		if err := json.Unmarshal(data, &m); err != nil {
-			log.Printf("[ws.Handle] WARN bad json userID=%d: %v", uid, err)
+			log.Printf("[ws.Handle] WARN reject type=stroke userID=%d code=bad_json", uid)
+			metrics.Add("ws_stroke_total{result=reject}", 1)
+			metrics.Add("ws_stroke_reject_total{code=bad_json}", 1)
+			globalHub.sendErrorToConn(conn, "bad_json", "invalid JSON message")
 			continue
 		}
 
 		switch m.Type {
 		case "stroke":
-			if m.Stroke == nil {
-				continue
-			}
-			pointCount := len(m.Stroke.Points)
-			log.Printf("[ws.Handle] DEBUG inbound type=stroke userID=%d points=%d", uid, pointCount)
-			if m.Stroke.StartedAtUnixMs == 0 {
-				m.Stroke.StartedAtUnixMs = time.Now().UnixMilli()
-			}
-			pts := make([]db.StrokePoint, 0, pointCount)
-			for _, p := range m.Stroke.Points {
-				pts = append(pts, db.StrokePoint{X: p.X, Y: p.Y})
-			}
-			id, err := globalHub.Store.SaveStroke(uid, m.Stroke.Color, m.Stroke.Width, m.Stroke.StartedAtUnixMs, pts)
-			if err != nil {
-				log.Printf("[ws.Handle] ERROR save stroke userID=%d: %v", uid, err)
-			} else {
-				m.Stroke.ID = id
-				log.Printf("[ws.Handle] INFO stroke saved userID=%d id=%d", uid, id)
-			}
-			globalHub.sendToUser(uid, m)
+			handleStrokeMessage(conn, uid, m)
 		case "delete":
-			if m.Delete == nil {
+			if m.Delete == nil || *m.Delete <= 0 {
+				log.Printf("[ws.Handle] WARN reject type=delete userID=%d code=invalid_stroke", uid)
+				globalHub.sendErrorToConn(conn, "invalid_stroke", "invalid delete id")
 				continue
 			}
 			log.Printf("[ws.Handle] DEBUG inbound type=delete userID=%d id=%d", uid, *m.Delete)
@@ -269,6 +287,65 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleStrokeMessage(conn *websocket.Conn, uid int64, m message) {
+	if m.Stroke == nil {
+		rejectStroke(conn, uid, "invalid_stroke", "missing stroke object")
+		return
+	}
+	if !strokeLimiter.Allow(uid) {
+		rejectStroke(conn, uid, "rate_limited", "too many strokes")
+		return
+	}
+
+	pts := make([]limits.FloatPoint, 0, len(m.Stroke.Points))
+	for _, p := range m.Stroke.Points {
+		pts = append(pts, limits.FloatPoint{X: p.X, Y: p.Y})
+	}
+	if err := limits.ValidateStrokePoints(pts); err != nil {
+		rejectStroke(conn, uid, limits.ErrorCode(err), limits.SafeMessage(err))
+		return
+	}
+	if err := limits.ValidateStrokeMeta(m.Stroke.Width, m.Stroke.Color, m.Stroke.ClientID); err != nil {
+		rejectStroke(conn, uid, limits.ErrorCode(err), limits.SafeMessage(err))
+		return
+	}
+
+	pointCount := len(m.Stroke.Points)
+	log.Printf("[ws.Handle] DEBUG inbound type=stroke userID=%d points=%d", uid, pointCount)
+	if m.Stroke.StartedAtUnixMs == 0 {
+		m.Stroke.StartedAtUnixMs = time.Now().UnixMilli()
+	}
+	dbPts := make([]db.StrokePoint, 0, pointCount)
+	for _, p := range m.Stroke.Points {
+		dbPts = append(dbPts, db.StrokePoint{X: p.X, Y: p.Y})
+	}
+	id, err := globalHub.Store.SaveStroke(uid, m.Stroke.Color, m.Stroke.Width, m.Stroke.StartedAtUnixMs, dbPts)
+	if err != nil {
+		log.Printf("[ws.Handle] ERROR save stroke userID=%d: %v", uid, err)
+		rejectStroke(conn, uid, "internal_error", "failed to save stroke")
+		return
+	}
+	m.Stroke.ID = id
+	log.Printf("[ws.Handle] INFO stroke saved userID=%d id=%d", uid, id)
+	metrics.Add("ws_stroke_total{result=ok}", 1)
+	globalHub.sendToUser(uid, m)
+}
+
+func rejectStroke(conn *websocket.Conn, uid int64, code, message string) {
+	log.Printf("[ws.Handle] WARN reject type=stroke userID=%d code=%s", uid, code)
+	metrics.Add("ws_stroke_total{result=reject}", 1)
+	metrics.Add("ws_stroke_reject_total{code="+code+"}", 1)
+	globalHub.sendErrorToConn(conn, code, message)
+}
+
+func isWSReadLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "read limit") || strings.Contains(msg, "message too big")
+}
+
 func isBenignNetErr(err error) bool {
 	if err == nil {
 		return false
@@ -278,4 +355,19 @@ func isBenignNetErr(err error) bool {
 		return true
 	}
 	return websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway)
+}
+
+// ValidateStrokeForTest runs shared stroke validation (unit tests).
+func ValidateStrokeForTest(s *Stroke) error {
+	if s == nil {
+		return limits.ErrInvalidStroke
+	}
+	pts := make([]limits.FloatPoint, 0, len(s.Points))
+	for _, p := range s.Points {
+		pts = append(pts, limits.FloatPoint{X: p.X, Y: p.Y})
+	}
+	if err := limits.ValidateStrokePoints(pts); err != nil {
+		return err
+	}
+	return limits.ValidateStrokeMeta(s.Width, s.Color, s.ClientID)
 }

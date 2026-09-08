@@ -14,6 +14,7 @@ import (
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
 	"github.com/deliium/drawing-board/internal/httpapi"
+	"github.com/deliium/drawing-board/internal/limits"
 	"github.com/deliium/drawing-board/internal/recognize"
 	"github.com/deliium/drawing-board/internal/security"
 	"github.com/deliium/drawing-board/internal/ws"
@@ -81,7 +82,12 @@ func main() {
 
 	recognize.ConfigureDebug(appEnv, os.Getenv("RECOGNIZE_DEBUG"))
 
-	api := &httpapi.API{Auth: authSvc, Store: store, Recognizer: recognizer}
+	api := &httpapi.API{
+		Auth:             authSvc,
+		Store:            store,
+		Recognizer:       recognizer,
+		RecognizeLimiter: limits.NewLimiter(limits.RecognizeRatePerMin, limits.RecognizeBurst),
+	}
 	ws.Init(store, authSvc, allowedOrigins)
 
 	r := mux.NewRouter()
