@@ -1,0 +1,41 @@
+# Example TLS termination at Nginx (operator-owned certificates).
+# Copy patterns into the main server block or a separate listen 443 server.
+#
+# Assumptions for this app:
+# - Browser Origin must match ALLOWED_ORIGINS exactly (e.g. https://learn.example.com).
+# - Go backend listens on internal HTTP (:8080); TLS terminates here (or upstream LB).
+# - X-Forwarded-* may be set for logs; the Go app does not use them for origin allowlisting.
+#
+# server {
+#     listen 443 ssl http2;
+#     server_name learn.example.com;
+#
+#     ssl_certificate     /etc/nginx/certs/fullchain.pem;
+#     ssl_certificate_key /etc/nginx/certs/privkey.pem;
+#
+#     root /usr/share/nginx/html;
+#     index index.html;
+#
+#     location / {
+#         try_files $uri $uri/ /index.html;
+#     }
+#
+#     location /api/ {
+#         proxy_pass http://backend:8080;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header Origin $http_origin;
+#         proxy_set_header X-Forwarded-Proto https;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#     }
+#
+#     location /ws {
+#         proxy_pass http://backend:8080;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade $http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#         proxy_set_header Host $host;
+#         proxy_set_header Origin $http_origin;
+#         proxy_set_header X-Forwarded-Proto https;
+#     }
+# }

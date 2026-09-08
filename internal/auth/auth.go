@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/security"
 	"github.com/gorilla/sessions"
 )
 
@@ -169,6 +170,7 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "registration_failed", "Unable to create account. If you already have one, sign in.")
 		return
 	}
+	s.issueCSRFCookie(w)
 	authLog("INFO", "[auth.Register] userID="+strconv.FormatInt(uid, 10)+" upgraded=false")
 	writeJSON(w, http.StatusOK, userView{ID: uid, Email: c.Email})
 }
@@ -227,6 +229,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusInternalServerError, "invalid_credentials", "Email or password is incorrect.")
 		return
 	}
+	s.issueCSRFCookie(w)
 	authLog("INFO", "[auth.Login] userID="+strconv.FormatInt(u.ID, 10)+" upgraded="+strconv.FormatBool(upgraded))
 	writeJSON(w, http.StatusOK, userView{ID: u.ID, Email: u.Email})
 }
@@ -258,6 +261,12 @@ func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) Me(w http.ResponseWriter, r *http.Request) {
+	// Ensure CSRF bootstrap even on 401 so anonymous login/register can proceed.
+	if _, err := security.EnsureCSRFCookie(w, r, s.Secure); err != nil {
+		authLog("ERROR", "[auth.Me] csrf ensure failed: "+err.Error())
+		writeAuthError(w, http.StatusInternalServerError, "unauthorized", "")
+		return
+	}
 	uid, ok := s.UserIDFromRequest(r)
 	if !ok {
 		authLog("DEBUG", "[auth.Me] code=unauthorized")
@@ -277,6 +286,16 @@ func (s *Service) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	authLog("DEBUG", "[auth.Me] userID="+strconv.FormatInt(uid, 10))
 	writeJSON(w, http.StatusOK, userView{ID: u.ID, Email: u.Email})
+}
+
+func (s *Service) issueCSRFCookie(w http.ResponseWriter) {
+	token, err := security.NewCSRFToken()
+	if err != nil {
+		authLog("ERROR", "[auth.issueCSRFCookie] RNG failed: "+err.Error())
+		return
+	}
+	security.SetCSRFCookie(w, token, s.Secure)
+	authLog("DEBUG", "[auth.issueCSRFCookie] issued")
 }
 
 func (s *Service) UserIDFromRequest(r *http.Request) (int64, bool) {

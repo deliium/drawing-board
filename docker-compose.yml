@@ -4,13 +4,18 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: drawing-board-backend
-    ports:
-      - "8080:8080"
+    # Backend stays on the internal compose network only. Reach it via the frontend
+    # Nginx proxy (/api, /ws) or `docker compose exec backend …`.
+    expose:
+      - "8080"
     environment:
       - ADDR=:8080
       - DB_PATH=/data/drawing-board.db
       - APP_ENV=production
       - COOKIE_KEY=replace-me-with-a-long-random-cookie-key
+      # Browser-facing origin. Local HTTP compose demos use http://localhost;
+      # real deployments MUST set https://your.public.origin (Secure cookies need HTTPS).
+      - ALLOWED_ORIGINS=http://localhost
     volumes:
       - backend_data:/data
     networks:

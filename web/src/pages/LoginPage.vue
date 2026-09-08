@@ -61,6 +61,7 @@ const ERROR_COPY: Record<string, string> = {
   password_too_long: 'Password must be at most 72 bytes.',
   registration_failed: 'Unable to create account. If you already have one, sign in.',
   invalid_credentials: 'Email or password is incorrect.',
+  csrf_rejected: 'Security check failed. Refresh the page and try again.',
 }
 
 const maxPasswordBytes = 72

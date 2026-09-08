@@ -10,6 +10,9 @@ services:
       - ADDR=:8080
       - DB_PATH=/data/drawing-board-dev.db
       - COOKIE_KEY=dev-secret-key-change-me-32bytes!!
+      # Docker frontend is served on :3000. Primary local DX is host Vite (:5173) +
+      # `make run`; code defaults cover Vite when ALLOWED_ORIGINS is unset.
+      - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
     volumes:
       - backend_dev_data:/data
       - ./:/app

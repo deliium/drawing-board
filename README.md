@@ -9,7 +9,7 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **User authentication** with session-based login/register/logout
 - **Drawing tools**: Pencil and Eraser with hit-testing
 - **Undo functionality**: Ctrl+Z to undo last stroke
-- **Handwriting recognition**: AI-powered Japanese character recognition (training feedback loop)
+- **Handwriting recognition**: heuristic pattern-based character suggestions for practice feedback (not a trained AI model)
 - **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
 ## Features
@@ -21,10 +21,10 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Clear**: Remove all your drawings from the canvas and database
 
 ### Handwriting Recognition
-- **AI Recognition**: Advanced pattern-based recognition for Japanese characters
+- **Heuristic recognition**: Pattern-based ranking of candidate characters from stroke geometry
 - **Supported Characters**: 一, 二, 三, 十, 丨, 丶, 人, 大, 小, 中, 国, 学, 生, and more
-- **Real-time Analysis**: Click "Recognize" to get character suggestions with confidence scores
-- **Pattern Detection**: Automatically detects crosses (十), horizontal lines (三), and other patterns
+- **On-demand analysis**: Click "Recognize" for candidate suggestions with heuristic match scores (not calibrated confidence)
+- **Pattern Detection**: Detects crosses (十), horizontal lines (三), and other simple stroke patterns
 
 ### User Management
 - **Registration**: Create new accounts with email and password
@@ -62,8 +62,8 @@ docker-compose up -d
 ```
 
 The application will be available at:
-- **Frontend**: http://localhost
-- **Backend API**: http://localhost:8080
+- **Frontend (public entrypoint)**: http://localhost
+- Backend listens on the internal Docker network only (`:8080`); use Nginx `/api` and `/ws` proxies
 
 #### Development with Docker
 ```bash
@@ -112,10 +112,10 @@ cd ..
 
 **Terminal 1 - Backend:**
 ```bash
-# Basic setup (uses Simple Recognizer)
+# Default: heuristic simple recognizer
 go run ./cmd/server
 
-# With ONNX model (advanced recognition)
+# Optional ONNX_MODEL path (currently falls back to simple recognizer until model loading is implemented)
 ONNX_MODEL=./models/handwriting.onnx go run ./cmd/server
 ```
 
@@ -175,16 +175,21 @@ COOKIE_KEY=your-secure-random-cookie-key-here
 # APP_ENV=production
 # or COOKIE_SECURE=true|1|yes
 
-# Log level for auth/session lines (DEBUG|INFO|WARN|ERROR). Default shows DEBUG.
+# Exact browser origins allowed for CORS and WebSocket upgrades (comma-separated).
+# No wildcards (*). Production (APP_ENV=production) requires this variable.
+# Development default when unset: http://localhost:5173,http://127.0.0.1:5173
+# ALLOWED_ORIGINS=https://learn.example.com
+
+# Log level for auth/session/perimeter lines (DEBUG|INFO|WARN|ERROR). Default shows DEBUG.
 # LOG_LEVEL=info
 
 # ONNX model for advanced recognition
 ONNX_MODEL=./models/handwriting.onnx
 ```
 
-Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min` / `please-change-this-32-bytes-min`).
+Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false` and `INFO [main] origin_policy mode=… count=… origins=…`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min` / `please-change-this-32-bytes-min`). With `APP_ENV=production`, missing/empty/`*`/`invalid` `ALLOWED_ORIGINS` also exits before listen.
 
-If TLS terminates at Nginx in front of Go, the public site must still be HTTPS for browsers to send `Secure` cookies.
+If TLS terminates at Nginx in front of Go, the public site must still be HTTPS for browsers to send `Secure` cookies, and `ALLOWED_ORIGINS` must match the browser-facing origin exactly (e.g. `https://learn.example.com`). See `docker/nginx-tls.conf.example`. Forwarded headers may be set for logs; they are **not** used for origin allowlisting or auth.
 
 ### Production Build
 ```bash
@@ -196,24 +201,28 @@ ADDR=:8080 STATIC_DIR=web/dist DB_PATH=file:data.db?_fk=1 COOKIE_KEY=your-secure
 ```
 
 ### ONNX Model Setup (Optional)
-For advanced handwriting recognition:
+Downloads a model artifact for the optional `ONNX_MODEL` path. Until honest model loading lands, the server still uses the simple heuristic recognizer:
 ```bash
-# Download ONNX model (optional - uses Simple Recognizer by default)
+# Optional download (does not by itself enable ML recognition today)
 make onnx-model
 
-# Run with ONNX model
 ONNX_MODEL=./models/handwriting.onnx go run ./cmd/server
 ```
 
 ## API Reference
 
 ### Authentication Endpoints
-Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when production-secure mode is on). Register/login **rotate** the session (`Sessions.New` after invalidating any prior `sid`). Auth handlers log with prefixes `[auth.Register]`, `[auth.Login]`, `[auth.Logout]`, `[auth.Me]`, `[auth.hash]`, `[auth.startSession]` (level filtered via `LOG_LEVEL`). Operator signal: `INFO [main] cookie_secure=…`.
+Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when production-secure mode is on). Register/login **rotate** the session (`Sessions.New` after invalidating any prior `sid`). Auth handlers log with prefixes `[auth.Register]`, `[auth.Login]`, `[auth.Logout]`, `[auth.Me]`, `[auth.hash]`, `[auth.startSession]` (level filtered via `LOG_LEVEL`). Operator signals: `INFO [main] cookie_secure=…`, `INFO [main] origin_policy …`, `[cors]`, `[csrf]`, `[ws.CheckOrigin]`.
+
+**CSRF (double-submit):** all `POST /api/*` require cookie `csrf` (readable by JS, `SameSite=Lax`, `Secure` in production-secure mode) plus matching header `X-CSRF-Token`. `GET /api/me` and `GET /api/csrf` ensure the cookie (including anonymous `401` on `/api/me`). The Vue client sends the header automatically after bootstrap. Failure: `403` `{ "error": "csrf_rejected", "message": "…" }`. WebSocket upgrades are not CSRF-token gated; they require a valid session cookie and an allowlisted `Origin`.
+
+**CORS / WebSocket origins:** credentialed CORS echoes `Access-Control-Allow-Origin` only for exact allowlisted origins (never `*`). Disallowed CORS preflight returns `403`. WebSocket `CheckOrigin` uses the same allowlist and rejects missing Origin.
 
 - `POST /api/register` — Create account `{ email, password }` (password min 8, max 72 UTF-8 bytes). Success `200` `{ id, email }` + rotated session cookie. New passwords are stored with **bcrypt** (cost 12).
 - `POST /api/login` — Sign in `{ email, password }`. Success `200` `{ id, email }` + rotated session cookie. Legacy unsalted SHA-256 hashes are verified with constant-time compare and transparently upgraded to bcrypt on successful login (login still succeeds if the upgrade write fails; it retries next login).
 - `POST /api/logout` — Clear session values and expire the cookie (same Path/HttpOnly/SameSite/Secure). Success `200` `{ "ok": "true" }`. CookieStore sessions are client-side signed blobs: logout cannot revoke a stolen cookie copy until expiry or `COOKIE_KEY` rotation.
-- `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }`.
+- `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }` (always ensures CSRF cookie).
+- `GET /api/csrf` — Ensures CSRF cookie and returns `{ "csrf": "<token>" }`.
 
 Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
 
@@ -227,8 +236,18 @@ Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
 | 400 | `registration_failed` | Unable to create account (includes duplicate email; does **not** return `email exists`) |
 | 401 | `invalid_credentials` | Login failed (unknown email or wrong password — same response) |
 | 401 | `unauthorized` | `/api/me` without a valid session |
+| 403 | `csrf_rejected` | Missing/mismatched CSRF cookie + `X-CSRF-Token` on `POST /api/*` |
 
-Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-256 hashes can log in and are upgraded automatically. Logs never include passwords, raw cookies, or full hashes (`hash_kind=bcrypt|legacy` and `userID=` only).
+Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-256 hashes can log in and are upgraded automatically. Logs never include passwords, raw cookies, CSRF token values, or full hashes (`hash_kind=bcrypt|legacy` and `userID=` only).
+
+#### Perimeter troubleshooting
+| Symptom | Likely cause |
+|---------|----------------|
+| Browser CORS error / no `Access-Control-Allow-Origin` | Request `Origin` not in `ALLOWED_ORIGINS` (or Vite defaults) |
+| WebSocket fails to connect | Disallowed/missing Origin; check `WARN [ws.CheckOrigin]` |
+| `403 csrf_rejected` | Refresh so `GET /api/me` sets `csrf`, then retry; ensure `apiFetch` sends `X-CSRF-Token` |
+| Process exits on start in production | Set explicit `ALLOWED_ORIGINS` without `*`; set a strong `COOKIE_KEY` |
+| Secure cookies missing on `http://localhost` compose | Use HTTPS at the browser, or avoid `APP_ENV=production` for plain-HTTP demos |
 
 ### Drawing Endpoints
 - `GET /api/strokes` - Get user's saved strokes (authenticated)
@@ -259,15 +278,14 @@ The application includes two recognition systems:
 
 ### 1. Simple Recognizer (Default)
 - **Pattern-based analysis** of stroke shapes and directions
-- **No external dependencies** - works out of the box
+- **No external dependencies** — works out of the box
 - **Supports basic characters**: 一, 二, 三, 十, 丨, 丶, 人, 大, 小, 中, 国, 学, 生
-- **Real-time analysis** with confidence scores
+- **Returns heuristic match scores** — useful for ranking candidates, not calibrated confidence
 
-### 2. ONNX Recognizer (Advanced)
-- **Machine learning-based** recognition using ONNX models
-- **Higher accuracy** for complex characters
-- **Requires ONNX model file** (see setup instructions)
-- **Fallback to Simple Recognizer** if model not available
+### 2. ONNX Recognizer (Optional path)
+- Configured via `ONNX_MODEL`; intended for a future model-backed recognizer
+- **Current runtime:** model load is not fully implemented — the server falls back to the simple heuristic recognizer and logs that clearly
+- Do not treat `ONNX_MODEL` / `make onnx-model` as an active ML accuracy upgrade until Prompt 08 (honest recognition) lands
 
 ## Troubleshooting
 
@@ -396,11 +414,12 @@ ADDR=:8080                      # Listen address (preferred over unused PORT)
 DB_PATH=/data/drawing-board.db  # Database file path
 COOKIE_KEY=replace-me-with-a-long-random-cookie-key  # ≥32 bytes; required
 APP_ENV=production              # Enables Secure cookies + COOKIE_KEY validation (prod compose)
+ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in production; no wildcards
 # COOKIE_SECURE=true            # Alternative to APP_ENV=production
 ONNX_MODEL=./models/handwriting.onnx  # ONNX model path (optional)
 ```
 
-Production `docker-compose.yml` sets `APP_ENV=production` and `COOKIE_KEY` (not `SESSION_SECRET`). Dev compose uses a ≥32-byte `COOKIE_KEY` without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser.
+Production `docker-compose.yml` sets `APP_ENV=production`, `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.
 
 ## License
 MIT License - see LICENSE file for details.

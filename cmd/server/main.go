@@ -8,12 +8,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
 	"github.com/deliium/drawing-board/internal/httpapi"
 	"github.com/deliium/drawing-board/internal/recognize"
+	"github.com/deliium/drawing-board/internal/security"
 	"github.com/deliium/drawing-board/internal/ws"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -21,15 +23,16 @@ import (
 
 func main() {
 	var (
-		addr = flag.String("addr", getEnv("ADDR", ":8080"), "http service address")
+		addr      = flag.String("addr", getEnv("ADDR", ":8080"), "http service address")
 		staticDir = flag.String("static", getEnv("STATIC_DIR", ""), "directory to serve static files from (optional)")
-		dbPath = flag.String("db", getEnv("DB_PATH", "data.db"), "sqlite dsn or file path")
+		dbPath    = flag.String("db", getEnv("DB_PATH", "data.db"), "sqlite dsn or file path")
 		cookieKey = flag.String("cookie", getEnv("COOKIE_KEY", auth.CookieKeyDefaultSentinel), "cookie auth key")
 		onnxModel = flag.String("onnx_model", getEnv("ONNX_MODEL", "./models/handwriting.onnx"), "path to ONNX model")
 	)
 	flag.Parse()
 
-	secureCookies := auth.ProductionSecureMode(os.Getenv("APP_ENV"), os.Getenv("COOKIE_SECURE"))
+	appEnv := os.Getenv("APP_ENV")
+	secureCookies := auth.ProductionSecureMode(appEnv, os.Getenv("COOKIE_SECURE"))
 	log.Printf("INFO [main] cookie_secure=%t", secureCookies)
 	if err := auth.ValidateCookieKey(*cookieKey, secureCookies); err != nil {
 		log.Fatalf("FATAL [main] COOKIE_KEY validation failed: %v", err)
@@ -38,8 +41,20 @@ func main() {
 		log.Printf("WARN [main] weak COOKIE_KEY in non-production mode (empty, short, or default sentinel)")
 	}
 
+	allowedOrigins, err := security.ResolveAllowedOrigins(appEnv, os.Getenv("ALLOWED_ORIGINS"))
+	if err != nil {
+		log.Fatalf("FATAL [main] ALLOWED_ORIGINS validation failed: %v", err)
+	}
+	mode := "development"
+	if security.IsProduction(appEnv) {
+		mode = "production"
+	}
+	log.Printf("INFO [main] origin_policy mode=%s count=%d origins=%s", mode, len(allowedOrigins), strings.Join(allowedOrigins, ","))
+
 	store, err := db.Open(*dbPath)
-	if err != nil { log.Fatalf("open db: %v", err) }
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
 
 	sessionStore := sessions.NewCookieStore([]byte(*cookieKey))
 	sessionStore.Options = &sessions.Options{
@@ -49,7 +64,7 @@ func main() {
 		Secure:   secureCookies,
 	}
 	authSvc := auth.NewService(store, sessionStore, secureCookies)
-	
+
 	var recognizer recognize.Recognizer
 	if *onnxModel != "" {
 		onnxRec, err := recognize.NewONNXRecognizer(*onnxModel)
@@ -63,9 +78,9 @@ func main() {
 	} else {
 		recognizer = recognize.NewSimpleRecognizer()
 	}
-	
-	api := &httpapi.API{ Auth: authSvc, Store: store, Recognizer: recognizer }
-	ws.Init(store, authSvc)
+
+	api := &httpapi.API{Auth: authSvc, Store: store, Recognizer: recognizer}
+	ws.Init(store, authSvc, allowedOrigins)
 
 	r := mux.NewRouter()
 
@@ -74,6 +89,7 @@ func main() {
 	r.HandleFunc("/api/login", authSvc.Login).Methods(http.MethodPost)
 	r.HandleFunc("/api/logout", authSvc.Logout).Methods(http.MethodPost)
 	r.HandleFunc("/api/me", authSvc.Me).Methods(http.MethodGet)
+	r.HandleFunc("/api/csrf", security.IssueCSRFHandler(secureCookies)).Methods(http.MethodGet)
 
 	// Strokes endpoints
 	r.Handle("/api/strokes", authSvc.RequireAuth(http.HandlerFunc(api.ListStrokes))).Methods(http.MethodGet)
@@ -97,12 +113,12 @@ func main() {
 		r.PathPrefix("/").Handler(fs)
 	}
 
-	// Compose middlewares: CORS -> Router, then logging wrapper
-	handler := withCORS(r)
+	// Middleware (outer → inner): logging → CORS → CSRF → mux
+	secured := security.CORS(allowedOrigins, security.CSRF(secureCookies, r))
 	logged := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
 		rw := &statusWriter{ResponseWriter: w, status: 200}
-		handler.ServeHTTP(rw, req)
+		secured.ServeHTTP(rw, req)
 		log.Printf("%s %s %d %v", req.Method, req.URL.Path, rw.status, time.Since(start))
 	})
 
@@ -141,19 +157,4 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
-}
-
-func withCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
-		w.Header().Set("Vary", "Origin")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }

@@ -11,13 +11,41 @@ import (
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/security"
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+var (
+	allowedOrigins []string
+	upgrader       = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     checkOrigin,
+	}
+)
+
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		log.Printf("WARN [ws.CheckOrigin] rejected origin=")
+		return false
+	}
+	if !security.OriginAllowed(allowedOrigins, origin) {
+		log.Printf("WARN [ws.CheckOrigin] rejected origin=%s", origin)
+		return false
+	}
+	log.Printf("DEBUG [ws.CheckOrigin] accepted origin=%s", origin)
+	return true
+}
+
+// CheckOriginForTest exposes the WebSocket origin policy for unit tests.
+func CheckOriginForTest(r *http.Request) bool {
+	return checkOrigin(r)
+}
+
+// SetAllowedOriginsForTest replaces the allowlist used by CheckOrigin (tests only).
+func SetAllowedOriginsForTest(origins []string) {
+	allowedOrigins = append([]string(nil), origins...)
 }
 
 type Point struct {
@@ -109,7 +137,12 @@ func (h *Hub) sendToUser(userID int64, v interface{}) {
 
 var globalHub *Hub
 
-func Init(store *db.Store, authSvc *auth.Service) { globalHub = NewHub(store, authSvc) }
+// Init configures the global hub and WebSocket origin allowlist.
+func Init(store *db.Store, authSvc *auth.Service, origins []string) {
+	allowedOrigins = append([]string(nil), origins...)
+	globalHub = NewHub(store, authSvc)
+	log.Printf("INFO [ws.Init] origin_allowlist count=%d", len(allowedOrigins))
+}
 
 func Handle(w http.ResponseWriter, r *http.Request) {
 	uid, ok := globalHub.Auth.UserIDFromRequest(r)
