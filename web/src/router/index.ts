@@ -7,7 +7,20 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'board', component: BoardPage, meta: { requiresAuth: true } },
-    { path: '/login', name: 'login', component: LoginPage },
+    {
+      path: '/login',
+      name: 'login',
+      component: LoginPage,
+      meta: { guestOnly: true },
+      props: { initialMode: 'login' },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: LoginPage,
+      meta: { guestOnly: true },
+      props: { initialMode: 'register' },
+    },
   ],
 })
 

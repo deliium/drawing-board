@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { apiFetch } from '../services/apiClient'
 import { trackMetric } from '../services/migrationHealth'
 import { createWsClient, type WsMessage } from '../services/wsClient'
@@ -7,6 +8,8 @@ import { applyIncomingMessage, type Point, type Stroke } from '../services/strok
 import { sessionContext, setAuthenticatedUser } from '../services/sessionContext'
 
 type Candidate = { text: string; score: number }
+
+const router = useRouter()
 
 const wsDebug =
   typeof import.meta !== 'undefined' &&
@@ -20,9 +23,6 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const color = ref('#1d4ed8')
 const width = ref(4)
 const tool = ref<'pencil' | 'eraser'>('pencil')
-const email = ref('')
-const password = ref('')
-const authErr = ref<string | null>(null)
 const candidates = ref<Candidate[] | null>(null)
 const strokes = ref<Stroke[]>([])
 const wsReady = ref(false)
@@ -58,44 +58,18 @@ async function loadStrokes() {
   }
 }
 
-async function doRegister() {
-  authErr.value = null
-  try {
-    await apiFetch('/api/register', {
-      method: 'POST',
-      body: JSON.stringify({ email: email.value, password: password.value }),
-    })
-    password.value = ''
-    const me = await apiFetch<{ id: number; email: string }>('/api/me')
-    setAuthenticatedUser(me)
-    await loadStrokes()
-  } catch {
-    authErr.value = 'Registration failed'
-  }
-}
-
-async function doLogin() {
-  authErr.value = null
-  try {
-    await apiFetch('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: email.value, password: password.value }),
-    })
-    password.value = ''
-    const me = await apiFetch<{ id: number; email: string }>('/api/me')
-    setAuthenticatedUser(me)
-    await loadStrokes()
-  } catch {
-    authErr.value = 'Login failed'
-  }
-}
-
 async function doLogout() {
-  await apiFetch('/api/logout', { method: 'POST' })
+  try {
+    await apiFetch('/api/logout', { method: 'POST' })
+  } catch {
+    // still clear local session so the learner can reach the auth page
+  }
   ws.close()
   setAuthenticatedUser(null)
   strokes.value = []
   candidates.value = null
+  if (wsDebug) console.debug('[BoardPage] logout')
+  await router.replace({ name: 'login' })
 }
 
 async function doClear() {
@@ -318,23 +292,15 @@ onMounted(() => {
       </label>
       <button :disabled="tool === 'pencil'" @click="tool = 'pencil'">Pencil</button>
       <button :disabled="tool === 'eraser'" @click="tool = 'eraser'">Eraser</button>
-      <button v-if="user" :disabled="strokes.length === 0" @click="doUndo">Undo</button>
+      <button :disabled="strokes.length === 0" @click="doUndo">Undo</button>
       <span style="margin-left: auto; opacity: 0.7">
-        {{ user ? (wsReady ? 'Practice ready' : 'Connecting…') : 'Sign in to practice' }}
+        {{ wsReady ? 'Practice ready' : 'Connecting…' }}
       </span>
-      <button v-if="user" @click="doClear">Clear</button>
-      <button v-if="user" @click="doLogout">Logout</button>
+      <button @click="doClear">Clear</button>
+      <button @click="doLogout">Logout</button>
     </header>
 
-    <div v-if="!user" style="padding: 12px; display: flex; gap: 8px; align-items: center">
-      <input v-model="email" placeholder="email" />
-      <input v-model="password" type="password" placeholder="password" />
-      <button @click="doLogin">Login</button>
-      <button @click="doRegister">Register</button>
-      <span v-if="authErr" style="color: crimson">{{ authErr }}</span>
-    </div>
-
-    <div v-else style="padding: 12px; display: flex; gap: 8px; align-items: center">
+    <div style="padding: 12px; display: flex; gap: 8px; align-items: center">
       <button @click="recognize">Recognize</button>
       <div v-if="candidates && candidates.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap">
         <span
