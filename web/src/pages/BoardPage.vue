@@ -9,9 +9,11 @@ import {
   type SyncStatus,
 } from '../services/wsClient'
 import { applyIncomingMessage, type Point, type Stroke } from '../services/strokeSync'
+import { shouldAcceptRecognizeResponse } from '../services/recognizeGate'
 import { sessionContext, setAuthenticatedUser } from '../services/sessionContext'
 
 type Candidate = { text: string; score: number }
+type StrokesListResponse = { boardRev: number; strokes: Stroke[] }
 
 const router = useRouter()
 
@@ -45,6 +47,9 @@ const tool = ref<'pencil' | 'eraser'>('pencil')
 const candidates = ref<Candidate[] | null>(null)
 const strokes = ref<Stroke[]>([])
 const syncStatus = ref<SyncStatus>('connecting')
+const clearInFlight = ref(false)
+const recognizeInFlight = ref(false)
+const recognizeAttempt = ref(0)
 const user = computed(() => sessionContext.user)
 const clientId = Math.random().toString(36).slice(2)
 const statusLabel = computed(() => statusLabels[syncStatus.value])
@@ -57,21 +62,43 @@ const ws = createWsClient({
   onStatusChange: (status) => {
     syncStatus.value = status
   },
+  onStaleBoard: (rev) => {
+    boardDebug('stale_board reconcile', rev)
+    void loadStrokes()
+  },
   onQueueReject: (reason) => {
     boardDebug('queue reject', reason)
     syncStatus.value = 'error'
   },
 })
 
+const recognizeEnabled = computed(
+  () =>
+    syncStatus.value === 'saved' &&
+    ws.getQueueLength() === 0 &&
+    strokes.value.length > 0 &&
+    !recognizeInFlight.value &&
+    !clearInFlight.value,
+)
+
 function handleIncoming(message: InboundAppMessage) {
-  const result = applyIncomingMessage(strokes.value, message)
+  const result = applyIncomingMessage(strokes.value, message, ws.getBoardRev())
+  if (typeof result.boardRev === 'number') {
+    ws.setBoardRev(Math.max(ws.getBoardRev(), result.boardRev))
+  }
   if (
     result.action === 'ignored-foreign-stroke' ||
     result.action === 'ignored-unknown-delete' ||
-    result.action === 'ignored-duplicate-ack'
+    result.action === 'ignored-duplicate-ack' ||
+    result.action === 'ignored-stale-ack'
   ) {
-    boardDebug('ignore inbound', result.action, result.reason)
+    boardDebug('ignore inbound', result.action, result.reason || 'stale_rev')
     return
+  }
+  if (result.action === 'clear-applied' || result.action === 'acked-clear') {
+    boardDebug('clear_applied', result.action)
+    clearInFlight.value = false
+    candidates.value = null
   }
   boardDebug('apply inbound', result.action)
   strokes.value = result.strokes
@@ -80,9 +107,14 @@ function handleIncoming(message: InboundAppMessage) {
 async function loadStrokes() {
   if (!user.value) return
   ws.clearPending()
+  clearInFlight.value = false
   try {
-    const rows = await apiFetch<Stroke[]>('/api/strokes')
+    const payload = await apiFetch<StrokesListResponse>('/api/strokes')
+    const rev = typeof payload.boardRev === 'number' ? payload.boardRev : 0
+    const rows = Array.isArray(payload.strokes) ? payload.strokes : []
+    ws.setBoardRev(rev)
     strokes.value = rows.map((s) => ({ ...s, sync: 'saved' as const }))
+    boardDebug('load strokes', 'boardRev', rev, 'count', rows.length)
   } catch {
     strokes.value = []
   }
@@ -103,28 +135,63 @@ async function doLogout() {
   await router.replace({ name: 'login' })
 }
 
-async function doClear() {
-  await apiFetch('/api/strokes/clear', { method: 'POST' })
-  ws.clearPending()
+function doClear() {
+  if (clearInFlight.value || syncStatus.value === 'error') return
+  clearInFlight.value = true
+  candidates.value = null
+  ws.dropPendingCreates()
   strokes.value = []
+  const opId = newOpId()
+  const queued = ws.send({ type: 'clear', opId, baseRev: ws.getBoardRev() })
+  if (!queued) {
+    boardDebug('clear not queued')
+    clearInFlight.value = false
+    void loadStrokes()
+  }
 }
 
 async function recognize() {
   const canvas = canvasRef.value
-  if (!canvas) return
+  if (!canvas || !recognizeEnabled.value) return
+  const requestedRev = ws.getBoardRev()
+  const attempt = ++recognizeAttempt.value
+  recognizeInFlight.value = true
   try {
-    const result = await apiFetch<{ candidates: Candidate[] }>('/api/recognize', {
+    const result = await apiFetch<{ candidates: Candidate[]; boardRev: number }>('/api/recognize', {
       method: 'POST',
-      body: JSON.stringify({ topN: 10, width: canvas.width, height: canvas.height }),
+      body: JSON.stringify({
+        topN: 10,
+        width: canvas.width,
+        height: canvas.height,
+        boardRev: requestedRev,
+      }),
     })
+    if (
+      !shouldAcceptRecognizeResponse({
+        attempt,
+        currentAttempt: recognizeAttempt.value,
+        responseBoardRev: result.boardRev,
+        requestedBoardRev: requestedRev,
+        localBoardRev: ws.getBoardRev(),
+      })
+    ) {
+      boardDebug('recognize_discarded', 'attempt', attempt, 'respRev', result.boardRev, 'local', ws.getBoardRev())
+      return
+    }
     candidates.value = result.candidates || []
     trackMetric('recognize.success', 1)
   } catch (err) {
-    candidates.value = []
+    if (attempt === recognizeAttempt.value) {
+      candidates.value = []
+    }
     trackMetric('recognize.reject', 1)
     if (wsDebug) {
       const msg = err instanceof Error ? err.message : 'recognize failed'
       console.debug('[BoardPage] recognize rejected:', msg)
+    }
+  } finally {
+    if (attempt === recognizeAttempt.value) {
+      recognizeInFlight.value = false
     }
   }
 }
@@ -146,21 +213,32 @@ function hitTest(p: Point, s: Stroke): boolean {
   return false
 }
 
-function enqueueDelete(strokeId: number) {
+function enqueueDeleteById(strokeId: number) {
   const opId = newOpId()
-  ws.send({ type: 'delete', opId, delete: strokeId })
+  ws.send({ type: 'delete', opId, baseRev: ws.getBoardRev(), delete: strokeId })
+}
+
+function enqueueDeleteByOpId(createOpId: string) {
+  const opId = newOpId()
+  ws.send({ type: 'delete', opId, baseRev: ws.getBoardRev(), deleteOpId: createOpId })
+}
+
+function removeStrokeLocally(target: Stroke) {
+  strokes.value = strokes.value.filter((st) => st !== target && st.opId !== target.opId)
+  if (target.opId && (!target.id || target.sync === 'pending' || target.sync === 'saving')) {
+    ws.dropOp(target.opId)
+    enqueueDeleteByOpId(target.opId)
+    return
+  }
+  if (target.id && target.id > 0) {
+    enqueueDeleteById(target.id)
+  }
 }
 
 function doUndo() {
-  if (!strokes.value.length) return
+  if (!strokes.value.length || syncStatus.value === 'error') return
   const last = strokes.value[strokes.value.length - 1]
-  strokes.value = strokes.value.slice(0, -1)
-  if (last.opId && (!last.id || last.sync === 'pending' || last.sync === 'saving')) {
-    ws.dropOp(last.opId)
-  }
-  if (last.id && last.id > 0) {
-    enqueueDelete(last.id)
-  }
+  removeStrokeLocally(last)
 }
 
 function syncCanvasSize() {
@@ -215,12 +293,12 @@ function setupDrawing() {
   })
 
   const onDown = (e: PointerEvent) => {
+    if (syncStatus.value === 'error') return
     const p = toPoint(e)
     if (tool.value === 'eraser') {
       const target = [...strokes.value].reverse().find((s) => hitTest(p, s))
-      if (target?.id) {
-        strokes.value = strokes.value.filter((st) => st.id !== target.id)
-        enqueueDelete(target.id)
+      if (target) {
+        removeStrokeLocally(target)
       }
       return
     }
@@ -262,6 +340,7 @@ function setupDrawing() {
       const queued = ws.send({
         type: 'stroke',
         opId,
+        baseRev: ws.getBoardRev(),
         stroke: {
           points: stroke.points,
           color: stroke.color,
@@ -272,7 +351,7 @@ function setupDrawing() {
         },
       })
       if (!queued) {
-        boardDebug('stroke not queued; queue full')
+        boardDebug('stroke not queued; queue full or sync error')
         return
       }
       strokes.value = [...strokes.value, { ...stroke, sync: 'saving' }]
@@ -360,12 +439,14 @@ onMounted(() => {
       <span style="margin-left: auto; opacity: 0.7" :data-sync-status="syncStatus">
         {{ statusLabel }}
       </span>
-      <button @click="doClear">Clear</button>
+      <button :disabled="clearInFlight || syncStatus === 'error'" @click="doClear">Clear</button>
       <button @click="doLogout">Logout</button>
     </header>
 
     <div style="padding: 12px; display: flex; gap: 8px; align-items: center">
-      <button @click="recognize">Recognize</button>
+      <button :disabled="!recognizeEnabled" @click="recognize">
+        {{ recognizeInFlight ? 'Recognizing…' : 'Recognize' }}
+      </button>
       <div v-if="candidates && candidates.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap">
         <span
           v-for="(c, i) in candidates"

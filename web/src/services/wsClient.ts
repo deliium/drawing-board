@@ -9,21 +9,44 @@ export type StrokePayload = {
   sync?: 'pending' | 'saving' | 'saved' | 'failed'
 }
 
-export type StrokeMessage = { type: 'stroke'; opId: string; stroke: StrokePayload }
-export type DeleteMessage = { type: 'delete'; opId: string; delete: number }
+export type StrokeMessage = {
+  type: 'stroke'
+  opId: string
+  baseRev?: number
+  boardRev?: number
+  stroke: StrokePayload
+}
+export type DeleteMessage = {
+  type: 'delete'
+  opId: string
+  baseRev?: number
+  delete?: number
+  deleteOpId?: string
+  boardRev?: number
+}
+export type ClearMessage = {
+  type: 'clear'
+  opId: string
+  baseRev?: number
+  boardRev?: number
+  clear?: boolean
+}
 export type AckMessage = {
   type: 'ack'
   opId: string
   ok: boolean
+  boardRev?: number
   strokeId?: number
   delete?: number
+  clear?: boolean
   error?: string
   message?: string
 }
 export type ErrorMessage = { type: 'error'; error: string; message?: string }
-export type WsMessage = StrokeMessage | DeleteMessage | AckMessage | ErrorMessage
+export type OutboundMessage = StrokeMessage | DeleteMessage | ClearMessage
+export type WsMessage = OutboundMessage | AckMessage | ErrorMessage
 
-export type InboundAppMessage = StrokeMessage | DeleteMessage | AckMessage
+export type InboundAppMessage = StrokeMessage | DeleteMessage | ClearMessage | AckMessage
 
 export type SyncStatus = 'connecting' | 'saving' | 'saved' | 'offline' | 'error'
 
@@ -45,7 +68,7 @@ function debug(...args: unknown[]) {
 
 type QueuedOp = {
   opId: string
-  msg: StrokeMessage | DeleteMessage
+  msg: OutboundMessage
   attempts: number
   enqueuedAt: number
   awaitingAckSince?: number
@@ -55,6 +78,7 @@ export type WsClientOptions = {
   onMessage: (msg: InboundAppMessage) => void
   onStatusChange?: (status: SyncStatus) => void
   onAck?: (ack: AckMessage) => void
+  onStaleBoard?: (boardRev: number) => void
   onQueueReject?: (reason: string) => void
   maxPendingOps?: number
   /** Injectable for tests */
@@ -70,6 +94,7 @@ export function createWsClient(options: WsClientOptions) {
     onMessage,
     onStatusChange,
     onAck,
+    onStaleBoard,
     onQueueReject,
     maxPendingOps = MAX_PENDING_OPS,
     now = () => Date.now(),
@@ -86,6 +111,7 @@ export function createWsClient(options: WsClientOptions) {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let ackTimer: ReturnType<typeof setTimeout> | null = null
   let hardError = false
+  let boardRev = 0
   const queue: QueuedOp[] = []
   const completedOpIds = new Set<string>()
 
@@ -159,6 +185,11 @@ export function createWsClient(options: WsClientOptions) {
     flush()
   }
 
+  const stampBaseRev = (msg: OutboundMessage): OutboundMessage => {
+    debug('stamp baseRev', boardRev, 'for', msg.type, msg.opId)
+    return { ...msg, baseRev: boardRev }
+  }
+
   const flush = () => {
     if (ws?.readyState !== WebSocket.OPEN) {
       emitStatus()
@@ -175,9 +206,10 @@ export function createWsClient(options: WsClientOptions) {
       emitStatus()
       return
     }
+    next.msg = stampBaseRev(next.msg)
     next.attempts += 1
     next.awaitingAckSince = now()
-    debug('send', next.msg.type, next.opId, 'attempt', next.attempts)
+    debug('send', next.msg.type, next.opId, 'baseRev', next.msg.baseRev, 'attempt', next.attempts)
     try {
       ws.send(JSON.stringify(next.msg))
     } catch {
@@ -261,11 +293,21 @@ export function createWsClient(options: WsClientOptions) {
           handleAck(msg)
           return
         }
-        debug('inbound', msg.type)
+        if (typeof msg.boardRev === 'number' && Number.isFinite(msg.boardRev)) {
+          applyBoardRev(msg.boardRev)
+        }
+        debug('inbound', msg.type, 'boardRev', msg.boardRev)
         onMessage(msg)
       } catch {
         debug('ignore malformed message')
       }
+    }
+  }
+
+  const applyBoardRev = (rev: number) => {
+    if (rev > boardRev) {
+      debug('boardRev advance', boardRev, '→', rev)
+      boardRev = rev
     }
   }
 
@@ -280,11 +322,41 @@ export function createWsClient(options: WsClientOptions) {
       return
     }
     const op = queue[idx]
+    if (typeof ack.boardRev === 'number' && Number.isFinite(ack.boardRev)) {
+      applyBoardRev(ack.boardRev)
+    }
+
     if (ack.ok) {
       completedOpIds.add(ack.opId)
       queue.splice(idx, 1)
       hardError = false
-      debug('ack ok', ack.opId)
+      debug('ack ok', ack.opId, 'boardRev', ack.boardRev)
+      onAck?.(ack)
+      onMessage(ack)
+      clearAckTimer()
+      flush()
+      emitStatus()
+      return
+    }
+
+    if (ack.error === 'stale_board') {
+      debug('nack stale_board', ack.opId, 'boardRev', ack.boardRev)
+      queue.splice(idx, 1)
+      onAck?.(ack)
+      onMessage(ack)
+      clearAckTimer()
+      if (typeof ack.boardRev === 'number') {
+        onStaleBoard?.(ack.boardRev)
+      }
+      flush()
+      emitStatus()
+      return
+    }
+
+    if (ack.error === 'op_cancelled') {
+      debug('nack op_cancelled', ack.opId)
+      completedOpIds.add(ack.opId)
+      queue.splice(idx, 1)
       onAck?.(ack)
       onMessage(ack)
       clearAckTimer()
@@ -313,7 +385,10 @@ export function createWsClient(options: WsClientOptions) {
     emitStatus()
   }
 
-  const enqueue = (msg: StrokeMessage | DeleteMessage): boolean => {
+  const enqueue = (msg: OutboundMessage): boolean => {
+    if (hardError && getStatus() === 'error') {
+      // Allow enqueue after recovery paths reset hardError; block only while stuck in error
+    }
     if (queue.length >= maxPendingOps) {
       debug('queue full; reject', msg.opId)
       hardError = true
@@ -326,22 +401,28 @@ export function createWsClient(options: WsClientOptions) {
       return true
     }
     hardError = false
+    const stamped = stampBaseRev(msg)
     queue.push({
       opId: msg.opId,
-      msg,
+      msg: stamped,
       attempts: 0,
       enqueuedAt: now(),
     })
-    debug('enqueue', msg.type, msg.opId, 'queue=', queue.length)
+    debug('enqueue', msg.type, msg.opId, 'baseRev', stamped.baseRev, 'queue=', queue.length)
     flush()
     emitStatus()
     return true
   }
 
-  const send = (msg: StrokeMessage | DeleteMessage) => {
+  const send = (msg: OutboundMessage) => {
     if (!msg.opId) {
       debug('send rejected; missing opId', msg.type)
       onQueueReject?.('missing_op_id')
+      return false
+    }
+    if (hardError && queue.length === 0 && getStatus() === 'error') {
+      debug('send rejected; sync error budget exhausted', msg.opId)
+      onQueueReject?.('sync_error')
       return false
     }
     return enqueue(msg)
@@ -360,6 +441,26 @@ export function createWsClient(options: WsClientOptions) {
     }
   }
 
+  const dropPendingCreates = () => {
+    const kept: QueuedOp[] = []
+    let droppedInFlight = false
+    for (const op of queue) {
+      if (op.msg.type === 'stroke') {
+        if (op.awaitingAckSince != null) droppedInFlight = true
+        completedOpIds.add(op.opId)
+        continue
+      }
+      kept.push(op)
+    }
+    queue.length = 0
+    queue.push(...kept)
+    if (droppedInFlight) {
+      clearAckTimer()
+      flush()
+    }
+    emitStatus()
+  }
+
   const clearPending = () => {
     queue.length = 0
     completedOpIds.clear()
@@ -367,6 +468,13 @@ export function createWsClient(options: WsClientOptions) {
     clearAckTimer()
     emitStatus()
   }
+
+  const setBoardRev = (rev: number) => {
+    debug('setBoardRev', rev)
+    boardRev = Math.max(0, rev)
+  }
+
+  const getBoardRev = () => boardRev
 
   const close = () => {
     intentionalClose = true
@@ -396,7 +504,10 @@ export function createWsClient(options: WsClientOptions) {
     send,
     close,
     dropOp,
+    dropPendingCreates,
     clearPending,
+    setBoardRev,
+    getBoardRev,
     getQueueLength,
     getStatus,
   }
