@@ -26,6 +26,7 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - REST list strokes (`boardRev` envelope); recognize revision-gated; clear available via WS (primary) or REST helper
 - Recognition: deterministic target comparison for five hiragana (`hiragana5`); optional free-board heuristic ranking with match scores (not ML/ONNX)
 - Durable learning schema (characters/lessons/attempts/assessments/progress) via versioned SQLite migrations, separate from free-board strokes
+- Reviewed five-vowel starter curriculum pack (`content/hiragana5/`) with pedagogy fields, stroke/trace templates, and deterministic seed
 - Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
 
 ## Non-Functional Requirements

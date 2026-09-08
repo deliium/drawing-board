@@ -1,7 +1,6 @@
 package recognize
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -9,28 +8,14 @@ import (
 	"sort"
 	"strings"
 
-	"embed"
+	"github.com/deliium/drawing-board/internal/curriculum"
 )
-
-//go:embed testdata/hiragana5/templates.json
-var templatesFS embed.FS
 
 const (
 	weightStrokeCount = 0.35
 	weightGeometry    = 0.65
 	resamplePoints    = 16
 )
-
-type templateFile struct {
-	Version    string             `json:"version"`
-	SetID      string             `json:"setId"`
-	Characters []templateCharacter `json:"characters"`
-}
-
-type templateCharacter struct {
-	Glyph   string     `json:"glyph"`
-	Strokes [][]Point  `json:"strokes"`
-}
 
 // TargetCompareRecognizer scores learner strokes against hiragana5 templates.
 // Free-board Recognize delegates to SimpleRecognizer (heuristic match scores).
@@ -42,26 +27,21 @@ type TargetCompareRecognizer struct {
 	simple    *SimpleRecognizer
 }
 
-// NewTargetCompareRecognizer loads the embedded hiragana5 templates.
+// NewTargetCompareRecognizer loads assessment strokes from the published curriculum pack.
 func NewTargetCompareRecognizer() (*TargetCompareRecognizer, error) {
-	raw, err := templatesFS.ReadFile("testdata/hiragana5/templates.json")
+	pack, err := curriculum.LoadPublishedV1()
 	if err != nil {
-		log.Printf("ERROR [recognize.templates] load failed: %v", err)
-		return nil, fmt.Errorf("load hiragana5 templates: %w", err)
+		log.Printf("ERROR [recognize.templates] load pack failed: %v", err)
+		return nil, fmt.Errorf("load hiragana5 pack: %w", err)
 	}
-	var tf templateFile
-	if err := json.Unmarshal(raw, &tf); err != nil {
-		log.Printf("ERROR [recognize.templates] parse failed: %v", err)
-		return nil, fmt.Errorf("parse hiragana5 templates: %w", err)
-	}
-	if len(tf.Characters) != 5 {
-		err := fmt.Errorf("hiragana5 templates: want 5 characters, got %d", len(tf.Characters))
+	if len(pack.Chars) != 5 {
+		err := fmt.Errorf("hiragana5 pack: want 5 characters, got %d", len(pack.Chars))
 		log.Printf("ERROR [recognize.templates] %v", err)
 		return nil, err
 	}
 	r := &TargetCompareRecognizer{
-		version:   tf.Version,
-		setID:     tf.SetID,
+		version:   pack.Manifest.ContentVersion,
+		setID:     pack.Manifest.SetID,
 		templates: make(map[string][]Stroke, 5),
 		order:     make([]string, 0, 5),
 		simple:    NewSimpleRecognizer(),
@@ -69,15 +49,22 @@ func NewTargetCompareRecognizer() (*TargetCompareRecognizer, error) {
 	if r.setID == "" {
 		r.setID = SetIDHiragana5
 	}
-	for _, ch := range tf.Characters {
-		if ch.Glyph == "" || len(ch.Strokes) == 0 {
+	chars := append([]curriculum.Character(nil), pack.Chars...)
+	sort.Slice(chars, func(i, j int) bool { return chars[i].SortKey < chars[j].SortKey })
+	for _, ch := range chars {
+		raw := pack.Strokes[ch.Glyph]
+		if ch.Glyph == "" || len(raw) == 0 {
 			err := fmt.Errorf("invalid template for glyph %q", ch.Glyph)
 			log.Printf("ERROR [recognize.templates] %v", err)
 			return nil, err
 		}
-		strokes := make([]Stroke, len(ch.Strokes))
-		for i, pts := range ch.Strokes {
-			strokes[i] = Stroke{Points: append([]Point(nil), pts...)}
+		strokes := make([]Stroke, len(raw))
+		for i, pts := range raw {
+			points := make([]Point, len(pts))
+			for j, pt := range pts {
+				points[j] = Point{X: pt.X, Y: pt.Y}
+			}
+			strokes[i] = Stroke{Points: points}
 		}
 		r.templates[ch.Glyph] = strokes
 		r.order = append(r.order, ch.Glyph)

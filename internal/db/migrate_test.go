@@ -1,10 +1,12 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
 
+	"github.com/deliium/drawing-board/internal/curriculum"
 	"github.com/deliium/drawing-board/internal/db/migrations"
 	"github.com/deliium/drawing-board/internal/recognize"
 	_ "github.com/mattn/go-sqlite3"
@@ -25,6 +27,9 @@ func TestMigrateFreshOpen(t *testing.T) {
 	if ver != migrations.LatestVersion() {
 		t.Fatalf("version=%d want %d", ver, migrations.LatestVersion())
 	}
+	if ver < 3 {
+		t.Fatalf("expected pedagogy migration version>=3 got %d", ver)
+	}
 
 	for _, name := range []string{
 		"characters", "lessons", "lesson_characters", "practice_attempts",
@@ -44,6 +49,17 @@ func TestMigrateFreshOpen(t *testing.T) {
 	if charCount != 5 {
 		t.Fatalf("seed characters=%d want 5", charCount)
 	}
+
+	var rom, contentVer, desc string
+	if err := store.SQL.QueryRow(`
+		SELECT COALESCE(romanization,''), COALESCE(content_version,''), COALESCE(description_en,'')
+		FROM characters WHERE id='hira:あ'`).Scan(&rom, &contentVer, &desc); err != nil {
+		t.Fatalf("pedagogy fields: %v", err)
+	}
+	if rom != "a" || contentVer == "" || desc == "" {
+		t.Fatalf("pedagogy incomplete romanization=%q contentVersion=%q desc empty=%t", rom, contentVer, desc == "")
+	}
+	t.Logf("seed contentVersion=%s", contentVer)
 
 	// Re-open is idempotent.
 	store.SQL.Close()
@@ -171,7 +187,8 @@ func TestLearningDomainDownThenUp(t *testing.T) {
 		_ = tx.Rollback()
 		t.Fatalf("Down: %v", err)
 	}
-	if _, err := tx.Exec(`DELETE FROM schema_migrations WHERE version=2`); err != nil {
+	// Drop learning_domain and any later versions that depend on those tables (e.g. pedagogy).
+	if _, err := tx.Exec(`DELETE FROM schema_migrations WHERE version >= 2`); err != nil {
 		_ = tx.Rollback()
 		t.Fatal(err)
 	}
@@ -208,7 +225,9 @@ func TestHiragana5SeedMatchesRecognizeGlyphs(t *testing.T) {
 	if len(seedGlyphs) != 5 {
 		t.Fatalf("seed glyphs=%d", len(seedGlyphs))
 	}
-	// Assess each glyph as supported target (unsupported would error).
+	if rec.Version() != Hiragana5ContentVersion() {
+		t.Fatalf("contentVersion seed=%q recognize=%q", Hiragana5ContentVersion(), rec.Version())
+	}
 	for _, g := range seedGlyphs {
 		_, err := rec.Assess(g, nil, 300, 300)
 		if err != nil && err != recognize.ErrUnsupportedTarget {
@@ -216,6 +235,30 @@ func TestHiragana5SeedMatchesRecognizeGlyphs(t *testing.T) {
 		}
 		if err == recognize.ErrUnsupportedTarget {
 			t.Fatalf("seed glyph %q not in recognize set", g)
+		}
+	}
+
+	store, err := Open(filepath.Join(t.TempDir(), "align.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.SQL.Close()
+	ls := NewLearnStore(store)
+	chars, err := ls.Characters().ListBySet(context.Background(), recognize.SetIDHiragana5)
+	if err != nil {
+		t.Fatalf("ListBySet: %v", err)
+	}
+	pack, err := curriculum.LoadPublishedV1()
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	for _, c := range chars {
+		if c.Romanization == "" || c.ContentVersion == "" {
+			t.Fatalf("character %s missing pedagogy", c.ID)
+		}
+		n := len(pack.Strokes[c.Glyph])
+		if n != c.StrokeCount {
+			t.Fatalf("glyph %s strokeCount seed=%d pack=%d", c.Glyph, c.StrokeCount, n)
 		}
 	}
 }

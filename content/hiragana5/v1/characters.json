@@ -1,0 +1,114 @@
+{
+  "characters": [
+    {
+      "id": "hira:あ",
+      "glyph": "あ",
+      "romanization": "a",
+      "sortKey": 1,
+      "strokeCount": 3,
+      "status": "active",
+      "pronunciation": {
+        "ipa": "/a/",
+        "jaHint": "「あ」の音",
+        "audioRef": null,
+        "pitch": "unknown"
+      },
+      "description": {
+        "en": "Open vowel “ah”, as in father (shorter). First chart vowel."
+      },
+      "example": {
+        "word": "あさ",
+        "romanization": "asa",
+        "meaningEn": "morning"
+      }
+    },
+    {
+      "id": "hira:い",
+      "glyph": "い",
+      "romanization": "i",
+      "sortKey": 2,
+      "strokeCount": 2,
+      "status": "active",
+      "pronunciation": {
+        "ipa": "/i/",
+        "jaHint": "「い」の音",
+        "audioRef": null,
+        "pitch": "unknown"
+      },
+      "description": {
+        "en": "Close front vowel “ee”, as in see (shorter)."
+      },
+      "example": {
+        "word": "いぬ",
+        "romanization": "inu",
+        "meaningEn": "dog"
+      }
+    },
+    {
+      "id": "hira:う",
+      "glyph": "う",
+      "romanization": "u",
+      "sortKey": 3,
+      "strokeCount": 2,
+      "status": "active",
+      "pronunciation": {
+        "ipa": "/ɯ/",
+        "jaHint": "「う」の音",
+        "audioRef": null,
+        "pitch": "unknown"
+      },
+      "description": {
+        "en": "Close back vowel; lips unrounded vs English “oo”."
+      },
+      "example": {
+        "word": "うみ",
+        "romanization": "umi",
+        "meaningEn": "sea"
+      }
+    },
+    {
+      "id": "hira:え",
+      "glyph": "え",
+      "romanization": "e",
+      "sortKey": 4,
+      "strokeCount": 2,
+      "status": "active",
+      "pronunciation": {
+        "ipa": "/e/",
+        "jaHint": "「え」の音",
+        "audioRef": null,
+        "pitch": "unknown"
+      },
+      "description": {
+        "en": "Mid front vowel “eh”, as in get."
+      },
+      "example": {
+        "word": "えき",
+        "romanization": "eki",
+        "meaningEn": "station"
+      }
+    },
+    {
+      "id": "hira:お",
+      "glyph": "お",
+      "romanization": "o",
+      "sortKey": 5,
+      "strokeCount": 3,
+      "status": "active",
+      "pronunciation": {
+        "ipa": "/o/",
+        "jaHint": "「お」の音",
+        "audioRef": null,
+        "pitch": "unknown"
+      },
+      "description": {
+        "en": "Mid back vowel “oh”, pure (not a diphthong)."
+      },
+      "example": {
+        "word": "おと",
+        "romanization": "oto",
+        "meaningEn": "sound"
+      }
+    }
+  ]
+}

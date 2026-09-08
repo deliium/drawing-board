@@ -29,7 +29,11 @@ func learnLog(level, format string, args ...interface{}) {
 func (ls *LearnStore) ListBySet(ctx context.Context, setID string) ([]learn.Character, error) {
 	_ = ctx
 	rows, err := ls.s.SQL.Query(`
-		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status, created_at, updated_at
+		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status,
+			COALESCE(description_en, ''), COALESCE(pronunciation_json, '{}'),
+			COALESCE(example_word, ''), COALESCE(example_romanization, ''), COALESCE(example_meaning_en, ''),
+			COALESCE(content_version, ''), COALESCE(trace_ref, ''),
+			created_at, updated_at
 		FROM characters WHERE set_id = ? ORDER BY sort_key
 	`, setID)
 	if err != nil {
@@ -39,7 +43,7 @@ func (ls *LearnStore) ListBySet(ctx context.Context, setID string) ([]learn.Char
 	var out []learn.Character
 	for rows.Next() {
 		var c learn.Character
-		if err := rows.Scan(&c.ID, &c.SetID, &c.Glyph, &c.Romanization, &c.StrokeCount, &c.SortKey, &c.Status, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := scanCharacter(rows, &c); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -50,17 +54,36 @@ func (ls *LearnStore) ListBySet(ctx context.Context, setID string) ([]learn.Char
 func (ls *LearnStore) getCharacter(ctx context.Context, id string) (*learn.Character, error) {
 	_ = ctx
 	row := ls.s.SQL.QueryRow(`
-		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status, created_at, updated_at
+		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status,
+			COALESCE(description_en, ''), COALESCE(pronunciation_json, '{}'),
+			COALESCE(example_word, ''), COALESCE(example_romanization, ''), COALESCE(example_meaning_en, ''),
+			COALESCE(content_version, ''), COALESCE(trace_ref, ''),
+			created_at, updated_at
 		FROM characters WHERE id = ?
 	`, id)
 	var c learn.Character
-	if err := row.Scan(&c.ID, &c.SetID, &c.Glyph, &c.Romanization, &c.StrokeCount, &c.SortKey, &c.Status, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := scanCharacter(row, &c); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, learn.ErrNotFound
 		}
 		return nil, err
 	}
+	learnLog("DEBUG", "[learn.CharacterRepo.Get] id=%s contentVersion=%s", c.ID, c.ContentVersion)
 	return &c, nil
+}
+
+type characterScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanCharacter(row characterScanner, c *learn.Character) error {
+	return row.Scan(
+		&c.ID, &c.SetID, &c.Glyph, &c.Romanization, &c.StrokeCount, &c.SortKey, &c.Status,
+		&c.DescriptionEn, &c.PronunciationJSON,
+		&c.ExampleWord, &c.ExampleRomanization, &c.ExampleMeaningEn,
+		&c.ContentVersion, &c.TraceRef,
+		&c.CreatedAt, &c.UpdatedAt,
+	)
 }
 
 func (ls *LearnStore) GetPublished(ctx context.Context, id string) (*learn.Lesson, error) {

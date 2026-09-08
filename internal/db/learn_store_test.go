@@ -28,7 +28,10 @@ func TestLearnStoreAttemptLifecycle(t *testing.T) {
 	if err != nil || len(chars) != 5 {
 		t.Fatalf("ListBySet: len=%d err=%v", len(chars), err)
 	}
-	lesson, err := ls.Lessons().GetPublished(ctx, seedLessonID)
+	if chars[0].Romanization == "" || chars[0].DescriptionEn == "" || chars[0].ContentVersion == "" {
+		t.Fatalf("pedagogy fields empty: %+v", chars[0])
+	}
+	lesson, err := ls.Lessons().GetPublished(ctx, "lesson:hiragana5")
 	if err != nil {
 		t.Fatalf("GetPublished: %v", err)
 	}

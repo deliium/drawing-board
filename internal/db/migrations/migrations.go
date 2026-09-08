@@ -16,6 +16,7 @@ func All() []Migration {
 	return []Migration{
 		{Version: 1, Name: "baseline_board", Up: up0001BaselineBoard},
 		{Version: 2, Name: "learning_domain", Up: up0002LearningDomain, Down: down0002LearningDomain},
+		{Version: 3, Name: "curriculum_pedagogy", Up: up0003CurriculumPedagogy},
 	}
 }
 

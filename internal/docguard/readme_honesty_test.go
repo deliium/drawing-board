@@ -25,6 +25,8 @@ var forbiddenREADMEPatterns = []struct {
 	{name: "ONNX Recognizer (Optional)", re: regexp.MustCompile(`(?i)ONNX\s+Recognizer\s*\(\s*Optional`)},
 	{name: "make onnx-model as setup", re: regexp.MustCompile(`(?i)make\s+onnx-model`)},
 	{name: "ONNX_MODEL env capability", re: regexp.MustCompile(`(?i)ONNX_MODEL\s*=`)},
+	{name: "AI-authored curriculum", re: regexp.MustCompile(`(?i)AI[- ]authored\s+curriculum`)},
+	{name: "expert-reviewed curriculum overclaim", re: regexp.MustCompile(`(?i)expert-reviewed\s+curriculum`)},
 }
 
 func moduleRoot(t *testing.T) string {

@@ -1,6 +1,6 @@
 SHELL := /usr/bin/zsh
 
-.PHONY: dev backend frontend build-web run zinnia-build zinnia-model docker-build docker-run docker-stop docker-clean test
+.PHONY: dev backend frontend build-web run zinnia-build zinnia-model docker-build docker-run docker-stop docker-clean test validate-content
 
 backend:
 	go run ./cmd/server
@@ -13,6 +13,10 @@ build-web:
 
 run:
 	ADDR=:8080 STATIC_DIR=web/dist go run ./cmd/server
+
+validate-content:
+	go test ./internal/curriculum -count=1
+	go run ./cmd/contentvalidate
 
 # Docker commands
 docker-build:

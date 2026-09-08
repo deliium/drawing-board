@@ -15,21 +15,26 @@ This project is a small modular monolith: a Go HTTP/WebSocket server under `cmd/
 ```text
 drawing-board/
 ├── cmd/server/                 # process entry (wiring, env, listen)
+├── cmd/contentvalidate/        # curriculum pack validator CLI
+├── content/
+│   └── hiragana5/              # reviewed curriculum packs (vN) + drafts/ quarantine
 ├── internal/
 │   ├── auth/                   # register/login/logout/me, password hashing, sessions
+│   ├── curriculum/             # load/validate hiragana5 content packs
 │   ├── db/                     # SQLite store, versioned migrations, board + learning repos
-│   │   └── migrations/         # numbered Up steps (baseline board, learning domain)
+│   │   └── migrations/         # numbered Up steps (baseline, learning, pedagogy)
 │   ├── learn/                  # learning-domain types + repository interfaces
 │   ├── httpapi/                # REST handlers (strokes, recognize, CSRF helpers)
 │   ├── ws/                     # WebSocket hub, CheckOrigin, ingest, ack/echo
 │   ├── limits/                 # shared validation bounds (stroke, recognize, opId)
-│   ├── recognize/              # hiragana5 target comparison + heuristic free-board ranking
+│   ├── recognize/              # hiragana5 target comparison (paths from content pack)
 │   ├── security/               # CORS / CSRF / origin policy helpers
 │   ├── metrics/                # process-local counters
 │   └── docguard/               # README honesty regression tests
 ├── web/
 │   ├── src/pages/              # AuthPage, BoardPage
 │   ├── src/canvas/             # CSS/DPR coords, drawStrokes, hitTest
+│   ├── src/curriculum/         # hiragana5 trace fixtures (Prompt 13 UI later)
 │   ├── src/composables/        # usePracticeCanvas (pointer/resize lifecycle)
 │   ├── src/services/           # apiFetch, wsClient, strokeSync
 │   ├── src/stores/             # client state
@@ -46,12 +51,14 @@ drawing-board/
 - ✅ `httpapi` / future attempt handlers depend on `internal/learn` interfaces; SQLite impl lives in `internal/db`
 - ✅ Free-board stroke tables stay isolated from attempt stroke tables (no shared FK / clear coupling)
 - ✅ Schema evolves only via versioned migrations in `internal/db/migrations` (fail-closed on `Open`)
+- ✅ Trusted curriculum lives under `content/hiragana5/vN`; `internal/curriculum` loads/validates; seed + recognize both consume the pack (no dual-maintained stroke JSON)
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
 - ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; pages compose UI + call services
 - ❌ Do not add a global WS broadcast path — delivery is `sendToUser(userID, …)` only
 - ❌ Do not put recognition rasterization / large allocations before `limits.CheckCanvas` / validators
 - ❌ Frontend must not treat unmatched inbound stroke creates as authoritative canvas state
 - ❌ Do not put lesson/attempt types into `internal/recognize` (recognize stays pure scoring)
+- ❌ Do not seed or embed `content/hiragana5/drafts/` — AI/WIP only until human review publishes into `vN`
 
 ## Layer/Module Communication
 
@@ -66,7 +73,8 @@ drawing-board/
 3. **Ack before trust** — client queue retries until ack/nack/budget; reload trusts REST
 4. **Honest recognition** — MVP assessment is deterministic target comparison for five hiragana; free-board heuristic scores are match-score ranking aids, not calibrated confidence or ONNX/ML
 5. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
-6. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+6. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
+7. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 

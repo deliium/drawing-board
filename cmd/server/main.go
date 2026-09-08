@@ -63,7 +63,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("FATAL [main] schema_version: %v", err)
 	}
-	log.Printf("INFO [main] schema_version=%d learn_seed=hiragana5", schemaVer)
+	log.Printf("INFO [main] schema_version=%d learn_seed=hiragana5 contentVersion=%s", schemaVer, db.Hiragana5ContentVersion())
 	_ = db.NewLearnStore(store) // constructed for Prompt 11 attempt APIs; unused by HTTP yet
 
 	sessionStore := sessions.NewCookieStore([]byte(*cookieKey))
@@ -79,7 +79,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("FATAL [main] recognizer init failed: %v", err)
 	}
-	log.Printf("INFO [main] recognizer=target_compare set=%s", recognizer.SetID())
+	log.Printf("INFO [main] recognizer=target_compare set=%s contentVersion=%s", recognizer.SetID(), recognizer.Version())
 
 	recognize.ConfigureDebug(appEnv, os.Getenv("RECOGNIZE_DEBUG"))
 

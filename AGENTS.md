@@ -17,7 +17,10 @@ Personal Japanese handwriting practice app (Vue + Go + SQLite). Strokes are priv
 
 ```text
 cmd/server/           # backend entrypoint
+cmd/contentvalidate/  # curriculum pack validator CLI
+content/hiragana5/    # reviewed curriculum packs (vN) + drafts/
 internal/auth/        # sessions, passwords
+internal/curriculum/  # load/validate hiragana5 content packs
 internal/db/          # SQLite store + versioned migrations + learning repos
 internal/learn/       # learning-domain types + repository interfaces
 internal/httpapi/     # REST API
@@ -30,6 +33,7 @@ internal/docguard/    # README honesty tests
 web/src/              # Vue SPA
 web/src/canvas/       # CSS/DPR coords, draw, hit-test helpers
 web/src/composables/  # usePracticeCanvas lifecycle
+web/src/curriculum/   # hiragana5 trace fixtures
 web/tests/            # Vitest
 .ai-factory/          # plans, patches, AI context
 docker/               # compose / nginx helpers
@@ -40,6 +44,9 @@ docker/               # compose / nginx helpers
 | File | Purpose |
 |------|---------|
 | `cmd/server/main.go` | Server wiring, env, listen |
+| `cmd/contentvalidate/main.go` | Curriculum pack validate / hash CLI |
+| `internal/curriculum/` | Load + validate published hiragana5 pack |
+| `content/hiragana5/v1/` | Reviewed curriculum source of truth |
 | `internal/ws/handler.go` | WS upgrade, ingest, ack/echo, boardRev mutates |
 | `internal/httpapi/handlers.go` | REST strokes / recognize |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
@@ -49,9 +56,10 @@ docker/               # compose / nginx helpers
 | `web/src/pages/BoardPage.vue` | Practice canvas UI (tools/WS/recognize) |
 | `web/src/composables/usePracticeCanvas.ts` | Pointer lifecycle, DPR resize redraw, Escape cancel |
 | `web/src/canvas/*` | CSS-logical coords, stroke paint (incl. dots), hit-test |
+| `web/src/curriculum/*` | Trace template fixtures for Vitest / future lesson UI |
 | `web/src/services/wsClient.ts` | WS queue / reconnect / status / baseRev |
 | `web/src/services/strokeSync.ts` | Merge ack/echo/clear into local strokes |
-| `Makefile` | Dev/build/docker targets |
+| `Makefile` | Dev/build/docker/`validate-content` targets |
 | `README.md` | Operator + API contract |
 
 ## Documentation

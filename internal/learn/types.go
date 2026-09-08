@@ -27,15 +27,22 @@ const (
 
 // Character is a curriculum glyph (global, not per-user).
 type Character struct {
-	ID           string
-	SetID        string
-	Glyph        string
-	Romanization string
-	StrokeCount  int
-	SortKey      int
-	Status       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                  string
+	SetID               string
+	Glyph               string
+	Romanization        string
+	StrokeCount         int
+	SortKey             int
+	Status              string
+	DescriptionEn       string
+	PronunciationJSON   string
+	ExampleWord         string
+	ExampleRomanization string
+	ExampleMeaningEn    string
+	ContentVersion      string
+	TraceRef            string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // Lesson is an ordered practice unit over a character set.

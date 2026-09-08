@@ -15,6 +15,7 @@
 - [x] **Vue canvas lifecycle modularization** — composable-owned pointer attach/detach, resize redraw, one-point taps/dots, DPR backing store with CSS-logical stroke coords
 - [x] **Honest recognition strategy for five-character hiragana MVP (Prompt 08)** — deterministic target comparison for five hiragana; remove fake ONNX/MNIST upgrade path; heuristic free-board ranking stays labeled as match scores (not ML confidence)
 - [x] **Learning domain model and versioned migrations (Prompt 09)** — versioned SQLite migrations; characters/lessons/attempts/assessments/progress separate from free-board strokes; idempotent hiragana5 seed
+- [x] **Reviewed five-character hiragana starter curriculum (Prompt 10)** — versioned `hiragana5` content pack (あ行); pedagogy fields, stroke/trace data, human review gate, deterministic seed; AI drafts excluded until reviewed
 - [ ] **Durable offline stroke vault** — IndexedDB/service-worker queue surviving full reload (explicitly out of scope for reliable-WS v1)
 - [ ] **Cross-tab live create sync** — optional same-account multi-tab create fan-in (deletes/clear already echo)
 
@@ -33,3 +34,4 @@
 | Vue canvas lifecycle modularization | 2026-09-08 |
 | Honest recognition strategy for five-character hiragana MVP (Prompt 08) | 2026-09-08 |
 | Learning domain model and versioned migrations (Prompt 09) | 2026-09-08 |
+| Reviewed five-character hiragana starter curriculum (Prompt 10) | 2026-09-08 |

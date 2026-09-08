@@ -16,7 +16,7 @@ type Assessor interface {
 // ScoreKindMatch labels Candidate.Score / Assessment.Score as a heuristic match score.
 const ScoreKindMatch = "match"
 
-// SetIDHiragana5 is the fixed five-character MVP curriculum id (placeholders until starter content freezes glyphs).
+// SetIDHiragana5 is the fixed five-character MVP curriculum id (あ行 vowels).
 const SetIDHiragana5 = "hiragana5"
 
 // PassThreshold (T_pass) is the engineering pass bar for gold fixtures / target assessment.

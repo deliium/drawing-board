@@ -1,81 +1,89 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 
-	"github.com/deliium/drawing-board/internal/recognize"
+	"github.com/deliium/drawing-board/internal/curriculum"
+	"github.com/deliium/drawing-board/internal/learn"
 )
 
-// hiragana5Seed lists stub MVP glyphs (Prompt 10 may replace content; keep ids/set stable).
-// Stroke counts match recognize hiragana5 templates.
-var hiragana5Seed = []struct {
-	ID          string
-	Glyph       string
-	StrokeCount int
-	SortKey     int
-}{
-	{ID: "hira:あ", Glyph: "あ", StrokeCount: 3, SortKey: 1},
-	{ID: "hira:い", Glyph: "い", StrokeCount: 2, SortKey: 2},
-	{ID: "hira:う", Glyph: "う", StrokeCount: 2, SortKey: 3},
-	{ID: "hira:え", Glyph: "え", StrokeCount: 2, SortKey: 4},
-	{ID: "hira:お", Glyph: "お", StrokeCount: 3, SortKey: 5},
-}
-
-const (
-	seedLessonID    = "lesson:hiragana5"
-	seedLessonCode  = "hiragana5"
-	seedLessonTitle = "Hiragana あいうえお (stub)"
-)
-
-// SeedHiragana5 upserts five characters, one published lesson, and ordered lesson_characters.
-// Idempotent on every Open.
+// SeedHiragana5 upserts five characters, one published lesson, and ordered lesson_characters
+// from the reviewed content pack. Idempotent on every Open; fails closed if pack is not published.
 func SeedHiragana5(s *Store) error {
+	pack, err := curriculum.LoadPublishedV1()
+	if err != nil {
+		dbLog("ERROR", "[db.seed] pack load failed: %v", err)
+		return fmt.Errorf("seed hiragana5 pack: %w", err)
+	}
+
 	tx, err := s.beginImmediate()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	setID := recognize.SetIDHiragana5
-	for _, c := range hiragana5Seed {
-		_, err := tx.Exec(`
-			INSERT INTO characters(id, set_id, glyph, romanization, stroke_count, sort_key, status)
-			VALUES(?, ?, ?, NULL, ?, ?, 'active')
+	setID := pack.Manifest.SetID
+	contentVer := pack.Manifest.ContentVersion
+
+	for _, c := range pack.Chars {
+		pronJSON, err := json.Marshal(c.Pronunciation)
+		if err != nil {
+			return fmt.Errorf("seed character %s pronunciation: %w", c.ID, err)
+		}
+		traceRef := curriculum.TraceRef(c.Glyph)
+		_, err = tx.Exec(`
+			INSERT INTO characters(
+				id, set_id, glyph, romanization, stroke_count, sort_key, status,
+				description_en, pronunciation_json, example_word, example_romanization, example_meaning_en,
+				content_version, trace_ref
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				set_id=excluded.set_id,
 				glyph=excluded.glyph,
+				romanization=excluded.romanization,
 				stroke_count=excluded.stroke_count,
 				sort_key=excluded.sort_key,
-				status='active',
+				status=excluded.status,
+				description_en=excluded.description_en,
+				pronunciation_json=excluded.pronunciation_json,
+				example_word=excluded.example_word,
+				example_romanization=excluded.example_romanization,
+				example_meaning_en=excluded.example_meaning_en,
+				content_version=excluded.content_version,
+				trace_ref=excluded.trace_ref,
 				updated_at=CURRENT_TIMESTAMP
-		`, c.ID, setID, c.Glyph, c.StrokeCount, c.SortKey)
+		`, c.ID, setID, c.Glyph, c.Romanization, c.StrokeCount, c.SortKey, c.Status,
+			c.Description.En, string(pronJSON), c.Example.Word, c.Example.Romanization, c.Example.MeaningEn,
+			contentVer, traceRef)
 		if err != nil {
 			return fmt.Errorf("seed character %s: %w", c.ID, err)
 		}
-		dbLog("DEBUG", "[db.seed] character id=%s glyph=%s", c.ID, c.Glyph)
+		dbLog("DEBUG", "[db.seed] character id=%s romanization=%s strokeCount=%d", c.ID, c.Romanization, c.StrokeCount)
 	}
 
+	lesson := pack.Manifest.Lesson
 	_, err = tx.Exec(`
 		INSERT INTO lessons(id, code, title, set_id, sort_order, status)
-		VALUES(?, ?, ?, ?, 1, 'published')
+		VALUES(?, ?, ?, ?, 1, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			code=excluded.code,
 			title=excluded.title,
 			set_id=excluded.set_id,
 			sort_order=excluded.sort_order,
-			status='published',
+			status=excluded.status,
 			updated_at=CURRENT_TIMESTAMP
-	`, seedLessonID, seedLessonCode, seedLessonTitle, setID)
+	`, lesson.ID, lesson.Code, lesson.Title, setID, learn.LessonStatusPublished)
 	if err != nil {
 		return fmt.Errorf("seed lesson: %w", err)
 	}
 
-	for _, c := range hiragana5Seed {
+	for _, c := range pack.Chars {
 		_, err := tx.Exec(`
 			INSERT INTO lesson_characters(lesson_id, character_id, position)
 			VALUES(?, ?, ?)
 			ON CONFLICT(lesson_id, character_id) DO UPDATE SET position=excluded.position
-		`, seedLessonID, c.ID, c.SortKey)
+		`, lesson.ID, c.ID, c.SortKey)
 		if err != nil {
 			return fmt.Errorf("seed lesson_character %s: %w", c.ID, err)
 		}
@@ -84,15 +92,25 @@ func SeedHiragana5(s *Store) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	dbLog("INFO", "[db.seed] set=%s characters=%d lesson=%s", setID, len(hiragana5Seed), seedLessonID)
+	dbLog("INFO", "[db.seed] set=%s characters=%d lesson=%s contentVersion=%s contentHash=%s",
+		setID, len(pack.Chars), lesson.ID, contentVer, pack.Manifest.ContentHash)
 	return nil
 }
 
-// Hiragana5Glyphs returns the seeded glyph list (for tests / set alignment).
+// Hiragana5Glyphs returns the packed glyph list in sort order (for tests / set alignment).
 func Hiragana5Glyphs() []string {
-	out := make([]string, len(hiragana5Seed))
-	for i, c := range hiragana5Seed {
-		out[i] = c.Glyph
+	pack, err := curriculum.LoadPublishedV1()
+	if err != nil {
+		return nil
 	}
-	return out
+	return pack.Glyphs()
+}
+
+// Hiragana5ContentVersion returns the published pack contentVersion (empty on load error).
+func Hiragana5ContentVersion() string {
+	pack, err := curriculum.LoadPublishedV1()
+	if err != nil {
+		return ""
+	}
+	return pack.Manifest.ContentVersion
 }

@@ -1,0 +1,17 @@
+{
+  "packId": "hiragana5",
+  "contentVersion": "hiragana5-content-v1",
+  "setId": "hiragana5",
+  "characterCount": 5,
+  "schemaVersion": 1,
+  "reviewStatus": "published",
+  "contentHash": "e3700b109ab84943d91c56af1aba1e9961fde28f72bfc7d4d5630a839f7203b1",
+  "licenses": [
+    "LICENSES.md"
+  ],
+  "lesson": {
+    "id": "lesson:hiragana5",
+    "code": "hiragana5",
+    "title": "Hiragana vowels (あいうえお)"
+  }
+}

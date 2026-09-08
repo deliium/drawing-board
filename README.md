@@ -315,9 +315,11 @@ The Vue client keeps a **bounded in-memory queue** (32 ops), reconnects with exp
 **Operator extras (optional Nginx):** `client_max_body_size` on `/api/recognize`, `limit_req` for multi-instance deployments. In-process limits are per replica only.
 ## Recognition System
 
-Startup always wires **target comparison** for the fixed MVP set `hiragana5` (あ, い, う, え, お) and logs `INFO [main] recognizer=target_compare set=hiragana5`. There is **no** loaded ML/ONNX model path; a deprecated `ONNX_MODEL` env var is ignored with a single `WARN [main]`.
+Startup always wires **target comparison** for the fixed MVP set `hiragana5` (あ, い, う, え, お) and logs `INFO [main] recognizer=target_compare set=hiragana5 contentVersion=…`. There is **no** loaded ML/ONNX model path; a deprecated `ONNX_MODEL` env var is ignored with a single `WARN [main]`.
 
 ### Target comparison (`hiragana5`)
+
+Assessment paths come from the reviewed content pack at `content/hiragana5/v1/` (same source as seed). Scores are **match scores**, not calibrated confidence.
 - Compares learner strokes to canonical templates (stroke count + normalized geometry)
 - Returns explainable **match scores** and `pass` when top match is the target and score ≥ engineering threshold `T_pass=0.70`
 - Fixture eval: `go test ./internal/recognize -run Eval -v` (gold must pass; wrong-character samples must not)
@@ -337,16 +339,31 @@ Startup always wires **target comparison** for the fixed MVP set `hiragana5` (�
 
 ## Learning schema & migrations
 
-SQLite schema changes are **versioned** and applied fail-closed on `db.Open`. Applied versions live in `schema_migrations`. Startup logs `INFO [main] schema_version=N learn_seed=hiragana5`.
+SQLite schema changes are **versioned** and applied fail-closed on `db.Open`. Applied versions live in `schema_migrations`. Startup logs `INFO [main] schema_version=N learn_seed=hiragana5 contentVersion=…`.
 
 | Version | Name | Contents |
 |---------|------|----------|
 | 1 | `baseline_board` | Free-board tables (`users`, `strokes`, `stroke_points`, `boardRev` / tombstones / `board_ops`) |
 | 2 | `learning_domain` | Curriculum + attempts (`characters`, `lessons`, `practice_attempts`, `attempt_strokes`, assessments, progress) |
+| 3 | `curriculum_pedagogy` | Pedagogy columns on `characters` (description, pronunciation JSON, examples, `content_version`, `trace_ref`) |
 
 **Free-board vs attempts:** Board strokes (`strokes` / `stroke_points`) are a scratchpad with `boardRev` / `opId`. Practice attempts use separate `attempt_strokes` tables — board clear/undo/erase does **not** delete attempt history. Match scores stored on assessments remain `score_kind=match` (not calibrated confidence).
 
-**Seed:** Every Open upserts stub `hiragana5` characters (あいうえお) and published lesson `lesson:hiragana5` (Prompt 10 may replace content; ids/set stay stable).
+### Hiragana5 content pack
+
+Trusted curriculum lives under `content/hiragana5/v1/` (あ行 vowels). The vowel row is the first gojuon column — a coherent first lesson before denser consonant rows — and keeps stable ids `hira:あ`…`hira:お` / `set_id=hiragana5`. Seed and recognize both load this pack via `internal/curriculum` — draft/WIP files under `content/hiragana5/drafts/` are never imported.
+
+| File | Role |
+|------|------|
+| `manifest.json` | `contentVersion`, `reviewStatus=published`, `contentHash`, lesson title |
+| `characters.json` | Glyph, romanization, pronunciation metadata, description, example word |
+| `strokes.json` | Canonical assessment polylines (normalized 0–1) |
+| `traces.json` | UI trace templates (v1 matches strokes) |
+| `review.json` | Human reviewer identity, date, checklist |
+
+Validate with `make validate-content` (runs `go test ./internal/curriculum` and `go run ./cmd/contentvalidate`). Authoring/review checklist: `content/hiragana5/README.md`. Licensing notes: `content/hiragana5/LICENSES.md`.
+
+**Seed:** Every Open upserts five characters + published lesson `lesson:hiragana5` from the pack (deterministic; fails closed if pack is not `published` or hash mismatches).
 
 ### Operator recovery (rollback)
 
@@ -357,12 +374,13 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 3. On migrate failure: restore `cp data.db.bak data.db`, pin the previous binary, investigate logs (`ERROR [db.migrate] failed version=…`)
 4. Forward fixes: add a new numbered migration; never edit already-applied migration bodies
 
-### Logging prefixes (learning / migrate)
+### Logging prefixes (learning / migrate / curriculum)
 | Prefix | Meaning |
 |--------|---------|
 | `[db.migrate]` | Apply / up-to-date / failed version |
-| `[db.seed]` | Idempotent hiragana5 seed |
-| `INFO [main] schema_version=` | Final version + `learn_seed=hiragana5` |
+| `[db.seed]` | Idempotent hiragana5 seed (`contentVersion`, `contentHash`) |
+| `[curriculum.load]` / `[curriculum.validate]` | Pack load + invariant checks (no coordinates) |
+| `INFO [main] schema_version=` | Final version + `learn_seed=hiragana5` + `contentVersion=` |
 | `[learn.*]` | Attempt/assessment repo DEBUG/INFO (ids/status/counts — no coordinates) |
 
 ## Troubleshooting
@@ -386,9 +404,9 @@ Verbose server log prefixes for privacy and persistence:
 | `[httpapi.ListStrokes]` / `[httpapi.ClearStrokes]` / `[httpapi.DeleteStroke]` | Authenticated REST entry (`userID`), clear count, delete success, store errors |
 | `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), `mode=heuristic\|target`, stroke/point/candidate counts — no coordinates |
 | `[recognize]` / `[recognize.Assess]` | Startup `recognize_debug=…`; DEBUG assess/recognize; gated dumps when `RECOGNIZE_DEBUG=1` (non-production) |
-| `INFO [main] recognizer=` | `target_compare` + `set=hiragana5` at process start |
-| `INFO [main] schema_version=` | Applied migration version + hiragana5 seed marker |
-| `[db.migrate]` / `[db.seed]` | Schema apply / curriculum seed |
+| `INFO [main] recognizer=` | `target_compare` + `set=hiragana5` + `contentVersion=` at process start |
+| `INFO [main] schema_version=` | Applied migration version + hiragana5 seed + contentVersion |
+| `[db.migrate]` / `[db.seed]` / `[curriculum.*]` | Schema apply / curriculum seed / pack load |
 | `[practiceCanvas]` | DEV-only client debug: attach/detach, resize css/dpr/backing, stroke start/commit/cancel (point counts only) |
 
 Example privacy check while two users practice: user A's stroke logs should show `sendToUser` recipient counts only for A's open tabs, never B's.
@@ -422,18 +440,22 @@ Generated project artifacts live in `.specify/`, and Cursor commands are in
 ```
 drawing-board/
 ├── cmd/server/          # Go backend server
+├── cmd/contentvalidate/ # Curriculum pack validator CLI
+├── content/hiragana5/   # Reviewed curriculum packs (vN) + drafts/
 ├── internal/            # Go internal packages
 │   ├── auth/           # Authentication logic
+│   ├── curriculum/     # Pack load + validate
 │   ├── db/             # SQLite store, versioned migrations, learning repos
 │   │   └── migrations/ # Numbered schema Up steps
 │   ├── learn/          # Learning-domain types + repository interfaces
 │   ├── httpapi/        # HTTP API handlers
 │   ├── limits/         # Shared stroke/recognize input bounds
 │   ├── metrics/        # Process-local reject/ok counters
-│   ├── recognize/      # hiragana5 target comparison + heuristic ranking
+│   ├── recognize/      # hiragana5 target comparison (paths from content pack)
 │   └── ws/             # WebSocket handling
 ├── web/                # Vue 3 frontend
 │   ├── src/           # TypeScript / Vue source
+│   │   └── curriculum/ # Trace rendering fixtures
 │   └── public/        # Static assets
 └── .ai-factory/        # Plans, patches, AI context
 ```
@@ -446,6 +468,7 @@ make backend          # Run Go backend
 make frontend         # Run Vue frontend
 make build-web        # Build frontend for production
 make run              # Run production server
+make validate-content # Validate hiragana5 content pack
 make test             # Run all unit tests
 make test-verbose     # Run tests with verbose output
 ```
@@ -506,4 +529,4 @@ ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in product
 Production `docker-compose.yml` sets `APP_ENV=production`, `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.
 
 ## License
-MIT License - see LICENSE file for details.
+CC0 1.0 Universal — see `LICENSE` at the repository root. Curriculum stroke/trace data and short pedagogy glosses are also under CC0; see `content/hiragana5/LICENSES.md`. Display fonts (e.g. Noto) are **not** bundled.
