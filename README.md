@@ -9,7 +9,7 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **User authentication** with session-based login/register/logout
 - **Drawing tools**: Pencil and Eraser with hit-testing
 - **Undo functionality**: Ctrl+Z to undo last stroke
-- **Handwriting recognition**: heuristic pattern-based character suggestions for practice feedback (not a trained AI model)
+- **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) plus free-board heuristic ranking with match scores (not a trained AI model)
 - **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
 ## Features
@@ -21,10 +21,10 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Clear**: Remove all your drawings from the canvas and database
 
 ### Handwriting Recognition
-- **Heuristic recognition**: Pattern-based ranking of candidate characters from stroke geometry
-- **Supported Characters**: 一, 二, 三, 十, 丨, 丶, 人, 大, 小, 中, 国, 学, 生, and more
-- **On-demand analysis**: Click "Recognize" for candidate suggestions with heuristic match scores (not calibrated confidence)
-- **Pattern Detection**: Detects crosses (十), horizontal lines (三), and other simple stroke patterns
+- **Target comparison (MVP)**: Deterministic scoring against five hiragana templates (`hiragana5`: あ, い, う, え, お) when `target` is supplied
+- **Free-board heuristic**: Pattern-based ranking for practice feedback without a target
+- **Match scores**: Ranking / criterion scores (`scoreKind: "match"`), not calibrated confidence
+- **Non-goals**: No unrestricted kanji OCR; no ML/ONNX upgrade path in this release
 
 ### User Management
 - **Registration**: Create new accounts with email and password
@@ -112,11 +112,8 @@ cd ..
 
 **Terminal 1 - Backend:**
 ```bash
-# Default: heuristic simple recognizer
+# Target-compare recognizer (hiragana5) + heuristic free-board ranking
 go run ./cmd/server
-
-# Optional ONNX_MODEL path (currently falls back to simple recognizer until model loading is implemented)
-ONNX_MODEL=./models/handwriting.onnx go run ./cmd/server
 ```
 
 **Terminal 2 - Frontend:**
@@ -149,10 +146,10 @@ Registration and login are **not** on the board header; they live only on the pu
 - **Clear Button**: Remove all your drawings
 
 ### Handwriting Recognition
-1. **Draw a character** on the canvas (try 一, 二, 三, 十)
-2. **Click "Recognize"** button
-3. **View results** showing possible characters with heuristic match scores (not calibrated confidence)
-4. **Try different patterns** to see how the recognizer ranks candidates
+1. **Draw a character** on the canvas (try あ / い / う, or simple shapes for free-board ranking)
+2. **Click "Recognize"** for heuristic match-score candidates (board UI)
+3. **Optional target mode** (API): send `target` (one of あいうえお) for pass/fail assessment vs templates
+4. Scores are **match scores**, not confidence
 
 ### Keyboard Shortcuts
 - **Ctrl+Z** (Windows/Linux) or **Cmd+Z** (Mac): Undo last stroke
@@ -190,11 +187,10 @@ COOKIE_KEY=your-secure-random-cookie-key-here
 # Ignored when APP_ENV=production. Startup logs INFO [recognize] recognize_debug=true|false.
 # RECOGNIZE_DEBUG=1
 
-# ONNX model for advanced recognition
-ONNX_MODEL=./models/handwriting.onnx
+# Deprecated: ONNX_MODEL is ignored if set (WARN [main] once). No model path is loaded.
 ```
 
-Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false` and `INFO [main] origin_policy mode=… count=… origins=…`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min` / `please-change-this-32-bytes-min`). With `APP_ENV=production`, missing/empty/`*`/`invalid` `ALLOWED_ORIGINS` also exits before listen.
+Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false`, `INFO [main] origin_policy mode=… count=… origins=…`, and `INFO [main] recognizer=target_compare set=hiragana5`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min` / `please-change-this-32-bytes-min`). With `APP_ENV=production`, missing/empty/`*`/`invalid` `ALLOWED_ORIGINS` also exits before listen.
 
 If TLS terminates at Nginx in front of Go, the public site must still be HTTPS for browsers to send `Secure` cookies, and `ALLOWED_ORIGINS` must match the browser-facing origin exactly (e.g. `https://learn.example.com`). See `docker/nginx-tls.conf.example`. Forwarded headers may be set for logs; they are **not** used for origin allowlisting or auth.
 
@@ -205,15 +201,6 @@ make build-web
 
 # Run production server
 ADDR=:8080 STATIC_DIR=web/dist DB_PATH=file:data.db?_fk=1 COOKIE_KEY=your-secure-key make run
-```
-
-### ONNX Model Setup (Optional)
-Downloads a model artifact for the optional `ONNX_MODEL` path. Until honest model loading lands, the server still uses the simple heuristic recognizer:
-```bash
-# Optional download (does not by itself enable ML recognition today)
-make onnx-model
-
-ONNX_MODEL=./models/handwriting.onnx go run ./cmd/server
 ```
 
 ## API Reference
@@ -262,7 +249,10 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 - `POST /api/strokes/delete?id={id}` — thin REST delete wrapper (UI uses WS delete)
 
 ### Recognition Endpoint
-- `POST /api/recognize` — Recognize drawn characters `{ topN: 10, width: 300, height: 300, boardRev: <n> }` (authenticated). Body is params only (strokes come from the user store at that revision). Max body **4 KiB**. Success: `{ "boardRev": <n>, "candidates": [...] }`. Mismatch: `409` `{ "error": "stale_revision", "message": "…", "boardRev": <current> }`.
+- `POST /api/recognize` — Params only (strokes come from the user store at `boardRev`). Max body **4 KiB**.
+  - Free-board: `{ topN: 10, width: 300, height: 300, boardRev: <n> }` → `{ "boardRev": <n>, "candidates": [...], "scoreKind": "match" }`
+  - Target mode (optional): add `"target": "あ"` (one of `あいうえお`) → same envelope plus `"assessment": { "target", "pass", "score", "scoreKind": "match", "reasons": [...] }` with candidates ranked within the five-char set
+  - Mismatch: `409` `{ "error": "stale_revision", "message": "…", "boardRev": <current> }`
 
 | HTTP | Code | Meaning |
 |------|------|---------|
@@ -270,6 +260,7 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 | 400 | `payload_too_large` | Body exceeds 4 KiB |
 | 400 | `invalid_dimensions` | `width`/`height` outside 1…2048 or pixel product too large |
 | 400 | `invalid_top_n` | Present `topN` outside 1…32 (omitted → default 10) |
+| 400 | `unsupported_target` | `target` present but not in the `hiragana5` MVP set |
 | 400 | `too_many_strokes` | More than 64 stored strokes |
 | 400 | `too_many_points` | Per-stroke or total point caps exceeded |
 | 400 | `invalid_stroke_data` | NaN/Inf/out-of-range coords in stored strokes |
@@ -279,7 +270,7 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 | 503 | `recognizer_unavailable` | No recognizer configured |
 | 500 | `internal_error` | Store/recognizer failure (no raw error text) |
 
-Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (`topN: 10`, ~300px canvas, width 1–20) is unchanged. Recognize is enabled in the UI only when sync status is **Saved**, the WS queue is empty, and there is at least one stroke.
+Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (`topN: 10`, ~300px canvas, width 1–20) is unchanged. Recognize is enabled in the UI only when sync status is **Saved**, the WS queue is empty, and there is at least one stroke. `score` values are **match scores** (`scoreKind: "match"`), not calibrated confidence.
 
 ### WebSocket
 - `WS /ws` - Authenticated **private persist + echo** channel (cookie session required)
@@ -324,18 +315,25 @@ The Vue client keeps a **bounded in-memory queue** (32 ops), reconnects with exp
 **Operator extras (optional Nginx):** `client_max_body_size` on `/api/recognize`, `limit_req` for multi-instance deployments. In-process limits are per replica only.
 ## Recognition System
 
-The application includes two recognition systems:
+Startup always wires **target comparison** for the fixed MVP set `hiragana5` (あ, い, う, え, お) and logs `INFO [main] recognizer=target_compare set=hiragana5`. There is **no** loaded ML/ONNX model path; a deprecated `ONNX_MODEL` env var is ignored with a single `WARN [main]`.
 
-### 1. Simple Recognizer (Default)
-- **Pattern-based analysis** of stroke shapes and directions
-- **No external dependencies** — works out of the box
-- **Supports basic characters**: 一, 二, 三, 十, 丨, 丶, 人, 大, 小, 中, 国, 学, 生
-- **Returns heuristic match scores** — useful for ranking candidates, not calibrated confidence
+### Target comparison (`hiragana5`)
+- Compares learner strokes to canonical templates (stroke count + normalized geometry)
+- Returns explainable **match scores** and `pass` when top match is the target and score ≥ engineering threshold `T_pass=0.70`
+- Fixture eval: `go test ./internal/recognize -run Eval -v` (gold must pass; wrong-character samples must not)
 
-### 2. ONNX Recognizer (Optional path)
-- Configured via `ONNX_MODEL`; intended for a future model-backed recognizer
-- **Current runtime:** model load is not fully implemented — the server falls back to the simple heuristic recognizer and logs that clearly
-- Do not treat `ONNX_MODEL` / `make onnx-model` as an active ML accuracy upgrade until Prompt 08 (honest recognition) lands
+### Free-board heuristic ranking
+- Used when `target` is omitted (board **Recognize** button)
+- Pattern-based candidate ranking with `scoreKind: "match"` — useful for practice feedback, **not** calibrated confidence
+- Not unrestricted kanji OCR; do not treat heuristic suggestions as ground truth
+
+### Logging prefixes
+| Prefix | Meaning |
+|--------|---------|
+| `INFO [main] recognizer=…` | Honest recognizer identity + set id at startup |
+| `[recognize.Recognize]` / `[recognize.Assess]` | DEBUG entry/result counts (no coordinates unless `RECOGNIZE_DEBUG`) |
+| `[recognize.templates]` | Template load (`loaded count=5 version=…`) |
+| `[httpapi.Recognize]` | `mode=heuristic\|target`, `target=`, result codes — no stroke dumps |
 
 ## Troubleshooting
 
@@ -356,15 +354,16 @@ Verbose server log prefixes for privacy and persistence:
 | `[ws.Handle]` | Connect/disconnect (`userID`, remote), inbound stroke/delete/clear + `baseRev`, save/delete/clear INFO with `boardRev`, upgrade/read errors, reject codes |
 | `[ws.sendToUser]` | Delivery to one user's connections; `recipients=` should stay within that account (e.g. 1–N tabs) |
 | `[httpapi.ListStrokes]` / `[httpapi.ClearStrokes]` / `[httpapi.DeleteStroke]` | Authenticated REST entry (`userID`), clear count, delete success, store errors |
-| `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), stroke/point/candidate counts — no coordinates |
-| `[recognize]` | Startup `recognize_debug=…`; gated diagnostics when `RECOGNIZE_DEBUG=1` (non-production) |
+| `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), `mode=heuristic\|target`, stroke/point/candidate counts — no coordinates |
+| `[recognize]` / `[recognize.Assess]` | Startup `recognize_debug=…`; DEBUG assess/recognize; gated dumps when `RECOGNIZE_DEBUG=1` (non-production) |
+| `INFO [main] recognizer=` | `target_compare` + `set=hiragana5` at process start |
 | `[practiceCanvas]` | DEV-only client debug: attach/detach, resize css/dpr/backing, stroke start/commit/cancel (point counts only) |
 
 Example privacy check while two users practice: user A's stroke logs should show `sendToUser` recipient counts only for A's open tabs, never B's.
 
 Frontend (Vite dev): browser console uses `[wsClient]` and `[BoardPage.ws]` for connect/send/ignore reasons.
 
-Default recognition logs are structured counts only (`[httpapi.Recognize] userID=… result=ok|reject code=… strokes=… candidates=…`) — **never** stroke coordinates or ASCII canvases. WS rejects log `[ws.Handle] WARN reject type=stroke userID=… code=…`.
+Default recognition logs are structured counts only (`[httpapi.Recognize] userID=… result=ok|reject mode=… code=… strokes=… candidates=…`) — **never** stroke coordinates or ASCII canvases. WS rejects log `[ws.Handle] WARN reject type=stroke userID=… code=…`.
 
 For local handwriting diagnostics (features, ASCII preview, sample coords), set `RECOGNIZE_DEBUG=1` in non-production. Production ignores the flag and logs `INFO [recognize] recognize_debug=false` (with a WARN if the flag was set).
 
@@ -397,12 +396,12 @@ drawing-board/
 │   ├── httpapi/        # HTTP API handlers
 │   ├── limits/         # Shared stroke/recognize input bounds
 │   ├── metrics/        # Process-local reject/ok counters
-│   ├── recognize/      # Recognition algorithms
+│   ├── recognize/      # hiragana5 target comparison + heuristic ranking
 │   └── ws/             # WebSocket handling
 ├── web/                # Vue 3 frontend
 │   ├── src/           # TypeScript / Vue source
 │   └── public/        # Static assets
-└── models/            # ONNX model files
+└── .ai-factory/        # Plans, patches, AI context
 ```
 
 ### Make Commands
@@ -413,7 +412,6 @@ make backend          # Run Go backend
 make frontend         # Run Vue frontend
 make build-web        # Build frontend for production
 make run              # Run production server
-make onnx-model       # Download ONNX model
 make test             # Run all unit tests
 make test-verbose     # Run tests with verbose output
 ```
@@ -469,7 +467,6 @@ APP_ENV=production              # Enables Secure cookies + COOKIE_KEY validation
 ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in production; no wildcards
 # COOKIE_SECURE=true            # Alternative to APP_ENV=production
 # RECOGNIZE_DEBUG=1             # Local handwriting diagnostics only (ignored in production)
-ONNX_MODEL=./models/handwriting.onnx  # ONNX model path (optional)
 ```
 
 Production `docker-compose.yml` sets `APP_ENV=production`, `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.

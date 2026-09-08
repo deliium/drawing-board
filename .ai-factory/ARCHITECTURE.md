@@ -21,7 +21,7 @@ drawing-board/
 │   ├── httpapi/                # REST handlers (strokes, recognize, CSRF helpers)
 │   ├── ws/                     # WebSocket hub, CheckOrigin, ingest, ack/echo
 │   ├── limits/                 # shared validation bounds (stroke, recognize, opId)
-│   ├── recognize/              # heuristic (+ optional ONNX path fallback)
+│   ├── recognize/              # hiragana5 target comparison + heuristic free-board ranking
 │   ├── security/               # CORS / CSRF / origin policy helpers
 │   ├── metrics/                # process-local counters
 │   └── docguard/               # README honesty regression tests
@@ -58,7 +58,7 @@ drawing-board/
 1. **Per-user isolation** — strokes and live echoes stay within `user_id`
 2. **Validate at the edge** — shared `limits` for recognize body params and WS stroke meta/points/`opId`
 3. **Ack before trust** — client queue retries until ack/nack/budget; reload trusts REST
-4. **Honest recognition** — heuristic scores are ranking aids, not calibrated confidence
+4. **Honest recognition** — MVP assessment is deterministic target comparison for five hiragana; free-board heuristic scores are match-score ranking aids, not calibrated confidence or ONNX/ML
 5. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
@@ -95,5 +95,6 @@ ws.send({ type: 'stroke', opId, baseRev: ws.getBoardRev(), stroke: payload })
 - ❌ Reintroducing collaborative multi-user live canvas semantics
 - ❌ Dual-writing deletes/clear via REST and WS for the same UI action (Vue uses WS; REST clear is scripts/tests only)
 - ❌ Allocating `width×height` recognize buffers before canvas bounds checks
-- ❌ Documenting the heuristic recognizer as “AI” or calibrated confidence
+- ❌ Documenting recognition as “AI”, calibrated confidence, or an active ONNX/MNIST handwriting upgrade
+- ❌ Expanding open-set guesses to unrestricted kanji without measured evidence
 - ❌ Using `Access-Control-Allow-Origin: *` with credentialed requests

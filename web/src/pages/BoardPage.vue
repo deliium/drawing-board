@@ -15,7 +15,14 @@ import { applyIncomingMessage, type Point, type Stroke } from '../services/strok
 import { shouldAcceptRecognizeResponse } from '../services/recognizeGate'
 import { sessionContext, setAuthenticatedUser } from '../services/sessionContext'
 
-type Candidate = { text: string; score: number }
+type Candidate = { text: string; score: number; scoreKind?: string }
+type Assessment = {
+  target: string
+  pass: boolean
+  score: number
+  scoreKind: string
+  reasons: string[]
+}
 type StrokesListResponse = { boardRev: number; strokes: Stroke[] }
 
 const router = useRouter()
@@ -48,6 +55,7 @@ const color = ref('#1d4ed8')
 const width = ref(4)
 const tool = ref<'pencil' | 'eraser'>('pencil')
 const candidates = ref<Candidate[] | null>(null)
+const assessment = ref<Assessment | null>(null)
 const strokes = ref<Stroke[]>([])
 const syncStatus = ref<SyncStatus>('connecting')
 const clearInFlight = ref(false)
@@ -103,6 +111,7 @@ function handleIncoming(message: InboundAppMessage) {
     boardDebug('clear_applied', result.action)
     clearInFlight.value = false
     candidates.value = null
+    assessment.value = null
   }
   boardDebug('apply inbound', result.action)
   strokes.value = result.strokes
@@ -135,6 +144,7 @@ async function doLogout() {
   setAuthenticatedUser(null)
   strokes.value = []
   candidates.value = null
+  assessment.value = null
   if (wsDebug) console.debug('[BoardPage] logout')
   await router.replace({ name: 'login' })
 }
@@ -143,6 +153,7 @@ function doClear() {
   if (clearInFlight.value || syncStatus.value === 'error') return
   clearInFlight.value = true
   candidates.value = null
+  assessment.value = null
   ws.dropPendingCreates()
   strokes.value = []
   const opId = newOpId()
@@ -241,7 +252,12 @@ async function recognize() {
   const attempt = ++recognizeAttempt.value
   recognizeInFlight.value = true
   try {
-    const result = await apiFetch<{ candidates: Candidate[]; boardRev: number }>('/api/recognize', {
+    const result = await apiFetch<{
+      candidates: Candidate[]
+      boardRev: number
+      scoreKind?: string
+      assessment?: Assessment
+    }>('/api/recognize', {
       method: 'POST',
       body: JSON.stringify({
         topN: 10,
@@ -263,10 +279,12 @@ async function recognize() {
       return
     }
     candidates.value = result.candidates || []
+    assessment.value = result.assessment ?? null
     trackMetric('recognize.success', 1)
   } catch (err) {
     if (attempt === recognizeAttempt.value) {
       candidates.value = []
+      assessment.value = null
     }
     trackMetric('recognize.reject', 1)
     if (wsDebug) {
@@ -337,15 +355,21 @@ onMounted(() => {
       <button @click="doLogout">Logout</button>
     </header>
 
-    <div style="padding: 12px; display: flex; gap: 8px; align-items: center">
+    <div style="padding: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
       <button :disabled="!recognizeEnabled" @click="recognize">
         {{ recognizeInFlight ? 'Recognizing…' : 'Recognize' }}
       </button>
+      <span style="opacity: 0.7; font-size: 0.9em">Match scores (heuristic ranking, not confidence)</span>
+      <div v-if="assessment" style="opacity: 0.85; font-size: 0.9em">
+        Target {{ assessment.target }}:
+        {{ assessment.pass ? 'pass' : 'no pass' }}
+        (match score {{ assessment.score.toFixed(2) }})
+      </div>
       <div v-if="candidates && candidates.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap">
         <span
           v-for="(c, i) in candidates"
           :key="i"
-          :title="`${c.score}`"
+          :title="`match score ${c.score}`"
           style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px"
         >
           {{ c.text }}

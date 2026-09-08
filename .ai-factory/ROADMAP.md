@@ -13,7 +13,7 @@
 - [x] **Reliable stroke WS persistence** — `opId` + ack + idempotent SQLite + client queue/reconnect/status UX
 - [x] **Authoritative board operations (revision-consistent create/undo/erase/clear/recognize)** — per-user `boardRev` / `baseRev`, WS clear, recognize gated to Saved
 - [x] **Vue canvas lifecycle modularization** — composable-owned pointer attach/detach, resize redraw, one-point taps/dots, DPR backing store with CSS-logical stroke coords
-- [ ] **Honest ONNX recognition (Prompt 08)** — real model load path or remove misleading ONNX upgrade framing; keep heuristic honesty
+- [x] **Honest recognition strategy for five-character hiragana MVP (Prompt 08)** — deterministic target comparison for five hiragana; remove fake ONNX/MNIST upgrade path; heuristic free-board ranking stays labeled as match scores (not ML confidence)
 - [ ] **Durable offline stroke vault** — IndexedDB/service-worker queue surviving full reload (explicitly out of scope for reliable-WS v1)
 - [ ] **Cross-tab live create sync** — optional same-account multi-tab create fan-in (deletes/clear already echo)
 
@@ -30,3 +30,4 @@
 | Reliable stroke WS persistence | 2026-09-08 |
 | Authoritative board operations (revision-consistent create/undo/erase/clear/recognize) | 2026-09-08 |
 | Vue canvas lifecycle modularization | 2026-09-08 |
+| Honest recognition strategy for five-character hiragana MVP (Prompt 08) | 2026-09-08 |

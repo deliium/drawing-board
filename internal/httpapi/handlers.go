@@ -23,6 +23,7 @@ type API struct {
 	Auth             *auth.Service
 	Store            *db.Store
 	Recognizer       recognize.Recognizer
+	Assessor         recognize.Assessor // optional; used when request includes target
 	RecognizeLimiter *limits.Limiter
 }
 
@@ -42,15 +43,18 @@ type Stroke struct {
 }
 
 type RecognizeRequest struct {
-	TopN     *int  `json:"topN"`
-	Width    int   `json:"width"`
-	Height   int   `json:"height"`
-	BoardRev *int64 `json:"boardRev"`
+	TopN     *int    `json:"topN"`
+	Width    int     `json:"width"`
+	Height   int     `json:"height"`
+	BoardRev *int64  `json:"boardRev"`
+	Target   string  `json:"target,omitempty"`
 }
 
 type RecognizeResponse struct {
-	BoardRev   int64                 `json:"boardRev"`
-	Candidates []recognize.Candidate `json:"candidates"`
+	BoardRev    int64                   `json:"boardRev"`
+	Candidates  []recognize.Candidate   `json:"candidates"`
+	ScoreKind   string                  `json:"scoreKind,omitempty"`
+	Assessment  *recognize.Assessment   `json:"assessment,omitempty"`
 }
 
 type StrokesListResponse struct {
@@ -355,6 +359,48 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 		rs = append(rs, recognize.Stroke{Points: ps})
 	}
 
+	target := strings.TrimSpace(req.Target)
+	mode := "heuristic"
+	resp := RecognizeResponse{
+		BoardRev:  snap.BoardRev,
+		ScoreKind: recognize.ScoreKindMatch,
+	}
+
+	if target != "" {
+		mode = "target"
+		if a.Assessor == nil {
+			metrics.Add("recognize_requests_total{result=error}", 1)
+			apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=target assessor unavailable", uid)
+			writeAPIError(w, 503, "recognizer_unavailable", "target assessor unavailable")
+			return
+		}
+		assessment, err := a.Assessor.Assess(target, rs, req.Width, req.Height)
+		if err != nil {
+			if errors.Is(err, recognize.ErrUnsupportedTarget) {
+				a.rejectRecognize(w, uid, "unsupported_target", "target not in hiragana5 MVP set")
+				return
+			}
+			if errors.Is(err, limits.ErrInvalidDimensions) || errors.Is(err, limits.ErrInvalidTopN) {
+				a.rejectRecognize(w, uid, limits.ErrorCode(err), limits.SafeMessage(err))
+				return
+			}
+			metrics.Add("recognize_requests_total{result=error}", 1)
+			apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=target assess failed", uid)
+			writeAPIError(w, 500, "internal_error", "recognition failed")
+			return
+		}
+		resp.Candidates = assessment.Candidates
+		if normalizedTopN > 0 && len(resp.Candidates) > normalizedTopN {
+			resp.Candidates = resp.Candidates[:normalizedTopN]
+		}
+		resp.Assessment = &assessment
+		metrics.Add("recognize_requests_total{result=ok}", 1)
+		apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok mode=target target=%s pass=%t boardRev=%d strokes=%d points=%d candidates=%d",
+			uid, target, assessment.Pass, snap.BoardRev, len(strokes), totalPoints, len(resp.Candidates))
+		writeJSON(w, 200, resp)
+		return
+	}
+
 	cands, err := a.Recognizer.Recognize(rs, req.Width, req.Height, normalizedTopN)
 	if err != nil {
 		if errors.Is(err, limits.ErrInvalidDimensions) || errors.Is(err, limits.ErrInvalidTopN) {
@@ -362,15 +408,16 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		metrics.Add("recognize_requests_total{result=error}", 1)
-		apiLog("ERROR", "[httpapi.Recognize] userID=%d recognizer failed", uid)
+		apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=%s recognizer failed", uid, mode)
 		writeAPIError(w, 500, "internal_error", "recognition failed")
 		return
 	}
+	resp.Candidates = cands
 
 	metrics.Add("recognize_requests_total{result=ok}", 1)
-	apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok boardRev=%d strokes=%d points=%d candidates=%d",
-		uid, snap.BoardRev, len(strokes), totalPoints, len(cands))
-	writeJSON(w, 200, RecognizeResponse{BoardRev: snap.BoardRev, Candidates: cands})
+	apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok mode=%s boardRev=%d strokes=%d points=%d candidates=%d",
+		uid, mode, snap.BoardRev, len(strokes), totalPoints, len(cands))
+	writeJSON(w, 200, resp)
 }
 
 func (a *API) rejectRecognize(w http.ResponseWriter, uid int64, code, message string) {

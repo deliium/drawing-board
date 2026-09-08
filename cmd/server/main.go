@@ -28,9 +28,12 @@ func main() {
 		staticDir = flag.String("static", getEnv("STATIC_DIR", ""), "directory to serve static files from (optional)")
 		dbPath    = flag.String("db", getEnv("DB_PATH", "data.db"), "sqlite dsn or file path")
 		cookieKey = flag.String("cookie", getEnv("COOKIE_KEY", auth.CookieKeyDefaultSentinel), "cookie auth key")
-		onnxModel = flag.String("onnx_model", getEnv("ONNX_MODEL", "./models/handwriting.onnx"), "path to ONNX model")
 	)
 	flag.Parse()
+
+	if v := os.Getenv("ONNX_MODEL"); v != "" {
+		log.Printf("WARN [main] ONNX_MODEL is set but unsupported/removed; ignoring value (use hiragana5 target comparison)")
+	}
 
 	appEnv := os.Getenv("APP_ENV")
 	secureCookies := auth.ProductionSecureMode(appEnv, os.Getenv("COOKIE_SECURE"))
@@ -66,19 +69,11 @@ func main() {
 	}
 	authSvc := auth.NewService(store, sessionStore, secureCookies)
 
-	var recognizer recognize.Recognizer
-	if *onnxModel != "" {
-		onnxRec, err := recognize.NewONNXRecognizer(*onnxModel)
-		if err != nil {
-			log.Printf("Warning: failed to initialize ONNX recognizer: %v", err)
-			log.Printf("Falling back to simple recognizer")
-			recognizer = recognize.NewSimpleRecognizer()
-		} else {
-			recognizer = onnxRec
-		}
-	} else {
-		recognizer = recognize.NewSimpleRecognizer()
+	recognizer, err := recognize.NewTargetCompareRecognizer()
+	if err != nil {
+		log.Fatalf("FATAL [main] recognizer init failed: %v", err)
 	}
+	log.Printf("INFO [main] recognizer=target_compare set=%s", recognizer.SetID())
 
 	recognize.ConfigureDebug(appEnv, os.Getenv("RECOGNIZE_DEBUG"))
 
@@ -86,6 +81,7 @@ func main() {
 		Auth:             authSvc,
 		Store:            store,
 		Recognizer:       recognizer,
+		Assessor:         recognizer,
 		RecognizeLimiter: limits.NewLimiter(limits.RecognizeRatePerMin, limits.RecognizeBurst),
 	}
 	ws.Init(store, authSvc, allowedOrigins)

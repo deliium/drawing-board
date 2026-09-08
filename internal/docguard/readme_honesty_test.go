@@ -9,8 +9,9 @@ import (
 	"testing"
 )
 
-// Phrases that oversell the current heuristic recognizer or unimplemented ONNX path.
-// Honest disclaimers such as "not a trained AI model" / "not calibrated confidence" are allowed.
+// Phrases that oversell recognition as AI/ML or claim an active ONNX upgrade path.
+// Honest disclaimers ("not a trained AI model", "not calibrated confidence") and
+// historical "removed" notes are allowed; active capability claims are not.
 var forbiddenREADMEPatterns = []struct {
 	name string
 	re   *regexp.Regexp
@@ -20,6 +21,10 @@ var forbiddenREADMEPatterns = []struct {
 	{name: "confidence scores", re: regexp.MustCompile(`(?i)confidence\s+scores`)},
 	{name: "Machine learning-based", re: regexp.MustCompile(`(?i)Machine\s+learning-based`)},
 	{name: "Higher accuracy (ONNX overclaim)", re: regexp.MustCompile(`(?i)Higher\s+accuracy`)},
+	{name: "ONNX model for advanced recognition", re: regexp.MustCompile(`(?i)ONNX\s+model\s+for\s+advanced\s+recognition`)},
+	{name: "ONNX Recognizer (Optional)", re: regexp.MustCompile(`(?i)ONNX\s+Recognizer\s*\(\s*Optional`)},
+	{name: "make onnx-model as setup", re: regexp.MustCompile(`(?i)make\s+onnx-model`)},
+	{name: "ONNX_MODEL env capability", re: regexp.MustCompile(`(?i)ONNX_MODEL\s*=`)},
 }
 
 func moduleRoot(t *testing.T) string {
@@ -64,7 +69,7 @@ func TestREADMEDoesNotMarketHeuristicAsAI(t *testing.T) {
 	}
 	if len(hits) > 0 {
 		t.Fatalf("README.md reintroduced dishonest recognition marketing:\n  - %s\n"+
-			"Heuristic recognizer must not be labeled AI; scores are not calibrated confidence.",
+			"Recognition must not claim AI/ML confidence or an active ONNX upgrade path.",
 			strings.Join(hits, "\n  - "))
 	}
 }

@@ -34,9 +34,12 @@ func TestSimpleRecognizer_RejectsHugeCanvas(t *testing.T) {
 	}
 }
 
-func TestONNXRecognizer_strokesToTensorGuard(t *testing.T) {
-	r := &ONNXRecognizer{}
-	_, err := r.strokesToTensor(nil, 999999, 999999)
+func TestTargetCompare_RejectsHugeCanvas(t *testing.T) {
+	r, err := NewTargetCompareRecognizer()
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	_, err = r.Assess("あ", []Stroke{{Points: []Point{{X: 1, Y: 1}}}}, 999999, 999999)
 	if !errors.Is(err, limits.ErrInvalidDimensions) {
 		t.Fatalf("got %v", err)
 	}

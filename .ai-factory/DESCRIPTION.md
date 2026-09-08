@@ -24,14 +24,14 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - Pencil / eraser / undo / clear on canvas
 - WebSocket stroke persist + echo with `opId` ack, `boardRev`/`baseRev` ordering, and idempotent SQLite creates
 - REST list strokes (`boardRev` envelope); recognize revision-gated; clear available via WS (primary) or REST helper
-- Heuristic pattern recognizer (default); optional `ONNX_MODEL` path currently falls back to heuristic
+- Recognition: deterministic target comparison for five hiragana (`hiragana5`); optional free-board heuristic ranking with match scores (not ML/ONNX)
 - Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
 
 ## Non-Functional Requirements
 
 - **Privacy:** per-user WS delivery (`sendToUser`); no cross-user stroke visibility
 - **Security:** bcrypt, session rotation, CSRF, CORS/WS origin allowlist, input bounds + rate limits
-- **Honesty:** never market recognition as calibrated AI confidence; keep `internal/docguard` green
+- **Honesty:** MVP is target comparison for five hiragana; never market scores as calibrated AI confidence or claim an ONNX upgrade; keep `internal/docguard` green
 - **Reliability:** bounded in-memory WS queue (32), reconnect/backoff; reload uses REST as source of truth (no durable offline vault yet)
 
 ## Constraints

@@ -22,7 +22,7 @@ internal/db/          # SQLite store
 internal/httpapi/     # REST API
 internal/ws/          # WebSocket hub
 internal/limits/      # shared validators
-internal/recognize/   # handwriting recognition
+internal/recognize/   # hiragana5 target comparison + heuristic ranking
 internal/security/    # CORS/CSRF/origins
 internal/metrics/     # counters
 internal/docguard/    # README honesty tests

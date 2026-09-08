@@ -14,18 +14,6 @@ build-web:
 run:
 	ADDR=:8080 STATIC_DIR=web/dist go run ./cmd/server
 
-# ONNX model setup
-ONNX_MODEL_URL := https://github.com/onnx/models/raw/main/vision/classification/mnist/model/mnist-12.onnx
-
-onnx-model:
-	mkdir -p models
-	curl -L "$(ONNX_MODEL_URL)" -o models/handwriting.onnx
-
-# Mock model for testing (creates empty file)
-mock-onnx:
-	mkdir -p models
-	touch models/handwriting.onnx
-
 # Docker commands
 docker-build:
 	docker compose build
