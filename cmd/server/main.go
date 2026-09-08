@@ -79,6 +79,8 @@ func main() {
 		recognizer = recognize.NewSimpleRecognizer()
 	}
 
+	recognize.ConfigureDebug(appEnv, os.Getenv("RECOGNIZE_DEBUG"))
+
 	api := &httpapi.API{Auth: authSvc, Store: store, Recognizer: recognizer}
 	ws.Init(store, authSvc, allowedOrigins)
 

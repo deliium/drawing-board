@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 
+	"github.com/deliium/drawing-board/internal/limits"
 	"github.com/yalue/onnxruntime_go"
 )
 
@@ -26,8 +27,7 @@ func NewONNXRecognizer(modelPath string) (*ONNXRecognizer, error) {
 	
 	// For now, we'll use the improved pattern-based recognition
 	// In the future, this could load a real ONNX model
-	fmt.Printf("ONNX Recognizer initialized with model path: %s\n", modelPath)
-	fmt.Printf("Using advanced pattern-based recognition (ONNX model loading not implemented yet)\n")
+	fmt.Printf("ONNX Recognizer initialized with model path: %s (model load not implemented; heuristic fallback path)\n", modelPath)
 	
 	return &ONNXRecognizer{
 		session: nil,
@@ -48,6 +48,9 @@ func (r *ONNXRecognizer) Close() error {
 
 // Convert strokes to a normalized image tensor
 func (r *ONNXRecognizer) strokesToTensor(strokes []Stroke, width, height int) ([]float32, error) {
+	if err := limits.CheckCanvas(width, height); err != nil {
+		return nil, err
+	}
 	// Create a grayscale image
 	img := image.NewGray(image.Rect(0, 0, width, height))
 	
@@ -123,95 +126,81 @@ func (r *ONNXRecognizer) strokesToTensor(strokes []Stroke, width, height int) ([
 }
 
 func (r *ONNXRecognizer) Recognize(strokes []Stroke, width, height int, topN int) ([]Candidate, error) {
-	if topN <= 0 {
-		topN = 10
+	var err error
+	topN, err = validateRecognizeParams(width, height, topN)
+	if err != nil {
+		return nil, err
 	}
-	
+
 	if len(strokes) == 0 {
 		return []Candidate{}, nil
 	}
-	
+
 	// Convert strokes to image tensor for analysis
 	tensor, err := r.strokesToTensor(strokes, width, height)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Analyze the image tensor to extract features
 	features := r.analyzeTensorFeatures(tensor, width, height)
-	
-	// Debug logging with visual representation
-	fmt.Printf("Recognition analysis for %d strokes:\n", len(strokes))
-	fmt.Printf("  Features: horizontal_lines=%.1f, vertical_lines=%.1f, diagonal_lines=%.1f\n", 
+
+	debugf("Recognition analysis for %d strokes:", len(strokes))
+	debugf("  Features: horizontal_lines=%.1f, vertical_lines=%.1f, diagonal_lines=%.1f",
 		features["horizontal_lines"], features["vertical_lines"], features["diagonal_lines"])
-	fmt.Printf("  Patterns: has_cross=%.1f, has_three_horizontal=%.1f, has_two_horizontal=%.1f\n", 
+	debugf("  Patterns: has_cross=%.1f, has_three_horizontal=%.1f, has_two_horizontal=%.1f",
 		features["has_cross"], features["has_three_horizontal"], features["has_two_horizontal"])
-	fmt.Printf("  Single: has_single_horizontal=%.1f, has_single_vertical=%.1f\n", 
+	debugf("  Single: has_single_horizontal=%.1f, has_single_vertical=%.1f",
 		features["has_single_horizontal"], features["has_single_vertical"])
-	fmt.Printf("  Canvas: width=%d, height=%d, density=%.3f, aspect_ratio=%.2f\n", 
+	debugf("  Canvas: width=%d, height=%d, density=%.3f, aspect_ratio=%.2f",
 		width, height, features["density"], features["aspect_ratio"])
-	
-	// Visual debug - show the actual image tensor
-	fmt.Printf("  Visual representation (showing active pixels):\n")
-	fmt.Printf("  Canvas size: %dx%d, Tensor size: %d\n", width, height, len(tensor))
-	
-	// Show full canvas with better resolution for debugging
-	stepY := 1
-	stepX := 1
-	if height > 40 {
-		stepY = height / 40  // Show more rows
-	}
-	if width > 80 {
-		stepX = width / 80   // Show more columns
-	}
-	
-	for y := 0; y < height; y += stepY {
-		fmt.Printf("  ")
-		for x := 0; x < width; x += stepX {
-			// Sample the pixel value
-			idx := y*width + x
-			if idx < len(tensor) && tensor[idx] > 0.1 {
-				fmt.Printf("█")
-			} else {
-				fmt.Printf(".")
+
+	if DebugEnabled() {
+		debugf("  Visual representation (showing active pixels):")
+		debugf("  Canvas size: %dx%d, Tensor size: %d", width, height, len(tensor))
+		stepY := 1
+		stepX := 1
+		if height > 40 {
+			stepY = height / 40
+		}
+		if width > 80 {
+			stepX = width / 80
+		}
+		for y := 0; y < height; y += stepY {
+			row := "  "
+			for x := 0; x < width; x += stepX {
+				idx := y*width + x
+				if idx < len(tensor) && tensor[idx] > 0.1 {
+					row += "█"
+				} else {
+					row += "."
+				}
+			}
+			debugf("%s", row)
+		}
+		for i, stroke := range strokes {
+			debugf("    Stroke %d: %d points", i, len(stroke.Points))
+			if len(stroke.Points) > 0 {
+				first := stroke.Points[0]
+				last := stroke.Points[len(stroke.Points)-1]
+				debugf("      First: (%.1f, %.1f), Last: (%.1f, %.1f)",
+					first.X, first.Y, last.X, last.Y)
 			}
 		}
-		fmt.Printf("\n")
-	}
-	
-	// Debug: show actual stroke coordinates and pixel coverage
-	fmt.Printf("  Stroke coordinates:\n")
-	totalPixels := 0
-	for i, stroke := range strokes {
-		fmt.Printf("    Stroke %d: %d points\n", i, len(stroke.Points))
-		if len(stroke.Points) > 0 {
-			first := stroke.Points[0]
-			last := stroke.Points[len(stroke.Points)-1]
-			fmt.Printf("      First: (%.1f, %.1f), Last: (%.1f, %.1f)\n", 
-				first.X, first.Y, last.X, last.Y)
-		}
-	}
-	
-	// Count actual pixels drawn
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			if tensor[y*width+x] > 0.1 {
-				totalPixels++
+		totalPixels := 0
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				if tensor[y*width+x] > 0.1 {
+					totalPixels++
+				}
 			}
 		}
+		debugf("  Total pixels drawn: %d (%.2f%% of canvas)", totalPixels, float64(totalPixels)/float64(width*height)*100)
 	}
-	fmt.Printf("  Total pixels drawn: %d (%.2f%% of canvas)\n", totalPixels, float64(totalPixels)/float64(width*height)*100)
-	
-	// Generate candidates based on extracted features
+
 	candidates := r.generateCandidatesFromFeatures(features, len(strokes), topN)
-	
-	fmt.Printf("  Generated %d candidates: ", len(candidates))
-	for i, c := range candidates {
-		if i > 0 { fmt.Printf(", ") }
-		fmt.Printf("%s(%.2f)", c.Text, c.Score)
-	}
-	fmt.Printf("\n")
-	
+	debugf("  Generated %d candidates", len(candidates))
+
 	return candidates, nil
 }
 

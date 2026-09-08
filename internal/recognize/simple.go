@@ -79,10 +79,12 @@ func analyzeStrokeShape(stroke Stroke) string {
 
 // Simple pattern matching based on stroke count and basic shape analysis
 func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN int) ([]Candidate, error) {
-	if topN <= 0 {
-		topN = 10
+	var err error
+	topN, err = validateRecognizeParams(width, height, topN)
+	if err != nil {
+		return nil, err
 	}
-	
+
 	if len(strokes) == 0 {
 		return []Candidate{}, nil
 	}
