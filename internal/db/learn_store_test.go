@@ -234,3 +234,95 @@ func TestAttemptOwnershipIsolation(t *testing.T) {
 		t.Fatalf("cross-user get: %v", err)
 	}
 }
+
+func TestCreateDraftIdempotentClientAttemptID(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "idem-create.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.SQL.Close()
+	uid, err := store.CreateUser("idem@example.com", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls := NewLearnStore(store)
+	ctx := context.Background()
+	chars, err := ls.Characters().ListBySet(ctx, recognize.SetIDHiragana5)
+	if err != nil || len(chars) < 2 {
+		t.Fatalf("chars: %v", err)
+	}
+
+	first, err := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{
+		UserID: uid, CharacterID: chars[0].ID, ClientAttemptID: "client-attempt-1",
+	})
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	replay, err := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{
+		UserID: uid, CharacterID: chars[0].ID, ClientAttemptID: "client-attempt-1",
+	})
+	if err != nil {
+		t.Fatalf("idempotent create: %v", err)
+	}
+	if replay.ID != first.ID {
+		t.Fatalf("replay id=%d want %d", replay.ID, first.ID)
+	}
+
+	_, err = ls.Attempts().CreateDraft(ctx, learn.CreateDraft{
+		UserID: uid, CharacterID: chars[1].ID, ClientAttemptID: "client-attempt-1",
+	})
+	if !errors.Is(err, learn.ErrConflict) {
+		t.Fatalf("mismatch want conflict, got %v", err)
+	}
+}
+
+func TestListStrokesAfterSubmit(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "list-strokes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.SQL.Close()
+	uid, err := store.CreateUser("list@example.com", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := store.CreateUser("other-list@example.com", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls := NewLearnStore(store)
+	ctx := context.Background()
+	chars, _ := ls.Characters().ListBySet(ctx, recognize.SetIDHiragana5)
+	draft, err := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: chars[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, _, err = ls.Attempts().ListStrokes(ctx, uid, draft.ID)
+	if !errors.Is(err, learn.ErrInvalidStatus) {
+		t.Fatalf("draft list want invalid_status, got %v", err)
+	}
+
+	in := []learn.StrokeInput{
+		{Color: "#111111", Width: 3, Points: []learn.StrokePoint{{X: 1, Y: 2}, {X: 3, Y: 4}}},
+		{Color: "#222222", Width: 4, Points: []learn.StrokePoint{{X: 5, Y: 6}}},
+	}
+	if err := ls.Attempts().SubmitStrokes(ctx, uid, draft.ID, in, 320, 240); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	got, w, h, err := ls.Attempts().ListStrokes(ctx, uid, draft.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if w != 320 || h != 240 || len(got) != 2 {
+		t.Fatalf("w=%d h=%d strokes=%d", w, h, len(got))
+	}
+	if got[0].Color != "#111111" || len(got[0].Points) != 2 || got[1].Points[0].X != 5 {
+		t.Fatalf("stroke payload: %+v", got)
+	}
+
+	_, _, _, err = ls.Attempts().ListStrokes(ctx, other, draft.ID)
+	if !errors.Is(err, learn.ErrNotFound) {
+		t.Fatalf("other user want not_found, got %v", err)
+	}
+}

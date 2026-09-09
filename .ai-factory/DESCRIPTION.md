@@ -27,6 +27,7 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - Recognition: deterministic target comparison for five hiragana (`hiragana5`); optional free-board heuristic ranking with match scores (not ML/ONNX)
 - Durable learning schema (characters/lessons/attempts/assessments/progress) via versioned SQLite migrations, separate from free-board strokes
 - Reviewed five-vowel starter curriculum pack (`content/hiragana5/`) with pedagogy fields, stroke/trace templates, and deterministic seed
+- Attempt-scoped practice assessment REST (`/api/attempts`) — submit strokes for one character, assess via target comparison, persist results without reading the free-board
 - Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
 
 ## Non-Functional Requirements

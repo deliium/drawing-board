@@ -18,7 +18,10 @@ type LessonRepo interface {
 type AttemptRepo interface {
 	CreateDraft(ctx context.Context, in CreateDraft) (Attempt, error)
 	Get(ctx context.Context, userID, attemptID int64) (*Attempt, error)
+	GetByClientAttemptID(ctx context.Context, userID int64, clientAttemptID string) (*Attempt, error)
 	SubmitStrokes(ctx context.Context, userID, attemptID int64, strokes []StrokeInput, w, h int) error
+	// ListStrokes returns ordered attempt strokes + canvas size for submitted/assessed attempts (ownership-checked).
+	ListStrokes(ctx context.Context, userID, attemptID int64) (strokes []StrokeInput, width, height int, err error)
 	MarkAssessed(ctx context.Context, userID, attemptID int64) error
 	Abandon(ctx context.Context, userID, attemptID int64) error
 }

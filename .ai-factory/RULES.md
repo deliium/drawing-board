@@ -6,6 +6,9 @@ Hard requirements for this repository. More specific files under `.ai-factory/ru
 - Recognition MVP is **deterministic target comparison** for a fixed five-hiragana set (`hiragana5`) — not unrestricted kanji OCR and not a loaded ML model.
 - Free-board open-set ranking (if retained) is **heuristic match scores only** — never AI, ML confidence, calibrated confidence, or an ONNX/MNIST “upgrade” claim (`go test ./internal/docguard` must stay green).
 - **Attempt strokes ≠ board strokes** — practice attempts use separate tables; board clear/undo/erase must not mutate attempt history.
+- Practice assessment reads **attempt** strokes only (never `ListStrokesWithRev` / board tables); free-board `POST /api/recognize` is heuristic playground and must not accept `target`.
+- Retry always creates a **new** attempt row; never reopen `assessed` / `abandoned`.
+- Draft attempts persist metadata only — stroke geometry is client-held until `SubmitStrokes`; attempt APIs must not require `boardRev`.
 - SQLite schema changes use **versioned, fail-closed migrations** (`schema_migrations`); do not reintroduce ad-hoc unversioned DDL on `Open`.
 - Trusted curriculum is versioned under `content/hiragana5/vN` only; AI/WIP drafts stay in `content/hiragana5/drafts/` and must never be seeded or embedded for recognition.
 - Seed and recognize must agree on the `hiragana5` glyph set, stroke counts, and pack `contentVersion` (single pack source of truth).

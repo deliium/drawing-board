@@ -166,8 +166,18 @@ func (ls *LearnStore) CreateDraft(ctx context.Context, in learn.CreateDraft) (le
 	`, in.UserID, in.CharacterID, lessonArg, learn.AttemptStatusDraft, clientArg, now, now, now)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
-			learnLog("WARN", "[learn.AttemptRepo.CreateDraft] conflict userID=%d clientAttemptID=%s", in.UserID, in.ClientAttemptID)
-			return learn.Attempt{}, learn.ErrConflict
+			_ = tx.Rollback()
+			existing, gerr := ls.getByClientAttemptID(in.UserID, in.ClientAttemptID)
+			if gerr != nil {
+				return learn.Attempt{}, gerr
+			}
+			if existing.CharacterID != in.CharacterID || existing.LessonID != in.LessonID {
+				learnLog("WARN", "[learn.AttemptRepo.CreateDraft] conflict mismatch userID=%d clientAttemptID=%s", in.UserID, in.ClientAttemptID)
+				return learn.Attempt{}, learn.ErrConflict
+			}
+			learnLog("INFO", "[learn.AttemptRepo.CreateDraft] idempotent replay userID=%d attemptID=%d clientAttemptID=%s",
+				in.UserID, existing.ID, in.ClientAttemptID)
+			return existing, nil
 		}
 		return learn.Attempt{}, err
 	}
@@ -188,6 +198,103 @@ func (ls *LearnStore) getAttempt(userID, attemptID int64) (learn.Attempt, error)
 		FROM practice_attempts WHERE id = ? AND user_id = ?
 	`, attemptID, userID)
 	return scanAttempt(row)
+}
+
+func (ls *LearnStore) getByClientAttemptID(userID int64, clientAttemptID string) (learn.Attempt, error) {
+	if clientAttemptID == "" {
+		return learn.Attempt{}, learn.ErrInvalidInput
+	}
+	row := ls.s.SQL.QueryRow(`
+		SELECT id, user_id, character_id, lesson_id, status, client_attempt_id,
+			canvas_width, canvas_height, started_at, submitted_at, assessed_at, abandoned_at, created_at, updated_at
+		FROM practice_attempts WHERE user_id = ? AND client_attempt_id = ?
+	`, userID, clientAttemptID)
+	return scanAttempt(row)
+}
+
+// GetByClientAttemptID returns an attempt owned by userID for the given clientAttemptID.
+func (ls *LearnStore) GetByClientAttemptID(ctx context.Context, userID int64, clientAttemptID string) (*learn.Attempt, error) {
+	_ = ctx
+	a, err := ls.getByClientAttemptID(userID, clientAttemptID)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// ListStrokes returns ordered stroke geometry for a submitted/assessed attempt (ownership-checked).
+func (ls *LearnStore) ListStrokes(ctx context.Context, userID, attemptID int64) ([]learn.StrokeInput, int, int, error) {
+	_ = ctx
+	a, err := ls.getAttempt(userID, attemptID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	if a.Status != learn.AttemptStatusSubmitted && a.Status != learn.AttemptStatusAssessed {
+		learnLog("WARN", "[learn.AttemptRepo.ListStrokes] invalid_status attemptID=%d status=%s", attemptID, a.Status)
+		return nil, 0, 0, learn.ErrInvalidStatus
+	}
+	if a.CanvasWidth == nil || a.CanvasHeight == nil {
+		return nil, 0, 0, learn.ErrInvalidStatus
+	}
+
+	rows, err := ls.s.SQL.Query(`
+		SELECT id, color, width, started_at_unix_ms
+		FROM attempt_strokes WHERE attempt_id = ? ORDER BY seq ASC
+	`, attemptID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer rows.Close()
+
+	var strokes []learn.StrokeInput
+	for rows.Next() {
+		var strokeID int64
+		var st learn.StrokeInput
+		if err := rows.Scan(&strokeID, &st.Color, &st.Width, &st.StartedAtUnixMs); err != nil {
+			return nil, 0, 0, err
+		}
+		pts, err := ls.loadAttemptStrokePoints(strokeID)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		st.Points = pts
+		strokes = append(strokes, st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, err
+	}
+	learnLog("DEBUG", "[learn.AttemptRepo.ListStrokes] attemptID=%d strokeCount=%d", attemptID, len(strokes))
+	return strokes, *a.CanvasWidth, *a.CanvasHeight, nil
+}
+
+func (ls *LearnStore) loadAttemptStrokePoints(strokeID int64) ([]learn.StrokePoint, error) {
+	rows, err := ls.s.SQL.Query(`
+		SELECT x, y FROM attempt_stroke_points WHERE attempt_stroke_id = ? ORDER BY seq ASC
+	`, strokeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pts []learn.StrokePoint
+	for rows.Next() {
+		var p learn.StrokePoint
+		if err := rows.Scan(&p.X, &p.Y); err != nil {
+			return nil, err
+		}
+		pts = append(pts, p)
+	}
+	return pts, rows.Err()
+}
+
+// CountAttemptStrokes returns the number of strokes for an owned attempt (0 if none).
+func (ls *LearnStore) CountAttemptStrokes(ctx context.Context, userID, attemptID int64) (int, error) {
+	_ = ctx
+	if _, err := ls.getAttempt(userID, attemptID); err != nil {
+		return 0, err
+	}
+	var n int
+	err := ls.s.SQL.QueryRow(`SELECT COUNT(*) FROM attempt_strokes WHERE attempt_id = ?`, attemptID).Scan(&n)
+	return n, err
 }
 
 func scanAttempt(row *sql.Row) (learn.Attempt, error) {
@@ -656,8 +763,14 @@ func (r attemptRepo) Get(ctx context.Context, userID, attemptID int64) (*learn.A
 	}
 	return &a, nil
 }
+func (r attemptRepo) GetByClientAttemptID(ctx context.Context, userID int64, clientAttemptID string) (*learn.Attempt, error) {
+	return r.LearnStore.GetByClientAttemptID(ctx, userID, clientAttemptID)
+}
 func (r attemptRepo) SubmitStrokes(ctx context.Context, userID, attemptID int64, strokes []learn.StrokeInput, w, h int) error {
 	return r.LearnStore.SubmitStrokes(ctx, userID, attemptID, strokes, w, h)
+}
+func (r attemptRepo) ListStrokes(ctx context.Context, userID, attemptID int64) ([]learn.StrokeInput, int, int, error) {
+	return r.LearnStore.ListStrokes(ctx, userID, attemptID)
 }
 func (r attemptRepo) MarkAssessed(ctx context.Context, userID, attemptID int64) error {
 	return r.LearnStore.MarkAssessed(ctx, userID, attemptID)

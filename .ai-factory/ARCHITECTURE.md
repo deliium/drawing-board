@@ -24,7 +24,7 @@ drawing-board/
 │   ├── db/                     # SQLite store, versioned migrations, board + learning repos
 │   │   └── migrations/         # numbered Up steps (baseline, learning, pedagogy)
 │   ├── learn/                  # learning-domain types + repository interfaces
-│   ├── httpapi/                # REST handlers (strokes, recognize, CSRF helpers)
+│   ├── httpapi/                # REST handlers (strokes, recognize, practice attempts)
 │   ├── ws/                     # WebSocket hub, CheckOrigin, ingest, ack/echo
 │   ├── limits/                 # shared validation bounds (stroke, recognize, opId)
 │   ├── recognize/              # hiragana5 target comparison (paths from content pack)
@@ -48,8 +48,9 @@ drawing-board/
 
 - ✅ `cmd/server` wires `internal/*` packages; packages do not import `cmd/`
 - ✅ `httpapi` and `ws` may call `db`, `auth`, `limits`, `recognize`, `metrics`
-- ✅ `httpapi` / future attempt handlers depend on `internal/learn` interfaces; SQLite impl lives in `internal/db`
-- ✅ Free-board stroke tables stay isolated from attempt stroke tables (no shared FK / clear coupling)
+- ✅ `httpapi` attempt handlers depend on `internal/learn` repos + `recognize.Assessor`; SQLite impl lives in `internal/db`
+- ✅ Free-board stroke tables stay isolated from attempt stroke tables (no shared FK / clear coupling; no attempt↔board FK)
+- ✅ Board `POST /api/recognize` stays heuristic-only (no `target`); single-character practice uses `/api/attempts`
 - ✅ Schema evolves only via versioned migrations in `internal/db/migrations` (fail-closed on `Open`)
 - ✅ Trusted curriculum lives under `content/hiragana5/vN`; `internal/curriculum` loads/validates; seed + recognize both consume the pack (no dual-maintained stroke JSON)
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
@@ -62,7 +63,7 @@ drawing-board/
 
 ## Layer/Module Communication
 
-- **REST:** cookie session → `httpapi` handlers → `db.Store` / `recognize` (list returns `{boardRev,strokes}`; recognize is revision-gated)
+- **REST:** cookie session → `httpapi` handlers → `db.Store` / `LearnStore` / `recognize` (list returns `{boardRev,strokes}`; board recognize is revision-gated; attempt assess uses submitted attempt strokes only)
 - **WebSocket:** cookie + allowlisted Origin → `ws.Hub` → validate (`limits`) → `ApplyStrokeCreate|Delete|Clear` → `sendAck` to sender → `sendToUser` echo (includes `boardRev`)
 - **Frontend:** `apiFetch` (CSRF header) for REST reads/recognize; `wsClient` queue/ack for create/delete/clear; `GET /api/strokes` on load clears session queue and sets `boardRev`
 
@@ -74,7 +75,8 @@ drawing-board/
 4. **Honest recognition** — MVP assessment is deterministic target comparison for five hiragana; free-board heuristic scores are match-score ranking aids, not calibrated confidence or ONNX/ML
 5. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
 6. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
-7. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+7. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row
+8. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 
