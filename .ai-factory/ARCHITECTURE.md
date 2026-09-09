@@ -43,7 +43,10 @@ drawing-board/
 │   ├── src/services/           # apiFetch, attempts/curriculum/progress, wsClient, strokeSync
 │   ├── src/stores/             # client state (free-board oriented)
 │   ├── src/router/             # auth/guest guards + practice routes
-│   └── tests/                  # Vitest unit/contract/integration (+ axe a11y)
+│   ├── tests/                  # Vitest unit/contract/integration (+ axe a11y)
+│   └── e2e/                    # Playwright learner-journey smoke (Chromium)
+├── scripts/                    # e2e-webserver.sh and other CI helpers
+├── .github/workflows/          # PR CI + nightly race/Playwright/CodeQL
 ├── docker/                     # Nginx examples, compose assets
 └── .ai-factory/                # AI Factory plans, patches, context
 ```

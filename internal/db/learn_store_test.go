@@ -328,7 +328,6 @@ func TestListStrokesAfterSubmit(t *testing.T) {
 	}
 }
 
-
 func TestListAttemptsPaginationAndFilters(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "list-hist.db"))
 	if err != nil {

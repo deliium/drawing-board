@@ -39,6 +39,7 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - **Security:** bcrypt, session rotation, CSRF, CORS/WS origin allowlist, input bounds + rate limits
 - **Honesty:** MVP is multi-criterion match vs pack templates; never market scores as calibrated AI confidence or claim an ONNX upgrade; correctness limited to fixture-tested criteria; keep `internal/docguard` green
 - **Reliability:** bounded in-memory WS queue (32), reconnect/backoff; reload uses REST as source of truth (no durable offline vault yet)
+- **CI / quality:** GitHub Actions PR jobs (`Go quality`, `Go race`, `Web quality`, `Content validate`, `Security light`) with Makefile mirrors (`make check`, `make test-race`, …); coverage is a signal artifact, not a vanity gate; Playwright learner journeys are non-required until promoted
 
 ## Constraints
 

@@ -3,6 +3,7 @@ import { createApp, nextTick } from 'vue'
 import ComparisonOverlay from '../../src/components/practice/ComparisonOverlay.vue'
 import JourneyStatusBanner from '../../src/components/practice/JourneyStatusBanner.vue'
 import CharacterIntroPanel from '../../src/components/practice/CharacterIntroPanel.vue'
+import PronunciationAudioButton from '../../src/components/practice/PronunciationAudioButton.vue'
 import { initLocale, setLocale } from '../../src/i18n'
 import { useRomanizationPreference } from '../../src/composables/useRomanizationPreference'
 import { stubCanvasContext } from '../helpers/stubCanvasContext'
@@ -157,6 +158,28 @@ describe('CharacterIntroPanel', () => {
     await nextTick()
     expect(m.text()).toMatch(/Audio unavailable|音声を再生できません/)
     warn.mockRestore()
+    m.unmount()
+  })
+})
+
+describe('PronunciationAudioButton', () => {
+  beforeEach(() => {
+    initLocale()
+    setLocale('en')
+  })
+
+  it('exposes accessible play control and live region', async () => {
+    const m = await mount(PronunciationAudioButton, {
+      audioRef: '/audio/hiragana5/a.mp3',
+      glyph: 'あ',
+    })
+    const btn = m.root.querySelector('button') as HTMLButtonElement
+    expect(btn.getAttribute('aria-label')).toMatch(/あ/)
+    expect(m.root.querySelector('[aria-live="polite"]')).toBeTruthy()
+    const audio = m.root.querySelector('audio') as HTMLAudioElement
+    audio.dispatchEvent(new Event('play'))
+    await nextTick()
+    expect(btn.getAttribute('aria-pressed')).toBe('true')
     m.unmount()
   })
 })

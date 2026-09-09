@@ -1,0 +1,207 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.22.x"
+  NODE_VERSION: "20"
+
+jobs:
+  go-quality:
+    name: Go quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: gofmt
+        run: |
+          echo "::group::gofmt"
+          dirty=$(gofmt -l .)
+          if [ -n "$dirty" ]; then echo "$dirty"; exit 1; fi
+          echo "::endgroup::"
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          args: ./...
+      - name: go build
+        run: go build ./...
+      - name: Go unit/integration
+        run: |
+          echo "::group::go test"
+          ./test.sh all
+          echo "::endgroup::"
+      - name: Recognition fixtures
+        run: ./test.sh recognize-fixtures
+      - name: Go coverage artifact
+        if: always()
+        run: ./test.sh report
+      - name: Upload Go coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: coverage/
+          retention-days: 14
+
+  go-race:
+    name: Go race
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Race (ws/db/httpapi)
+        run: |
+          echo "::group::make test-race"
+          make test-race 2>&1 | tee race.log
+          echo "::endgroup::"
+      - name: Upload race log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-race-log
+          path: race.log
+          retention-days: 14
+
+  web-quality:
+    name: Web quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: npm ci
+        run: npm ci
+      - name: typecheck
+        run: npm run typecheck
+      - name: vitest
+        run: npm test
+      - name: vitest coverage
+        run: npm run test:coverage
+      - name: build
+        run: npm run build
+      - name: Upload Vitest coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: web/coverage/
+          retention-days: 14
+
+  content:
+    name: Content validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: validate-content
+        run: make validate-content
+
+  security-light:
+    name: Security light
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: govulncheck
+        run: |
+          echo "::group::govulncheck"
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          echo "::endgroup::"
+      - name: npm production audit
+        working-directory: web
+        run: |
+          echo "::group::npm audit"
+          # Fail on high/critical production advisories; document triage in README.
+          npm ci
+          npm audit --omit=dev --audit-level=high
+          echo "::endgroup::"
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  playwright:
+    name: Playwright
+    runs-on: ubuntu-latest
+    # Non-required until stable green — promote via branch protection when ready.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: npm ci + browsers
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build SPA
+        working-directory: web
+        run: npm run build
+      - name: Playwright journeys
+        working-directory: web
+        env:
+          CI: "true"
+        run: npm run test:e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 14

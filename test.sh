@@ -114,15 +114,24 @@ run_benchmarks() {
 }
 
 # Function to run race detection
+# Default: WS + db + httpapi (CGO). Override with TEST_RACE_PKGS or pass packages after "race".
 run_race_tests() {
     echo -e "\n${YELLOW}Running race detection tests...${NC}"
     echo "----------------------------------------"
-    
-    if go test -race ./...; then
+
+    local pkgs="${TEST_RACE_PKGS:-./internal/ws ./internal/db ./internal/httpapi}"
+    if [ "$#" -gt 0 ]; then
+        pkgs="$*"
+    fi
+    echo "[check] start name=test-race pkgs=$pkgs"
+
+    if CGO_ENABLED=1 go test -race -count=1 $pkgs; then
         echo -e "${GREEN}✅ No race conditions detected${NC}"
+        echo "[check] ok name=test-race"
         return 0
     else
         echo -e "${RED}❌ Race conditions detected${NC}"
+        echo "[check] fail name=test-race"
         return 1
     fi
 }
@@ -157,7 +166,15 @@ main() {
             run_benchmarks
             ;;
         "race")
-            run_race_tests
+            shift
+            run_race_tests "$@"
+            ;;
+        "recognize-fixtures")
+            echo -e "\n${YELLOW}Recognition fixtures / Eval / Hiragana5…${NC}"
+            echo "[check] start name=recognize-fixtures"
+            go test ./internal/recognize -run 'Eval|Fixture|Hiragana5' -count=1 -v
+            go test ./internal/docguard -count=1
+            echo "[check] ok name=recognize-fixtures"
             ;;
         "all")
             run_all_tests
@@ -166,17 +183,20 @@ main() {
             echo "Usage: $0 [command]"
             echo ""
             echo "Commands:"
-            echo "  all       Run all tests (default)"
-            echo "  db        Test database layer"
-            echo "  auth      Test authentication"
-            echo "  recognize Test recognition system"
-            echo "  httpapi   Test HTTP API"
-            echo "  ws        Test WebSocket handler"
-            echo "  coverage  Run all tests with coverage"
-            echo "  report    Generate coverage report"
-            echo "  bench     Run benchmarks"
-            echo "  race      Run race detection tests"
-            echo "  help      Show this help message"
+            echo "  all                 Run all tests (default)"
+            echo "  db                  Test database layer"
+            echo "  auth                Test authentication"
+            echo "  recognize           Test recognition system"
+            echo "  recognize-fixtures  Fixture/Eval/Hiragana5 + docguard"
+            echo "  httpapi             Test HTTP API"
+            echo "  ws                  Test WebSocket handler"
+            echo "  coverage            Run all tests with coverage"
+            echo "  report              Generate coverage report under coverage/"
+            echo "  bench               Run benchmarks"
+            echo "  race [pkgs…]        Race detector (default: ws/db/httpapi; CGO)"
+            echo "  help                Show this help message"
+            echo ""
+            echo "Makefile mirrors: make check-go | test-race | check-web | check"
             ;;
         *)
             echo -e "${RED}Unknown command: $command${NC}"

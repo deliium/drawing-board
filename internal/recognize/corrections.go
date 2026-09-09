@@ -15,14 +15,14 @@ type FeedbackItem struct {
 
 // Correction codes (stable API / persistence).
 const (
-	CodeEmptyStrokes         = "empty_strokes"
-	CodeStrokeCountMismatch  = "stroke_count_mismatch"
-	CodeStrokeOrder          = "stroke_order"
-	CodeStartDirection       = "start_direction"
-	CodeEndDirection         = "end_direction"
-	CodeRelativePlacement    = "relative_placement"
-	CodeProportions          = "proportions"
-	CodeShape                = "shape"
+	CodeEmptyStrokes        = "empty_strokes"
+	CodeStrokeCountMismatch = "stroke_count_mismatch"
+	CodeStrokeOrder         = "stroke_order"
+	CodeStartDirection      = "start_direction"
+	CodeEndDirection        = "end_direction"
+	CodeRelativePlacement   = "relative_placement"
+	CodeProportions         = "proportions"
+	CodeShape               = "shape"
 )
 
 // correctionPriority is highest-first selection order for ≤2 feedback items.

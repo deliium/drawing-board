@@ -12,10 +12,10 @@ const (
 
 // Mastery reason codes for i18n (stable snake_case).
 const (
-	MasteryReasonNoAssessedAttempts  = "no_assessed_attempts"
-	MasteryReasonNoPassesYet         = "no_passes_yet"
-	MasteryReasonSinglePass          = "single_pass"
-	MasteryReasonRecentMiss          = "recent_miss"
+	MasteryReasonNoAssessedAttempts   = "no_assessed_attempts"
+	MasteryReasonNoPassesYet          = "no_passes_yet"
+	MasteryReasonSinglePass           = "single_pass"
+	MasteryReasonRecentMiss           = "recent_miss"
 	MasteryReasonTwoConsecutivePasses = "two_consecutive_passes"
 )
 

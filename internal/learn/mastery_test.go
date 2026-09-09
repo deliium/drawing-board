@@ -20,15 +20,15 @@ func outcomes(passes ...bool) []AssessedOutcome {
 func TestDeriveMastery(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name       string
-		in         []AssessedOutcome
-		state      string
-		reason     string
-		assessed   int
-		pass       int
-		fail       int
-		consec     int
-		lastPass   *bool
+		name     string
+		in       []AssessedOutcome
+		state    string
+		reason   string
+		assessed int
+		pass     int
+		fail     int
+		consec   int
+		lastPass *bool
 	}{
 		{
 			name:     "empty_not_started",

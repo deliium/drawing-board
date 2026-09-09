@@ -567,8 +567,24 @@ make frontend         # Run Vue frontend
 make build-web        # Build frontend for production
 make run              # Run production server
 make validate-content # Validate hiragana5 content pack
-make test             # Run all unit tests
-make test-verbose     # Run tests with verbose output
+make test             # Go unit/integration (./test.sh all; no race)
+make test-verbose     # Go tests with -v
+```
+
+#### Quality gates (local mirrors of CI)
+```bash
+make check            # PR-like: check-go + check-web + validate-content
+make check-go         # gofmt + vet + golangci-lint (if installed) + build + Go tests
+make test-race        # CGO race on ws/db/httpapi (override TEST_RACE_PKGS)
+make check-web        # typecheck + Vitest + production build
+make test-web         # Vitest only
+make test-e2e         # Playwright learner journeys (needs Chromium once)
+make coverage         # Go coverage HTML under coverage/ (signal only)
+make coverage-web     # Vitest coverage under web/coverage/
+make security-check   # govulncheck + npm audit --omit=dev
+CHECK_E2E=1 make check  # include Playwright in the local PR gate
+./test.sh recognize-fixtures  # hiragana5 Fixture/Eval + docguard
+./test.sh race                # same packages as make test-race
 ```
 
 #### Docker Commands
@@ -595,6 +611,39 @@ make docker-shell-backend  # Access backend container shell
 make docker-shell-frontend # Access frontend container shell
 ```
 
+## Quality gates / CI
+
+Engineering confidence uses a **balanced test pyramid** (Go unit/integration → Vitest → small Playwright), not a vanity global coverage percentage. Coverage HTML/LCOV is uploaded as a **signal** artifact only.
+
+| Tier | What it covers |
+|------|----------------|
+| Go | packages, SQLite migrations, HTTP/WS dial contracts, hiragana5 Fixture/Eval, `-race` on WS/db/httpapi |
+| Vitest | components, composables, API/WS client contracts, axe a11y |
+| Playwright | 2 Chromium learner journeys (register → assess → history/hub); non-required on PRs until stable |
+
+### GitHub Actions (`.github/workflows/ci.yml`)
+
+Required check **names** to enable under branch protection on `main`:
+
+1. `Go quality`
+2. `Go race`
+3. `Web quality`
+4. `Content validate`
+5. `Security light`
+
+`Playwright` runs on PRs with `continue-on-error: true` — **promote to required** when nightly stays green. Nightly also runs full `./... -race` and CodeQL (`.github/workflows/nightly.yml`). Dependabot covers Go modules, `web` npm, and Actions.
+
+### Security triage
+
+- `govulncheck ./...` — fix or document accepted Go advisories in the PR.
+- `npm audit --omit=dev --audit-level=high` — production deps only; low/moderate noise is not a merge blocker. Prefer upgrades over force-audit silencing; if a false positive blocks CI, record the advisory ID and rationale in the PR.
+- Gitleaks on PRs; never enable `RECOGNIZE_DEBUG` in CI (stroke coordinates must stay out of logs).
+
+### Operator checklist (GitHub)
+
+1. Push workflows to `main`.
+2. Settings → Branches → protect `main` → require the five checks above.
+3. Optionally require status checks to pass before merging; leave Playwright off until promoted.
 ## Docker Configuration
 
 ### Production Setup

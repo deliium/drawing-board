@@ -22,6 +22,7 @@
 - [x] **Attempt history and per-character mastery (Prompt 15)** — paginated personal attempt history; explainable mastery from assessed attempts; humble next-character suggestion; privacy clear / retention docs; no streaks, social comparison, or SRS
 - [x] **Lightweight spaced-review queue (Prompt 16)** — Leitner-style personal review from assessed pass/fail; due dates + next/why; forgiving missed days; no streaks, notifications, or SM-2/FSRS
 - [x] **Handwriting practice with basic language learning (Prompt 17)** — per-character pronunciation audio, example vocabulary, hideable romanization, concise learner guidance; kanji-ready content extension points without implementing kanji
+- [x] **Test pyramid and CI confidence (Prompt 18)** — balanced Go unit/integration + SQLite migrations + HTTP/WS contracts + Vitest/axe/canvas + small Playwright learner journeys; WS race detection; coverage as signal; lint/type/build; GitHub Actions with caching/artifacts/security scanning and required PR checks; local Makefile equivalents
 
 ## Completed
 
@@ -45,3 +46,4 @@
 | Attempt history and per-character mastery (Prompt 15) | 2026-09-09 |
 | Lightweight spaced-review queue (Prompt 16) | 2026-09-09 |
 | Handwriting practice with basic language learning (Prompt 17) | 2026-09-09 |
+| Test pyramid and CI confidence (Prompt 18) | 2026-09-09 |

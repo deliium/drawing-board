@@ -16,8 +16,8 @@ type CriterionScores struct {
 func scoreCriteria(learner, tmpl NormalizeResult) CriterionScores {
 	got, want := len(learner.Strokes), len(tmpl.Strokes)
 	cs := CriterionScores{
-		StrokeCount: strokeCountScore(got, want),
-		StrokeOrder: strokeOrderScore(learner.Strokes, tmpl.Strokes),
+		StrokeCount:       strokeCountScore(got, want),
+		StrokeOrder:       strokeOrderScore(learner.Strokes, tmpl.Strokes),
 		StartEndDirection: directionScore(learner.Strokes, tmpl.Strokes),
 		RelativePlacement: placementScore(learner.Strokes, tmpl.Strokes),
 		Proportions:       proportionsScore(learner.Strokes, tmpl.Strokes),

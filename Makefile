@@ -1,6 +1,12 @@
 SHELL := /usr/bin/zsh
 
-.PHONY: dev backend frontend build-web run zinnia-build zinnia-model docker-build docker-run docker-stop docker-clean test validate-content sync-audio
+.PHONY: dev backend frontend build-web run zinnia-build zinnia-model \
+	docker-build docker-run docker-stop docker-clean \
+	test test-verbose test-web test-race test-e2e \
+	check check-go check-web validate-content sync-audio \
+	coverage coverage-web security-check
+
+# --- Dev ---
 
 backend:
 	go run ./cmd/server
@@ -20,11 +26,14 @@ sync-audio:
 	cp -f content/hiragana5/v1/audio/* web/public/audio/hiragana5/
 
 validate-content: sync-audio
+	@echo "[check] start name=validate-content"
 	@diff -rq content/hiragana5/v1/audio web/public/audio/hiragana5
 	go test ./internal/curriculum -count=1
 	go run ./cmd/contentvalidate
+	@echo "[check] ok name=validate-content"
 
-# Docker commands
+# --- Docker ---
+
 docker-build:
 	docker compose build
 
@@ -65,9 +74,84 @@ docker-shell-backend:
 docker-shell-frontend:
 	docker compose exec frontend sh
 
-# Test commands
+# --- Quality gates (local mirrors of CI) ---
+
+# Backward-compatible: Go unit/integration only (no race). Prefer `make check` for PR-like.
 test:
+	@echo "[check] start name=test (go all)"
 	./test.sh all
+	@echo "[check] ok name=test"
 
 test-verbose:
 	./test.sh all -v
+
+# Go fmt + vet + golangci-lint (if installed) + build + unit/integration (no race).
+check-go:
+	@echo "[check] start name=check-go"
+	@dirty=$$(gofmt -l .); if [ -n "$$dirty" ]; then echo "[check] fail name=check-go reason=gofmt"; echo "$$dirty"; exit 1; fi
+	go vet ./...
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./...; \
+	else \
+		echo "[check] warn name=check-go msg=golangci-lint not installed; skipping (CI installs it)"; \
+	fi
+	go build ./...
+	./test.sh all
+	@echo "[check] ok name=check-go"
+
+# Race detector on WS + db board + httpapi hot paths (CGO required for sqlite3).
+# Override with TEST_RACE_PKGS='./...' for full sweep.
+TEST_RACE_PKGS ?= ./internal/ws ./internal/db ./internal/httpapi
+test-race:
+	@echo "[check] start name=test-race pkgs=$(TEST_RACE_PKGS)"
+	CGO_ENABLED=1 go test -race -count=1 $(TEST_RACE_PKGS)
+	@echo "[check] ok name=test-race"
+
+test-web:
+	@echo "[check] start name=test-web"
+	cd web && npm test
+	@echo "[check] ok name=test-web"
+
+# Typecheck + Vitest + production build.
+check-web:
+	@echo "[check] start name=check-web"
+	cd web && npm run typecheck
+	cd web && npm test
+	cd web && npm run build
+	@echo "[check] ok name=check-web"
+
+# Playwright learner journeys (requires browsers installed once via npx playwright install).
+test-e2e:
+	@echo "[check] start name=test-e2e"
+	cd web && npm run test:e2e
+	@echo "[check] ok name=test-e2e"
+
+# Go coverage HTML under coverage/ (signal only — not a vanity gate).
+coverage:
+	@echo "[check] start name=coverage"
+	./test.sh report
+	@echo "[check] ok name=coverage"
+
+# Vitest coverage under web/coverage/.
+coverage-web:
+	@echo "[check] start name=coverage-web"
+	cd web && npm run test:coverage
+	@echo "[check] ok name=coverage-web"
+
+# Light security scans (govulncheck + npm production audit).
+security-check:
+	@echo "[check] start name=security-check"
+	@if command -v govulncheck >/dev/null 2>&1; then \
+		govulncheck ./...; \
+	else \
+		echo "[check] installing govulncheck…"; \
+		go run golang.org/x/vuln/cmd/govulncheck@latest ./...; \
+	fi
+	cd web && npm audit --omit=dev
+	@echo "[check] ok name=security-check"
+
+# PR-like local gate. Set CHECK_E2E=1 to include Playwright.
+check: check-go check-web validate-content
+	@echo "[check] start name=check (PR-like)"
+	@if [ "$(CHECK_E2E)" = "1" ]; then $(MAKE) test-e2e; fi
+	@echo "[check] ok name=check"

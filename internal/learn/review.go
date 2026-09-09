@@ -16,17 +16,17 @@ const (
 
 // Next suggestion reason codes for schedule-aware practice order.
 const (
-	NextReasonDueReview    = "due_review"
-	NextReasonAllCaughtUp  = "all_caught_up"
+	NextReasonDueReview   = "due_review"
+	NextReasonAllCaughtUp = "all_caught_up"
 	// NextReasonFirstNotStarted / ContinueLearning / EncourageSteady reused from mastery.go.
 )
 
 // ReviewIntervals lists wall-clock duration after landing in each box.
 var ReviewIntervals = [...]time.Duration{
-	0,                // box 0 — due immediately
-	24 * time.Hour,   // box 1 — 1 day
-	72 * time.Hour,   // box 2 — 3 days
-	168 * time.Hour,  // box 3 — 7 days
+	0,               // box 0 — due immediately
+	24 * time.Hour,  // box 1 — 1 day
+	72 * time.Hour,  // box 2 — 3 days
+	168 * time.Hour, // box 3 — 7 days
 }
 
 // IntervalForBox returns the wall-clock interval for a box (clamped to 0–BoxMax).
@@ -85,10 +85,10 @@ func IsDue(dueAt *time.Time, now time.Time) bool {
 
 // ReviewSnapshot is durable schedule state for one character (from progress row).
 type ReviewSnapshot struct {
-	Box              int
-	DueAt            *time.Time
-	LastReviewedAt   *time.Time
-	Scheduled        bool // true when due_at was ever set (character is in the review queue)
+	Box            int
+	DueAt          *time.Time
+	LastReviewedAt *time.Time
+	Scheduled      bool // true when due_at was ever set (character is in the review queue)
 }
 
 // NextSuggestion is the schedule-aware next-character pick (plus optional future due hint).
@@ -128,11 +128,11 @@ func SuggestNextWithReview(
 	}
 
 	type cand struct {
-		lc       LessonCharacter
-		mastery  Mastery
-		review   ReviewSnapshot
-		dueAt    time.Time
-		hasDue   bool
+		lc      LessonCharacter
+		mastery Mastery
+		review  ReviewSnapshot
+		dueAt   time.Time
+		hasDue  bool
 	}
 	cands := make([]cand, 0, len(lessonOrder))
 	for _, lc := range lessonOrder {

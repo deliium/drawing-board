@@ -107,15 +107,15 @@ type LessonMeta struct {
 
 // Manifest is pack-level metadata.
 type Manifest struct {
-	PackID          string     `json:"packId"`
-	ContentVersion  string     `json:"contentVersion"`
-	SetID           string     `json:"setId"`
-	CharacterCount  int        `json:"characterCount"`
-	SchemaVersion   int        `json:"schemaVersion"`
-	ReviewStatus    string     `json:"reviewStatus"`
-	ContentHash     string     `json:"contentHash"`
-	Licenses        []string   `json:"licenses"`
-	Lesson          LessonMeta `json:"lesson"`
+	PackID         string     `json:"packId"`
+	ContentVersion string     `json:"contentVersion"`
+	SetID          string     `json:"setId"`
+	CharacterCount int        `json:"characterCount"`
+	SchemaVersion  int        `json:"schemaVersion"`
+	ReviewStatus   string     `json:"reviewStatus"`
+	ContentHash    string     `json:"contentHash"`
+	Licenses       []string   `json:"licenses"`
+	Lesson         LessonMeta `json:"lesson"`
 }
 
 // GlyphStrokes is ordered polylines for one glyph.
@@ -136,10 +136,10 @@ type CharactersFile struct {
 
 // ReviewRecord is the human sign-off for a published pack.
 type ReviewRecord struct {
-	Reviewer    string          `json:"reviewer"`
-	ReviewedAt  string          `json:"reviewedAt"`
-	Notes       string          `json:"notes"`
-	Checklist   map[string]bool `json:"checklist"`
+	Reviewer   string          `json:"reviewer"`
+	ReviewedAt string          `json:"reviewedAt"`
+	Notes      string          `json:"notes"`
+	Checklist  map[string]bool `json:"checklist"`
 }
 
 // Pack is a fully loaded content version.

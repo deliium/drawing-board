@@ -41,6 +41,9 @@ web/src/services/     # apiFetch, attempts/curriculum/progress clients, wsClient
 web/public/fonts/     # self-hosted OFL font subsets
 web/public/audio/hiragana5/  # mirrored mora clips (canonical under content pack)
 web/tests/            # Vitest (+ axe a11y)
+web/e2e/              # Playwright learner-journey smoke
+scripts/              # e2e-webserver and CI helpers
+.github/workflows/    # PR CI + nightly
 .ai-factory/          # plans, patches, AI context
 docker/               # compose / nginx helpers
 ```
@@ -83,8 +86,9 @@ docker/               # compose / nginx helpers
 | `web/src/services/attemptsApi.ts` | Practice attempt REST + history list |
 | `web/src/services/curriculumApi.ts` | Lesson pedagogy fetch |
 | `web/src/services/progressApi.ts` | Progress list / next suggestion / clear practice data |
-| `Makefile` | Dev/build/docker/`validate-content` targets |
-| `README.md` | Operator + API contract |
+| `Makefile` | Dev/build/docker/`validate-content` + quality gates (`check`, `test-race`, `check-web`, `test-e2e`, `security-check`) |
+| `scripts/e2e-webserver.sh` | Temp SQLite + static SPA for Playwright |
+| `README.md` | Operator + API contract + CI / quality gates |
 
 ## Documentation
 

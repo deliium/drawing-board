@@ -20,19 +20,19 @@ func analyzeStrokeDirection(stroke Stroke) string {
 	if len(stroke.Points) < 2 {
 		return "dot"
 	}
-	
+
 	start := stroke.Points[0]
 	end := stroke.Points[len(stroke.Points)-1]
-	
+
 	dx := end.X - start.X
 	dy := end.Y - start.Y
-	
+
 	// Calculate angle in degrees
 	angle := math.Atan2(dy, dx) * 180 / math.Pi
 	if angle < 0 {
 		angle += 360
 	}
-	
+
 	// Classify direction
 	if math.Abs(dx) < 5 && math.Abs(dy) < 5 {
 		return "dot"
@@ -52,22 +52,22 @@ func analyzeStrokeShape(stroke Stroke) string {
 	if len(stroke.Points) < 3 {
 		return "straight"
 	}
-	
+
 	// Calculate total deviation from straight line
 	totalDeviation := 0.0
 	start := stroke.Points[0]
 	end := stroke.Points[len(stroke.Points)-1]
-	
+
 	for i := 1; i < len(stroke.Points)-1; i++ {
 		point := stroke.Points[i]
 		// Distance from point to line between start and end
-		deviation := math.Abs((end.Y-start.Y)*point.X - (end.X-start.X)*point.Y + end.X*start.Y - end.Y*start.X) / 
-			math.Sqrt(math.Pow(end.Y-start.Y, 2) + math.Pow(end.X-start.X, 2))
+		deviation := math.Abs((end.Y-start.Y)*point.X-(end.X-start.X)*point.Y+end.X*start.Y-end.Y*start.X) /
+			math.Sqrt(math.Pow(end.Y-start.Y, 2)+math.Pow(end.X-start.X, 2))
 		totalDeviation += deviation
 	}
-	
+
 	avgDeviation := totalDeviation / float64(len(stroke.Points)-2)
-	
+
 	if avgDeviation < 5 {
 		return "straight"
 	} else if avgDeviation < 15 {
@@ -88,27 +88,27 @@ func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN i
 	if len(strokes) == 0 {
 		return []Candidate{}, nil
 	}
-	
+
 	// Analyze stroke patterns
 	totalPoints := 0
 	strokeDirections := make([]string, len(strokes))
 	strokeShapes := make([]string, len(strokes))
-	
+
 	for i, stroke := range strokes {
 		totalPoints += len(stroke.Points)
 		strokeDirections[i] = analyzeStrokeDirection(stroke)
 		strokeShapes[i] = analyzeStrokeShape(stroke)
 	}
-	
+
 	candidates := []Candidate{}
-	
+
 	// Single stroke analysis
 	if len(strokes) == 1 {
 		dir := strokeDirections[0]
 		shape := strokeShapes[0]
-		
+
 		if dir == "horizontal" && shape == "straight" {
-			candidates = append(candidates, 
+			candidates = append(candidates,
 				Candidate{Text: "一", Score: 0.9}, // horizontal line
 				Candidate{Text: "ー", Score: 0.7}, // long vowel mark
 			)
@@ -129,11 +129,11 @@ func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN i
 			)
 		}
 	}
-	
+
 	// Two stroke analysis
 	if len(strokes) == 2 {
 		dir1, dir2 := strokeDirections[0], strokeDirections[1]
-		
+
 		if dir1 == "horizontal" && dir2 == "horizontal" {
 			candidates = append(candidates,
 				Candidate{Text: "二", Score: 0.8}, // two horizontal lines
@@ -151,11 +151,11 @@ func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN i
 			)
 		}
 	}
-	
+
 	// Three stroke analysis
 	if len(strokes) == 3 {
 		dir1, dir2, dir3 := strokeDirections[0], strokeDirections[1], strokeDirections[2]
-		
+
 		if dir1 == "horizontal" && dir2 == "horizontal" && dir3 == "horizontal" {
 			candidates = append(candidates,
 				Candidate{Text: "三", Score: 0.8}, // three horizontal lines
@@ -168,7 +168,7 @@ func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN i
 			)
 		}
 	}
-	
+
 	// Complex characters (4+ strokes)
 	if len(strokes) >= 4 {
 		// Analyze complexity patterns
@@ -181,21 +181,21 @@ func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN i
 				verticalCount++
 			}
 		}
-		
+
 		if horizontalCount >= 2 && verticalCount >= 2 {
 			candidates = append(candidates,
 				Candidate{Text: "中", Score: 0.6}, // middle
 				Candidate{Text: "田", Score: 0.5}, // field
 			)
 		}
-		
+
 		candidates = append(candidates,
 			Candidate{Text: "国", Score: 0.5}, // country
 			Candidate{Text: "学", Score: 0.4}, // study
 			Candidate{Text: "生", Score: 0.3}, // life
 		)
 	}
-	
+
 	// Add complexity-based characters
 	if totalPoints > 20 {
 		candidates = append(candidates,
@@ -203,7 +203,7 @@ func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN i
 			Candidate{Text: "字", Score: 0.2}, // character
 		)
 	}
-	
+
 	// If no specific matches, provide generic suggestions based on stroke count
 	if len(candidates) == 0 {
 		if len(strokes) == 1 {
@@ -216,11 +216,11 @@ func (s *SimpleRecognizer) Recognize(strokes []Stroke, width, height int, topN i
 			candidates = append(candidates, Candidate{Text: "中", Score: 0.4})
 		}
 	}
-	
+
 	// Limit to topN results
 	if len(candidates) > topN {
 		candidates = candidates[:topN]
 	}
-	
+
 	return candidates, nil
 }

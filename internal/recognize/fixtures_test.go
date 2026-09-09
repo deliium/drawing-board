@@ -9,12 +9,12 @@ import (
 )
 
 type assessmentFixture struct {
-	Name                 string   `json:"name"`
-	Target               string   `json:"target"`
-	Strokes              []Stroke `json:"strokes"`
-	ExpectPass           bool     `json:"expectPass"`
-	ExpectFeedbackCode   string   `json:"expectFeedbackCode"`
-	ExpectWeakCriterion  string   `json:"expectWeakCriterion"`
+	Name                string   `json:"name"`
+	Target              string   `json:"target"`
+	Strokes             []Stroke `json:"strokes"`
+	ExpectPass          bool     `json:"expectPass"`
+	ExpectFeedbackCode  string   `json:"expectFeedbackCode"`
+	ExpectWeakCriterion string   `json:"expectWeakCriterion"`
 }
 
 func loadFixtureFile(t *testing.T, path string) assessmentFixture {

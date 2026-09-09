@@ -111,31 +111,31 @@ type FeedbackItem struct {
 
 // AssessmentResult is the persisted target-comparison outcome for one attempt.
 type AssessmentResult struct {
-	ID         int64
-	AttemptID  int64
-	Pass       bool
-	Score      float64
-	ScoreKind  string
-	Assessor   string
-	SetID      string
-	Reasons    []string
-	Feedback   []FeedbackItem
-	CreatedAt  time.Time
+	ID        int64
+	AttemptID int64
+	Pass      bool
+	Score     float64
+	ScoreKind string
+	Assessor  string
+	SetID     string
+	Reasons   []string
+	Feedback  []FeedbackItem
+	CreatedAt time.Time
 }
 
 // Progress is per-user per-character practice state, including Leitner-style review fields.
 type Progress struct {
-	UserID           int64
-	CharacterID      string
-	Status           string
-	AttemptCount     int
-	PassCount        int
-	LastAttemptID    *int64
-	LastPassedAt     *time.Time
-	ReviewBox        int
-	DueAt            *time.Time
-	LastReviewedAt   *time.Time
-	UpdatedAt        time.Time
+	UserID         int64
+	CharacterID    string
+	Status         string
+	AttemptCount   int
+	PassCount      int
+	LastAttemptID  *int64
+	LastPassedAt   *time.Time
+	ReviewBox      int
+	DueAt          *time.Time
+	LastReviewedAt *time.Time
+	UpdatedAt      time.Time
 }
 
 // CreateDraft is input for starting a practice attempt.

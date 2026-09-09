@@ -7,13 +7,13 @@ import (
 
 // Limiter is a per-key token bucket with a bounded map and TTL GC.
 type Limiter struct {
-	mu       sync.Mutex
-	rate     float64 // tokens per second
-	burst    float64
-	entries  map[int64]*bucket
-	maxKeys  int
-	idleTTL  time.Duration
-	now      func() time.Time
+	mu      sync.Mutex
+	rate    float64 // tokens per second
+	burst   float64
+	entries map[int64]*bucket
+	maxKeys int
+	idleTTL time.Duration
+	now     func() time.Time
 }
 
 type bucket struct {

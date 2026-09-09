@@ -5,6 +5,13 @@ export default defineConfig({
   plugins: [vue()],
   test: {
     environment: 'jsdom',
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: './coverage',
+      exclude: ['node_modules/', 'tests/', 'e2e/', '**/*.d.ts', 'dist/'],
+    },
   },
   build: {
     sourcemap: false,

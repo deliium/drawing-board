@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	mu      sync.Mutex
+	mu       sync.Mutex
 	counters = map[string]*atomic.Int64{}
 )
 

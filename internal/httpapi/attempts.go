@@ -44,34 +44,34 @@ type submitAttemptRequest struct {
 }
 
 type submitStrokeRequest struct {
-	Color           string         `json:"color"`
-	Width           int            `json:"width"`
-	StartedAtUnixMs int64          `json:"startedAtUnixMs"`
-	Points          []StrokePoint  `json:"points"`
+	Color           string        `json:"color"`
+	Width           int           `json:"width"`
+	StartedAtUnixMs int64         `json:"startedAtUnixMs"`
+	Points          []StrokePoint `json:"points"`
 }
 
 type submitAttemptResponse struct {
-	ID          int64   `json:"id"`
-	Status      string  `json:"status"`
-	SubmittedAt string  `json:"submittedAt"`
-	StrokeCount int     `json:"strokeCount"`
-	Width       int     `json:"width"`
-	Height      int     `json:"height"`
+	ID          int64  `json:"id"`
+	Status      string `json:"status"`
+	SubmittedAt string `json:"submittedAt"`
+	StrokeCount int    `json:"strokeCount"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
 }
 
 type assessmentResponse struct {
-	AttemptID   int64                  `json:"attemptId"`
-	CharacterID string                 `json:"characterId"`
-	Glyph       string                 `json:"glyph,omitempty"`
-	Status      string                 `json:"status"`
-	Pass        bool                   `json:"pass"`
-	Score       float64                `json:"score"`
-	ScoreKind   string                 `json:"scoreKind"`
-	Assessor    string                 `json:"assessor"`
-	SetID       string                 `json:"setId"`
-	Reasons     []string               `json:"reasons"`
-	Feedback    []learn.FeedbackItem   `json:"feedback"`
-	Candidates  []recognize.Candidate  `json:"candidates,omitempty"`
+	AttemptID   int64                 `json:"attemptId"`
+	CharacterID string                `json:"characterId"`
+	Glyph       string                `json:"glyph,omitempty"`
+	Status      string                `json:"status"`
+	Pass        bool                  `json:"pass"`
+	Score       float64               `json:"score"`
+	ScoreKind   string                `json:"scoreKind"`
+	Assessor    string                `json:"assessor"`
+	SetID       string                `json:"setId"`
+	Reasons     []string              `json:"reasons"`
+	Feedback    []learn.FeedbackItem  `json:"feedback"`
+	Candidates  []recognize.Candidate `json:"candidates,omitempty"`
 }
 
 type abandonResponse struct {

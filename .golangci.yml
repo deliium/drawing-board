@@ -1,0 +1,23 @@
+# Small golangci-lint set for Prompt 18 — avoid vanity rule floods.
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+
+linters-settings:
+  govet:
+    enable-all: true
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 50
+  max-same-issues: 10

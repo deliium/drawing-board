@@ -44,18 +44,18 @@ type Stroke struct {
 }
 
 type RecognizeRequest struct {
-	TopN     *int    `json:"topN"`
-	Width    int     `json:"width"`
-	Height   int     `json:"height"`
-	BoardRev *int64  `json:"boardRev"`
-	Target   string  `json:"target,omitempty"`
+	TopN     *int   `json:"topN"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	BoardRev *int64 `json:"boardRev"`
+	Target   string `json:"target,omitempty"`
 }
 
 type RecognizeResponse struct {
-	BoardRev    int64                   `json:"boardRev"`
-	Candidates  []recognize.Candidate   `json:"candidates"`
-	ScoreKind   string                  `json:"scoreKind,omitempty"`
-	Assessment  *recognize.Assessment   `json:"assessment,omitempty"`
+	BoardRev   int64                 `json:"boardRev"`
+	Candidates []recognize.Candidate `json:"candidates"`
+	ScoreKind  string                `json:"scoreKind,omitempty"`
+	Assessment *recognize.Assessment `json:"assessment,omitempty"`
 }
 
 type StrokesListResponse struct {
@@ -64,8 +64,8 @@ type StrokesListResponse struct {
 }
 
 type ClearRequest struct {
-	OpID     string `json:"opId,omitempty"`
-	BaseRev  *int64 `json:"baseRev,omitempty"`
+	OpID    string `json:"opId,omitempty"`
+	BaseRev *int64 `json:"baseRev,omitempty"`
 }
 
 type ClearResponse struct {

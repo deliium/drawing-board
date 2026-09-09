@@ -31,14 +31,14 @@ type AttemptHistoryItem struct {
 
 // AttemptListResult is a page of history items.
 type AttemptListResult struct {
-	Items          []AttemptHistoryItem
-	NextStartedAt  *time.Time
-	NextID         *int64
-	HasNext        bool
+	Items         []AttemptHistoryItem
+	NextStartedAt *time.Time
+	NextID        *int64
+	HasNext       bool
 }
 
 // ClearPracticeDataResult reports how many personal practice rows were removed.
 type ClearPracticeDataResult struct {
-	AttemptsDeleted      int64
-	ProgressRowsCleared  int64
+	AttemptsDeleted     int64
+	ProgressRowsCleared int64
 }

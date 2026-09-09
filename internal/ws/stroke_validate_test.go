@@ -10,9 +10,9 @@ import (
 
 func TestValidateStrokeForTest_OK(t *testing.T) {
 	s := &Stroke{
-		Points:  []Point{{X: 10, Y: 20}, {X: 30, Y: 20}},
-		Color:   "#1d4ed8",
-		Width:   4,
+		Points:   []Point{{X: 10, Y: 20}, {X: 30, Y: 20}},
+		Color:    "#1d4ed8",
+		Width:    4,
 		ClientID: "abc",
 	}
 	if err := ValidateStrokeForTest(s); err != nil {

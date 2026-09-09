@@ -17,13 +17,16 @@ type Store struct {
 }
 
 type User struct {
-	ID int64
-	Email string
+	ID           int64
+	Email        string
 	PasswordHash string
-	CreatedAt time.Time
+	CreatedAt    time.Time
 }
 
-type StrokePoint struct { X float64; Y float64 }
+type StrokePoint struct {
+	X float64
+	Y float64
+}
 
 type Stroke struct {
 	ID              int64
@@ -62,22 +65,32 @@ func Open(path string) (*Store, error) {
 
 func openAndInit(filename string, enableFK bool) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", filename)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
 	if enableFK {
-		if _, err := db.Exec("PRAGMA foreign_keys=ON;"); err != nil { return db, fmt.Errorf("pragma foreign_keys: %w", err) }
+		if _, err := db.Exec("PRAGMA foreign_keys=ON;"); err != nil {
+			return db, fmt.Errorf("pragma foreign_keys: %w", err)
+		}
 	}
 	// WAL can fail on some filesystems / environments (e.g. limited locking). Prefer it, but don't hard-fail.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		// Try to explicitly switch back to DELETE; if that also fails, continue with SQLite defaults.
 		_, _ = db.Exec("PRAGMA journal_mode=DELETE;")
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil { return db, fmt.Errorf("pragma busy_timeout: %w", err) }
-	if err := runMigrations(db); err != nil { return db, fmt.Errorf("migrate: %w", err) }
+	if _, err := db.Exec("PRAGMA busy_timeout=5000;"); err != nil {
+		return db, fmt.Errorf("pragma busy_timeout: %w", err)
+	}
+	if err := runMigrations(db); err != nil {
+		return db, fmt.Errorf("migrate: %w", err)
+	}
 	store := &Store{SQL: db}
-	if err := SeedHiragana5(store); err != nil { return db, fmt.Errorf("seed: %w", err) }
+	if err := SeedHiragana5(store); err != nil {
+		return db, fmt.Errorf("seed: %w", err)
+	}
 	return db, nil
 }
 
@@ -116,7 +129,9 @@ func normalizeSQLitePath(dsnOrPath string) (filename string, enableFK bool) {
 
 func (s *Store) CreateUser(email, passwordHash string) (int64, error) {
 	res, err := s.SQL.Exec("INSERT INTO users(email, password_hash) VALUES(?, ?)", email, passwordHash)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	return res.LastInsertId()
 }
 
@@ -140,7 +155,9 @@ func (s *Store) GetUserByEmail(email string) (*User, error) {
 	row := s.SQL.QueryRow("SELECT id, email, password_hash, created_at FROM users WHERE email = ?", email)
 	u := User{}
 	if err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) { return nil, nil }
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &u, nil
@@ -150,7 +167,9 @@ func (s *Store) GetUserByID(id int64) (*User, error) {
 	row := s.SQL.QueryRow("SELECT id, email, password_hash, created_at FROM users WHERE id = ?", id)
 	u := User{}
 	if err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) { return nil, nil }
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &u, nil
