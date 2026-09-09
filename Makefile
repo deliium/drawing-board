@@ -7,7 +7,8 @@ SHELL := /usr/bin/zsh
 	docker-shell-backend docker-shell-frontend \
 	test test-verbose test-web test-race test-e2e \
 	check check-go check-web validate-content sync-audio verify-docs \
-	coverage coverage-web security-check
+	coverage coverage-web security-check \
+	gate-r1 gate-r2 gate-r3 gate-r4 gate-release
 
 # --- Dev ---
 
@@ -164,3 +165,21 @@ verify-docs:
 	@echo "[check] start name=verify-docs"
 	./scripts/verify-readme-commands.sh
 	@echo "[check] ok name=verify-docs"
+
+# Release cutover gates (R1–R4) — wrap existing targets; see README “Release train”.
+gate-r1:
+	./scripts/gate-release.sh r1
+
+gate-r2:
+	./scripts/gate-release.sh r2
+
+gate-r3:
+	./scripts/gate-release.sh r3
+
+gate-r4:
+	./scripts/gate-release.sh r4
+
+# Example: make gate-release RELEASE=r1
+RELEASE ?= r1
+gate-release:
+	./scripts/gate-release.sh $(RELEASE)
