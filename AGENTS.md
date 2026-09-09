@@ -31,7 +31,7 @@ internal/security/    # CORS/CSRF/origins
 internal/metrics/     # counters
 internal/docguard/    # README honesty tests
 web/src/              # Vue SPA
-web/src/pages/        # BoardPage, PracticeHub/Character, LoginPage
+web/src/pages/        # BoardPage, PracticeHub/History/Character, LoginPage
 web/src/components/practice/  # intro, stroke-order, canvas, overlay, journey chrome
 web/src/canvas/       # CSS/DPR coords, layout helpers, draw, hit-test helpers
 web/src/composables/  # usePracticeCanvas + usePracticeJourney + useLocale
@@ -57,13 +57,16 @@ docker/               # compose / nginx helpers
 | `internal/recognize/normalize.go` | Shared unit-space normalization + short-stroke classification |
 | `internal/recognize/criteria.go` / `corrections.go` | Criterion scorers + ≤2 learner correction catalog |
 | `internal/httpapi/attempts.go` | Practice attempt REST lifecycle |
-| `internal/httpapi/curriculum.go` | Lesson + progress read endpoints |
+| `internal/httpapi/curriculum.go` | Lesson + progress read (+ mastery enrichment) |
+| `internal/httpapi/progress_history.go` | Attempt history, progress next, practice-data clear |
+| `internal/learn/mastery.go` | Explainable mastery derive + next-character suggestion |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
 | `internal/db/migrate.go` | versioned schema runner + `schema_migrations` |
 | `internal/db/learn_store.go` | SQLite learning repos (attempts/assessments/progress) |
 | `internal/learn/` | learning-domain types + repository interfaces |
 | `web/src/pages/BoardPage.vue` | Free-board canvas UI (tools/WS/recognize) |
-| `web/src/pages/PracticeHubPage.vue` | Hiragana5 lesson hub + progress |
+| `web/src/pages/PracticeHubPage.vue` | Hiragana5 lesson hub + mastery / next / clear |
+| `web/src/pages/PracticeHistoryPage.vue` | Paginated personal attempt history |
 | `web/src/pages/PracticeCharacterPage.vue` | Guided single-character journey shell |
 | `web/src/composables/usePracticeJourney.ts` | Stage machine, session resume, attempt orchestration |
 | `web/src/composables/usePracticeCanvas.ts` | Pointer lifecycle, DPR resize redraw, Escape cancel |
@@ -73,9 +76,9 @@ docker/               # compose / nginx helpers
 | `web/src/curriculum/*` | Trace template fixtures for animation/overlay |
 | `web/src/services/wsClient.ts` | WS queue / reconnect / status / baseRev |
 | `web/src/services/strokeSync.ts` | Merge ack/echo/clear into local strokes |
-| `web/src/services/attemptsApi.ts` | Thin typed client for practice attempt REST |
+| `web/src/services/attemptsApi.ts` | Practice attempt REST + history list |
 | `web/src/services/curriculumApi.ts` | Lesson pedagogy fetch |
-| `web/src/services/progressApi.ts` | Progress list fetch |
+| `web/src/services/progressApi.ts` | Progress list / next suggestion / clear practice data |
 | `Makefile` | Dev/build/docker/`validate-content` targets |
 | `README.md` | Operator + API contract |
 

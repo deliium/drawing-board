@@ -11,6 +11,7 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Undo functionality**: Ctrl+Z to undo last stroke
 - **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) via guided practice UI + attempt APIs, plus free-board heuristic ranking with match scores (not a trained AI model)
 - **Guided practice journey**: `/#/practice` lesson hub and per-character stages (intro → stroke order → trace → free-write → assess → corrections)
+- **Attempt history & mastery**: `/#/practice/history` for personal assessed attempts; hub shows explainable mastery labels and a humble next-character suggestion (not SRS)
 - **Responsive bilingual UI**: mobile-first practice-notebook layout, EN/JA locale preference (`localStorage`), shared fluid canvas sizing, and keyboard/SR-oriented result summaries
 - **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
@@ -138,7 +139,7 @@ npm run dev
 5. **Logout** — use Logout on the board to clear the session and return to the auth page.
 
 ### Guided practice journey
-Routes: `/#/practice` (hub) and `/#/practice/:characterId` (e.g. `hira:%E3%81%82`). Stages: loading → intro → animate → trace → freewrite → submitting → result → complete (plus error/empty). Attempt ink is local-only until Submit; refresh resume uses `sessionStorage` (`practice:v1:{characterId}`) plus attempt status. Leaving mid-draft best-effort `abandon`s. Overlay shows Match score and ≤2 corrections — not candidates as primary UI.
+Routes: `/#/practice` (hub), `/#/practice/history` (paginated assessed attempts), and `/#/practice/:characterId` (e.g. `hira:%E3%81%82`). Hub shows mastery labels, a suggested-next banner, history link, and a confirm dialog to clear personal practice data. Stages: loading → intro → animate → trace → freewrite → submitting → result → complete (plus error/empty). Attempt ink is local-only until Submit; refresh resume uses `sessionStorage` (`practice:v1:{characterId}`) plus attempt status. Leaving mid-draft best-effort `abandon`s. Overlay shows Match score and ≤2 corrections — not candidates as primary UI.
 
 Registration and login are **not** on the board header; they live only on the public auth routes.
 
@@ -226,7 +227,7 @@ ADDR=:8080 STATIC_DIR=web/dist DB_PATH=file:data.db?_fk=1 COOKIE_KEY=your-secure
 ### Authentication Endpoints
 Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when production-secure mode is on). Register/login **rotate** the session (`Sessions.New` after invalidating any prior `sid`). Auth handlers log with prefixes `[auth.Register]`, `[auth.Login]`, `[auth.Logout]`, `[auth.Me]`, `[auth.hash]`, `[auth.startSession]` (level filtered via `LOG_LEVEL`). Operator signals: `INFO [main] cookie_secure=…`, `INFO [main] origin_policy …`, `[cors]`, `[csrf]`, `[ws.CheckOrigin]`.
 
-**CSRF (double-submit):** all `POST /api/*` require cookie `csrf` (readable by JS, `SameSite=Lax`, `Secure` in production-secure mode) plus matching header `X-CSRF-Token`. `GET /api/me` and `GET /api/csrf` ensure the cookie (including anonymous `401` on `/api/me`). The Vue client sends the header automatically after bootstrap. Failure: `403` `{ "error": "csrf_rejected", "message": "…" }`. WebSocket upgrades are not CSRF-token gated; they require a valid session cookie and an allowlisted `Origin`.
+**CSRF (double-submit):** mutating `/api/*` methods (`POST`, `PUT`, `PATCH`, `DELETE`) require cookie `csrf` (readable by JS, `SameSite=Lax`, `Secure` in production-secure mode) plus matching header `X-CSRF-Token`. `GET /api/me` and `GET /api/csrf` ensure the cookie (including anonymous `401` on `/api/me`). The Vue client sends the header automatically after bootstrap. Failure: `403` `{ "error": "csrf_rejected", "message": "…" }`. WebSocket upgrades are not CSRF-token gated; they require a valid session cookie and an allowlisted `Origin`.
 
 **CORS / WebSocket origins:** credentialed CORS echoes `Access-Control-Allow-Origin` only for exact allowlisted origins (never `*`). Disallowed CORS preflight returns `403`. WebSocket `CheckOrigin` uses the same allowlist and rejects missing Origin.
 
@@ -248,7 +249,7 @@ Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
 | 400 | `registration_failed` | Unable to create account (includes duplicate email; does **not** return `email exists`) |
 | 401 | `invalid_credentials` | Login failed (unknown email or wrong password — same response) |
 | 401 | `unauthorized` | `/api/me` without a valid session |
-| 403 | `csrf_rejected` | Missing/mismatched CSRF cookie + `X-CSRF-Token` on `POST /api/*` |
+| 403 | `csrf_rejected` | Missing/mismatched CSRF cookie + `X-CSRF-Token` on mutating `/api/*` |
 
 Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-256 hashes can log in and are upgraded automatically. Logs never include passwords, raw cookies, CSRF token values, or full hashes (`hash_kind=bcrypt|legacy` and `userID=` only).
 
@@ -274,6 +275,7 @@ State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned
 
 | Method | Path | Notes |
 |--------|------|-------|
+| `GET` | `/api/attempts` | Paginated personal history (default `status=assessed`; optional `abandoned`); query `lessonId`, `characterId`, `limit` (1–50, default 20), `cursor`; **no stroke points** |
 | `POST` | `/api/attempts` | Create draft `{ characterId, lessonId?, clientAttemptId? }` → `201` (or `200` on idempotent `clientAttemptId` replay) |
 | `GET` | `/api/attempts/{id}` | Metadata; includes `canvasWidth`/`canvasHeight`/`strokeCount` after submit (no full points) |
 | `POST` | `/api/attempts/{id}/submit` | Body max **64 KiB**: `{ width, height, strokes:[{color,width,points}] }` → freezes strokes |
@@ -281,14 +283,22 @@ State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned
 | `GET` | `/api/attempts/{id}/assessment` | Persisted result (`scoreKind=match`, `feedback[]`; no live `candidates`) |
 | `POST` | `/api/attempts/{id}/abandon` | Only from `draft` |
 
+History list rows include glyph, terminal status, pass/fail, match score + `scoreKind`, and ≤2 feedback items when assessed. Abandoned drafts never change mastery or progress counters. Only **assessed** attempts feed mastery / next-character suggestion.
+
 ### Curriculum & Progress Read Endpoints
 
-Authenticated GETs for the practice hub / journey (CSRF not required). Pedagogy comes from the seeded pack; stroke **geometry** stays in client fixtures (`hiragana5Traces`).
+Authenticated GETs for the practice hub / journey (CSRF not required on GET). Pedagogy comes from the seeded pack; stroke **geometry** stays in client fixtures (`hiragana5Traces`).
 
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/lessons/{id}` | Published lesson only (`lesson:hiragana5`); characters include glyph, romanization, strokeCount, pronunciation JSON, `descriptionEn`/`descriptionJa`, example word + `meaningEn`/`meaningJa`, lesson `title`/`titleJa` |
-| `GET` | `/api/progress` | `{ items:[{ characterId, status, attemptCount, passCount, … }] }`; optional `?lessonId=` / `?setId=` |
+| `GET` | `/api/progress` | `{ items:[{ characterId, status, attemptCount, passCount, mastery, … }] }`; optional `?lessonId=` / `?setId=` |
+| `GET` | `/api/progress/next` | Humble next-character suggestion for a published `lessonId` (default `lesson:hiragana5`); `{ characterId, glyph, reasonCode, masteryState }` or `characterId: null` + `all_steady` |
+| `DELETE` | `/api/practice-data` | CSRF; deletes **this user’s** practice attempts (CASCADE assessments/strokes) and `user_character_progress` rows; does **not** delete free-board strokes or the account |
+
+**Mastery** on progress items is a compute-on-read practice summary from assessed attempts only (`not_started` / `learning` / `passed_once` / `steady` + `reasonCode`). It is an engineering heuristic for personal coaching chrome — not a validated proficiency score, belt, grade, or spaced-repetition stage. Operational `status` (`practicing` / sticky `passed`) remains for journey resume; the hub prefers mastery labels for coaching.
+
+**Retention:** practice attempt handwriting and assessments are kept until the learner clears them via `DELETE /api/practice-data` or the account is deleted. There is no timed auto-purge and no cross-user export. Free-board strokes are separate.
 
 `clientAttemptId` (optional, ≤36, same rules as WS `opId`): same user + same character/lesson → return existing attempt; mismatched reuse → `409 conflict`. Progress counters update on submit/assess as in the learning store.
 
@@ -296,7 +306,7 @@ Authenticated GETs for the practice hub / journey (CSRF not required). Pedagogy 
 |------|------|---------|
 | 400 | `invalid_input` / `character_not_active` / limit codes / `body_too_large` | Validation |
 | 401 | `unauthorized` | No session |
-| 403 | `csrf_rejected` | Missing/mismatched CSRF on POST |
+| 403 | `csrf_rejected` | Missing/mismatched CSRF on mutating methods |
 | 404 | `not_found` | Unknown/foreign attempt, character, or lesson |
 | 409 | `conflict` / `invalid_status` | Idempotency mismatch or wrong lifecycle state |
 | 429 | `rate_limited` | Assess rate limit (same defaults as recognize) |
@@ -449,7 +459,9 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 | `[curriculum.load]` / `[curriculum.validate]` | Pack load + invariant checks (no coordinates) |
 | `INFO [main] schema_version=` | Final version + `learn_seed=hiragana5` + `contentVersion=` |
 | `[learn.*]` | Attempt/assessment repo DEBUG/INFO (ids/status/counts — no coordinates) |
-| `[httpapi.Lesson.Get]` / `[httpapi.Progress.List]` | Curriculum/progress reads (counts/ids — no stroke geometry) |
+| `[httpapi.Lesson.Get]` / `[httpapi.Progress.List]` / `[httpapi.Progress.Next]` | Curriculum/progress/next reads (counts/ids — no stroke geometry) |
+| `[httpapi.Attempts.List]` / `[httpapi.PracticeData.Clear]` | Attempt history list filters/counts; practice-data clear deleted counts |
+| `[learn.mastery]` / `[learn.AttemptRepo.List]` | Mastery derive DEBUG; history list DEBUG |
 | `[practiceJourney]` / `[strokeOrder]` / `[compareOverlay]` | Vue DEV-only journey / animation / overlay debug (no coordinates) |
 
 ## Troubleshooting

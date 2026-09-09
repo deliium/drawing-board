@@ -18,6 +18,8 @@
 - [x] **Practice attempt APIs replacing whole-board recognition (Prompt 11)** — start/submit/assess/retry attempt REST; assessment uses submitted attempt strokes only (not board store); idempotency + immutable assessed rows; coexist with WS/`boardRev`
 - [x] **Deterministic target-specific handwriting assessment for hiragana5 MVP (Prompt 12)** — normalize learner/canonical strokes; multi-criterion match scoring; ≤2 actionable corrections; fixtures + expert review; diagnostics separate from learner copy; match scores only (not calibrated confidence)
 - [x] **Core learner journey UI for one hiragana character (Prompt 13)** — guided intro (glyph/pronunciation/stroke count/example); stroke-order animation; trace + free-write; attempt submit/assess; comparison overlay + ≤2 corrections; retry or completion; progress resume; age-neutral Vue practice routes
+- [x] **Responsive bilingual accessible learner UI (Prompt 14)** — mobile-first practice-notebook visual system; fluid canvases; EN/JA preference + externalized strings; focus/labels/live regions/reduced motion; axe + keyboard/zoom/SR/device smoke criteria; non-canvas textual attempt summary
+- [x] **Attempt history and per-character mastery (Prompt 15)** — paginated personal attempt history; explainable mastery from assessed attempts; humble next-character suggestion; privacy clear / retention docs; no streaks, social comparison, or SRS
 
 ## Completed
 
@@ -37,3 +39,5 @@
 | Practice attempt APIs replacing whole-board recognition (Prompt 11) | 2026-09-09 |
 | Deterministic target-specific handwriting assessment for hiragana5 MVP (Prompt 12) | 2026-09-09 |
 | Core learner journey UI for one hiragana character (Prompt 13) | 2026-09-09 |
+| Responsive bilingual accessible learner UI (Prompt 14) | 2026-09-09 |
+| Attempt history and per-character mastery (Prompt 15) | 2026-09-09 |

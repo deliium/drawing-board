@@ -78,8 +78,20 @@ vi.mock('../../src/services/apiClient', () => ({
         ],
       }
     }
+    if (path.includes('/api/progress/next')) {
+      return {
+        lessonId: 'lesson:hiragana5',
+        characterId: 'hira:あ',
+        glyph: 'あ',
+        reasonCode: 'first_not_started',
+        masteryState: 'not_started',
+      }
+    }
     if (path.includes('/api/progress')) {
       return { items: [] }
+    }
+    if (path.startsWith('/api/attempts')) {
+      return { items: [], limit: 20 }
     }
     if (path.includes('/api/strokes')) {
       return { boardRev: 0, strokes: [] }
@@ -151,21 +163,23 @@ describe('accessibility parity (axe)', () => {
     app.unmount()
   })
 
-  it('AppShell + Practice hub has no serious/critical axe violations', async () => {
+  it('AppShell + Practice history has no serious/critical axe violations', async () => {
+    const { default: PracticeHistoryPage } = await import('../../src/pages/PracticeHistoryPage.vue')
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/', component: { template: '<div />' } },
         { path: '/practice', component: PracticeHubPage },
+        { path: '/practice/history', component: PracticeHistoryPage },
       ],
     })
-    await router.push('/practice')
+    await router.push('/practice/history')
     await router.isReady()
     const root = document.createElement('div')
     document.body.appendChild(root)
     const app = createApp({
-      components: { AppShell, PracticeHubPage },
-      template: '<AppShell><PracticeHubPage /></AppShell>',
+      components: { AppShell, PracticeHistoryPage },
+      template: '<AppShell><PracticeHistoryPage /></AppShell>',
     })
     app.use(router)
     app.mount(root)

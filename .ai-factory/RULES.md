@@ -17,10 +17,14 @@ Hard requirements for this repository. More specific files under `.ai-factory/ru
 - Trusted curriculum is versioned under `content/hiragana5/vN` only; AI/WIP drafts stay in `content/hiragana5/drafts/` and must never be seeded or embedded for recognition.
 - Seed and recognize must agree on the `hiragana5` glyph set, stroke counts, and pack `contentVersion` (single pack source of truth).
 - Do **not** add SRS/classroom/cohort tables without a dedicated plan.
+- **Mastery** and **next-character** suggestions are compute-on-read engineering heuristics from **assessed** attempts only — never label them as confidence, grade, belt, due date, or SRS stage; abandoned/submitted-only drafts do not count; UI copy must stay humble (`go test ./internal/docguard` must stay green).
+- Attempt **history list** payloads must never include stroke point arrays (metadata + assessment summary only); ownership is always session `user_id`.
+- `DELETE /api/practice-data` clears **this user’s** practice attempts/progress only — never free-board strokes or the account; default retention is keep-until-clear (or account delete).
+- Do **not** add streaks, social comparison, leaderboards, or teacher dashboards without a dedicated plan.
 - Mutating WebSocket messages require a client `opId` (≤36) and `baseRev` (strict equality with per-user `boardRev`); creates are idempotent on active `(user_id, op_id)`; clear/tombstone yields `op_cancelled` on late creates.
 - Prefer soft reject (`ack` nack / `error` frame) over disconnect for validation failures; log reject codes without stroke coordinates.
 - Credentialed CORS and WebSocket upgrades allow **exact** origins only — no `*`.
-- All `POST /api/*` require double-submit CSRF (`csrf` cookie + `X-CSRF-Token`).
+- Mutating `/api/*` methods (`POST`, `PUT`, `PATCH`, `DELETE`) require double-submit CSRF (`csrf` cookie + `X-CSRF-Token`).
 - Passwords: bcrypt for new hashes; never log passwords, raw cookies, CSRF tokens, or full hashes.
 - Production-secure mode: strong `COOKIE_KEY` (≥32, not sentinel) and explicit `ALLOWED_ORIGINS` or the process must refuse to start.
 - Validate stroke/recognize inputs via `internal/limits` before persistence or rasterization.

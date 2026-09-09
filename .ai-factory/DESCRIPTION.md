@@ -29,8 +29,9 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - Reviewed five-vowel starter curriculum pack (`content/hiragana5/`) with pedagogy fields, stroke/trace templates, and deterministic seed
 - Attempt-scoped practice assessment REST (`/api/attempts`) — submit strokes for one character, assess via target comparison + correction catalog, persist engine feedback without reading the free-board
 - Guided learner journey UI (`/#/practice`) for hiragana5 — intro, stroke-order animation, trace/free-write, comparison overlay with ≤2 corrections; curriculum/progress read APIs
+- Attempt history (`/#/practice/history`), explainable per-character mastery, humble next-character suggestion, and self-serve clear of practice data (not free-board)
 - Responsive bilingual (EN/JA) learner chrome with fluid shared canvas sizing, focus-visible / live regions, and axe-covered critical surfaces
-- Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
+- Perimeter: origin allowlist, CSRF on mutating `/api/*`, production-secure cookies
 
 ## Non-Functional Requirements
 
