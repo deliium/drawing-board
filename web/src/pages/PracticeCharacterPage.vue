@@ -119,7 +119,6 @@ const notDueYet = computed(() => {
   <div class="page">
     <header class="top">
       <router-link to="/practice" class="quiet">{{ t('practice.backLesson') }}</router-link>
-      <router-link to="/" class="quiet">{{ t('nav.board') }}</router-link>
     </header>
 
     <JourneyStatusBanner :stage="stage" :banner="banner" :soft-warn="softWarn" />

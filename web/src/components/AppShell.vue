@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useLocale } from '../composables/useLocale'
 import { useRomanizationPreference } from '../composables/useRomanizationPreference'
 import type { Locale } from '../i18n'
@@ -8,8 +9,12 @@ const isDev =
   typeof import.meta !== 'undefined' &&
   Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
 
+const route = useRoute()
 const { locale, setLocale, t } = useLocale()
 const { romanizationVisible, setRomanizationVisible } = useRomanizationPreference()
+
+const guestShell = computed(() => Boolean(route.meta.guestShell))
+const layoutMode = computed(() => (guestShell.value ? 'guest' : 'authed'))
 
 const brand = computed(() => t('brand.name'))
 const navPractice = computed(() => t('nav.practice'))
@@ -20,6 +25,14 @@ const skipLabel = computed(() => t('nav.skip'))
 const localeLabel = computed(() => t('locale.label'))
 const romanizationLabel = computed(() =>
   romanizationVisible.value ? t('romanization.hide') : t('romanization.show'),
+)
+
+watch(
+  layoutMode,
+  (mode) => {
+    if (isDev) console.debug('[AppShell] layout=', mode)
+  },
+  { immediate: true },
 )
 
 function onLocaleChange(ev: Event) {
@@ -38,12 +51,12 @@ function onRomanizationToggle() {
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :data-layout="layoutMode">
     <a class="skip-link" href="#main-content">{{ skipLabel }}</a>
     <header class="header">
       <strong class="brand">{{ brand }}</strong>
       <div class="header-end">
-        <nav class="nav" :aria-label="brand">
+        <nav v-if="!guestShell" class="nav" :aria-label="brand">
           <router-link to="/practice" class="quiet">
             <span class="full">{{ navPractice }}</span>
             <span class="short">{{ navPracticeShort }}</span>
@@ -70,6 +83,7 @@ function onRomanizationToggle() {
           </select>
         </label>
         <button
+          v-if="!guestShell"
           type="button"
           class="romaji-toggle"
           :aria-pressed="romanizationVisible"

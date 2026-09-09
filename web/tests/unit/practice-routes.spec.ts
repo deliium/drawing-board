@@ -9,12 +9,16 @@ describe('practice route surface', () => {
     const hub = router.getRoutes().find((r) => r.name === 'practice-hub')
     const history = router.getRoutes().find((r) => r.name === 'practice-history')
     const character = router.getRoutes().find((r) => r.name === 'practice-character')
+    const login = router.getRoutes().find((r) => r.name === 'login')
+    const register = router.getRoutes().find((r) => r.name === 'register')
     expect(hub?.path).toBe('/practice')
     expect(hub?.meta.requiresAuth).toBe(true)
     expect(history?.path).toBe('/practice/history')
     expect(history?.meta.requiresAuth).toBe(true)
     expect(character?.path).toBe('/practice/:characterId')
     expect(character?.meta.requiresAuth).toBe(true)
+    expect(login?.meta.guestShell).toBe(true)
+    expect(register?.meta.guestShell).toBe(true)
   })
 
   it('redirects anonymous users from practice hub to login', () => {

@@ -139,10 +139,6 @@ async function onClearPractice() {
   <div class="hub">
     <header class="top">
       <h1>{{ title }}</h1>
-      <div class="links">
-        <router-link to="/practice/history" class="quiet">{{ t('hub.historyLink') }}</router-link>
-        <router-link to="/" class="quiet">{{ t('nav.board') }}</router-link>
-      </div>
     </header>
 
     <p class="hint">{{ t('hub.masteryHint') }}</p>
@@ -207,12 +203,6 @@ async function onClearPractice() {
   justify-content: space-between;
   gap: var(--space-3);
   margin-bottom: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.links {
-  display: flex;
-  gap: var(--space-3);
   flex-wrap: wrap;
 }
 

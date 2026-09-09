@@ -16,7 +16,7 @@ export const ja: Record<string, string> = {
 
   'auth.heading.login': 'サインイン',
   'auth.heading.register': 'アカウント作成',
-  'auth.lede': 'アカウント専用の日本語手書き練習です。',
+  'auth.lede': 'この端末でひらがな手書きを個人練習するにはサインインしてください。',
   'auth.tablist': '認証モード',
   'auth.tab.login': 'サインイン',
   'auth.tab.register': 'アカウント作成',
@@ -64,7 +64,6 @@ export const ja: Record<string, string> = {
   'hub.retry': '再試行',
   'hub.strokes': '{count}画',
   'hub.loadError': 'レッスンを読み込めませんでした。',
-  'hub.historyLink': '練習履歴',
   'hub.suggestedNext': '次のおすすめ',
   'hub.suggestedNone': 'いま期限の復習はありません — 好きな文字を選んで続けましょう。',
   'hub.suggestedCaughtUpNext': '次の軽い復習はおおよそ {when} ごろです。',

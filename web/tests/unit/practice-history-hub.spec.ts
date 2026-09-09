@@ -123,7 +123,8 @@ describe('practice hub mastery + history', () => {
     expect(root.textContent).toContain(t('hub.reviewDue'))
     expect(root.textContent).toContain(t('next.reason.due_review'))
     expect(root.textContent).toContain('あ')
-    expect(root.textContent).toContain(t('hub.historyLink'))
+    // Shell owns Practice/History/Board links; hub no longer duplicates them.
+    expect(root.textContent).not.toContain(t('nav.board'))
 
     const clearBtn = Array.from(root.querySelectorAll('button')).find((b) =>
       b.textContent?.includes(t('hub.clearData')),

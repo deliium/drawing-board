@@ -16,7 +16,7 @@ export const en: Record<string, string> = {
 
   'auth.heading.login': 'Sign in',
   'auth.heading.register': 'Create account',
-  'auth.lede': 'Private Japanese handwriting practice for your account.',
+  'auth.lede': 'Sign in to practice hiragana handwriting privately on this device.',
   'auth.tablist': 'Authentication mode',
   'auth.tab.login': 'Sign in',
   'auth.tab.register': 'Create account',
@@ -64,7 +64,6 @@ export const en: Record<string, string> = {
   'hub.retry': 'Retry',
   'hub.strokes': '{count} strokes',
   'hub.loadError': 'Could not load the lesson.',
-  'hub.historyLink': 'Attempt history',
   'hub.suggestedNext': 'Suggested next',
   'hub.suggestedNone': 'Nothing due right now — pick any character to keep practicing.',
   'hub.suggestedCaughtUpNext': 'Next light review around {when}.',
