@@ -25,9 +25,9 @@
 - [x] **Test pyramid and CI confidence (Prompt 18)** — balanced Go unit/integration + SQLite migrations + HTTP/WS contracts + Vitest/axe/canvas + small Playwright learner journeys; WS race detection; coverage as signal; lint/type/build; GitHub Actions with caching/artifacts/security scanning and required PR checks; local Makefile equivalents
 - [x] **Product copy, shell, and documentation honesty (Prompt 19)** — gate/remove learner-visible migration diagnostics; consolidate app shell/nav/branding; accurate keyboard/feature/recognition copy; verified setup/env/Makefile/Docker docs; privacy retention + deletion/export honesty; troubleshooting + architecture notes + concise contributor workflow; command verification + docguard/tests
 - [x] **R1: Trustworthy guided lesson for five hiragana** — release cutover sequencing Prompts 08–13 (+ perimeter baseline); schema ≤0004; attempt-scoped guided journey for あいうえお; feature-flag / migration backup-restore / observability / E2E gates (see `japanese-learning-release-sequencing.md`)
-- [ ] **R2: Product-ready bilingual accessible learner shell** — independently releasable cutover of Prompt 14 (+ shell honesty); no review/audio requirement; a11y + EN/JA gates
-- [ ] **R3: Personal progress, mastery, and spaced review** — independently releasable cutover of Prompts 15–16; schema ≤0005; history/mastery/clear + Leitner due/next; privacy gates
-- [ ] **R4: Language-learning chrome, CI confidence, and docs honesty** — independently releasable cutover of Prompts 17–19; schema ≤0006; audio/guidance + required CI/docs honesty gates
+- [x] **R2: Product-ready bilingual accessible learner shell** — independently releasable cutover of Prompt 14 (+ shell honesty); no review/audio requirement; a11y + EN/JA gates
+- [x] **R3: Personal progress, mastery, and spaced review** — independently releasable cutover of Prompts 15–16; schema ≤0005; history/mastery/clear + Leitner due/next; privacy gates
+- [x] **R4: Language-learning chrome, CI confidence, and docs honesty** — independently releasable cutover of Prompts 17–19; schema ≤0006; audio/guidance + required CI/docs honesty gates
 
 ## Completed
 
@@ -54,3 +54,6 @@
 | Test pyramid and CI confidence (Prompt 18) | 2026-09-09 |
 | Product copy, shell, and documentation honesty (Prompt 19) | 2026-09-09 |
 | R1: Trustworthy guided lesson for five hiragana | 2026-09-10 |
+| R2: Product-ready bilingual accessible learner shell | 2026-09-10 |
+| R3: Personal progress, mastery, and spaced review | 2026-09-10 |
+| R4: Language-learning chrome, CI confidence, and docs honesty | 2026-09-10 |
