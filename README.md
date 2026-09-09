@@ -259,8 +259,8 @@ State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned
 | `POST` | `/api/attempts` | Create draft `{ characterId, lessonId?, clientAttemptId? }` → `201` (or `200` on idempotent `clientAttemptId` replay) |
 | `GET` | `/api/attempts/{id}` | Metadata; includes `canvasWidth`/`canvasHeight`/`strokeCount` after submit (no full points) |
 | `POST` | `/api/attempts/{id}/submit` | Body max **64 KiB**: `{ width, height, strokes:[{color,width,points}] }` → freezes strokes |
-| `POST` | `/api/attempts/{id}/assess` | Empty body; assesses **attempt** strokes only; idempotent if already assessed |
-| `GET` | `/api/attempts/{id}/assessment` | Persisted result (`scoreKind=match`; no live `candidates`) |
+| `POST` | `/api/attempts/{id}/assess` | Empty body; multi-criterion assess on **attempt** strokes only; returns ≤2 `feedback` messages; idempotent if already assessed |
+| `GET` | `/api/attempts/{id}/assessment` | Persisted result (`scoreKind=match`, `feedback[]`; no live `candidates`) |
 | `POST` | `/api/attempts/{id}/abandon` | Only from `draft` |
 
 `clientAttemptId` (optional, ≤36, same rules as WS `opId`): same user + same character/lesson → return existing attempt; mismatched reuse → `409 conflict`. Progress counters update on submit/assess as in the learning store.
@@ -347,9 +347,18 @@ Startup always wires **target comparison** for the fixed MVP set `hiragana5` (�
 ### Target comparison (`hiragana5`)
 
 Assessment paths come from the reviewed content pack at `content/hiragana5/v1/` (same source as seed). Scores are **match scores**, not calibrated confidence. Practice assessment is via **attempt APIs** (`ListStrokes` on the attempt → `Assessor.Assess` → `SaveResult`); free-board `/api/recognize` does not accept `target`.
-- Compares learner strokes to canonical templates (stroke count + normalized geometry)
-- Returns explainable **match scores** and `pass` when top match is the target and score ≥ engineering threshold `T_pass=0.70`
-- Fixture eval: `go test ./internal/recognize -run Eval -v` (gold must pass; wrong-character samples must not)
+
+**Normalization (shared for learner + templates):** drop empty-point strokes; whole-ink AABB → origin; scale by `1/max(w,h)` (aspect preserved). Degenerate bbox axes use `ε_bounds=1e-9` (`EpsilonBounds`). Classify **short/dot** strokes when path length ≤ `L_short=0.04` (unit space) or ≤1 distinct point — shorts skip direction scoring and compare by centroid. Normal strokes resample to `N_resample=16` (`ResampleCount`) for shape and direction.
+
+**Engineering criteria (named constants in `internal/recognize/tolerances.go`):** `T_pass=0.70`, `ε_bounds=1e-9`, `L_short=0.04`, `T_place=0.15`, `T_prop=0.35`, `N_resample=16`, soft criterion threshold `0.75`. These are match-score thresholds — not “% accurate handwriting”.
+
+**Criteria (bounded match components, weights sum to 1):** stroke count `0.15`, stroke order `0.15`, start/end direction `0.15`, relative placement `0.15`, proportions `0.10`, overall shape `0.30`. Overall score = weighted sum in `[0,1]`.
+
+**Pass rule (engineering):** `pass` when overall ≥ `T_pass=0.70`, stroke count matches for templates with ≤3 strokes (hard-fail on mismatch), and the target is the top-ranked glyph in the five-character set. Within-set `candidates` on live assess are secondary diagnostics — practice UI should prefer score + `feedback`.
+
+**Learner feedback:** at most **two** items `{rank, code, message}` with non-empty English messages (correction catalog in `internal/recognize`). Diagnostics/criterion floats stay on the assessor (`diagnostics`) / DEBUG logs — not as user copy. Assessed attempts are immutable; **retry = new attempt** focusing on the listed corrections. Correctness claims are limited to **fixture-tested** behaviors.
+
+Tolerances and copy review: `content/hiragana5/v1/assessment_review.json`. Fixture eval: `go test ./internal/recognize -run 'Eval|Fixture' -v` (gold must pass; incorrect suites must not pass and must emit the expected correction code in the top-2 feedback).
 
 ### Free-board heuristic ranking
 - Used by board **Recognize** (no `target`)
@@ -360,10 +369,12 @@ Assessment paths come from the reviewed content pack at `content/hiragana5/v1/` 
 | Prefix | Meaning |
 |--------|---------|
 | `INFO [main] recognizer=…` | Honest recognizer identity + set id at startup |
-| `[recognize.Recognize]` / `[recognize.Assess]` | DEBUG entry/result counts (no coordinates unless `RECOGNIZE_DEBUG`) |
+| `[recognize.Recognize]` / `[recognize.Assess]` | DEBUG entry/result; Assess logs criterion breakdown + feedback codes (no coordinates unless `RECOGNIZE_DEBUG`) |
+| `[recognize.normalize]` | DEBUG stroke counts / short vs normal / degenerate axis (no coordinates) |
+| `[recognize.corrections]` | DEBUG selected feedback codes |
 | `[recognize.templates]` | Template load (`loaded count=5 version=…`) |
 | `[httpapi.Recognize]` | Free-board heuristic result codes — no stroke dumps |
-| `[httpapi.Attempt.*]` | create/submit/assess/abandon (`attemptID`, status, pass/scoreKind; no coordinates) |
+| `[httpapi.Attempt.*]` | create/submit/assess/abandon (`attemptID`, status, pass/scoreKind/feedbackCodes; no coordinates) |
 
 ## Learning schema & migrations
 
@@ -387,7 +398,8 @@ Trusted curriculum lives under `content/hiragana5/v1/` (あ行 vowels). The vowe
 | `characters.json` | Glyph, romanization, pronunciation metadata, description, example word |
 | `strokes.json` | Canonical assessment polylines (normalized 0–1) |
 | `traces.json` | UI trace templates (v1 matches strokes) |
-| `review.json` | Human reviewer identity, date, checklist |
+| `review.json` | Pedagogy pack human-review checklist |
+| `assessment_review.json` | Scoring tolerances + correction-copy review (Prompt 12) |
 
 Validate with `make validate-content` (runs `go test ./internal/curriculum` and `go run ./cmd/contentvalidate`). Authoring/review checklist: `content/hiragana5/README.md`. Licensing notes: `content/hiragana5/LICENSES.md`.
 

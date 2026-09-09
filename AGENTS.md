@@ -26,7 +26,7 @@ internal/learn/       # learning-domain types + repository interfaces
 internal/httpapi/     # REST API
 internal/ws/          # WebSocket hub
 internal/limits/      # shared validators
-internal/recognize/   # hiragana5 target comparison + heuristic ranking
+internal/recognize/   # hiragana5 multi-criterion assess + heuristic ranking + correction catalog
 internal/security/    # CORS/CSRF/origins
 internal/metrics/     # counters
 internal/docguard/    # README honesty tests
@@ -49,6 +49,9 @@ docker/               # compose / nginx helpers
 | `content/hiragana5/v1/` | Reviewed curriculum source of truth |
 | `internal/ws/handler.go` | WS upgrade, ingest, ack/echo, boardRev mutates |
 | `internal/httpapi/handlers.go` | REST strokes / free-board recognize |
+| `internal/recognize/target_compare.go` | Multi-criterion hiragana5 assess + heuristic free-board rank |
+| `internal/recognize/normalize.go` | Shared unit-space normalization + short-stroke classification |
+| `internal/recognize/criteria.go` / `corrections.go` | Criterion scorers + ≤2 learner correction catalog |
 | `internal/httpapi/attempts.go` | Practice attempt REST lifecycle |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
 | `internal/db/migrate.go` | versioned schema runner + `schema_migrations` |

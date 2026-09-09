@@ -4,7 +4,6 @@
 
 ## Milestones
 
-- [x] **Vue frontend migration** — Vite/Vue 3 practice board replaces prior UI
 - [x] **Per-user stroke isolation** — WS `sendToUser` + frontend ignore foreign live creates; Japanese training rebrand
 - [x] **Public onboarding** — login/register routes, anti-enumeration auth API, board logout-only
 - [x] **Password and session security** — bcrypt, session rotation, production-secure cookies / `COOKIE_KEY`
@@ -16,15 +15,13 @@
 - [x] **Honest recognition strategy for five-character hiragana MVP (Prompt 08)** — deterministic target comparison for five hiragana; remove fake ONNX/MNIST upgrade path; heuristic free-board ranking stays labeled as match scores (not ML confidence)
 - [x] **Learning domain model and versioned migrations (Prompt 09)** — versioned SQLite migrations; characters/lessons/attempts/assessments/progress separate from free-board strokes; idempotent hiragana5 seed
 - [x] **Reviewed five-character hiragana starter curriculum (Prompt 10)** — versioned `hiragana5` content pack (あ行); pedagogy fields, stroke/trace data, human review gate, deterministic seed; AI drafts excluded until reviewed
-- [ ] **Practice attempt APIs replacing whole-board recognition (Prompt 11)** — start/submit/assess/retry attempt REST; assessment uses submitted attempt strokes only (not board store); idempotency + immutable assessed rows; coexist with WS/`boardRev`
-- [ ] **Durable offline stroke vault** — IndexedDB/service-worker queue surviving full reload (explicitly out of scope for reliable-WS v1)
-- [ ] **Cross-tab live create sync** — optional same-account multi-tab create fan-in (deletes/clear already echo)
+- [x] **Practice attempt APIs replacing whole-board recognition (Prompt 11)** — start/submit/assess/retry attempt REST; assessment uses submitted attempt strokes only (not board store); idempotency + immutable assessed rows; coexist with WS/`boardRev`
+- [x] **Deterministic target-specific handwriting assessment for hiragana5 MVP (Prompt 12)** — normalize learner/canonical strokes; multi-criterion match scoring; ≤2 actionable corrections; fixtures + expert review; diagnostics separate from learner copy; match scores only (not calibrated confidence)
 
 ## Completed
 
 | Milestone | Date |
 |-----------|------|
-| Vue frontend migration | 2026-03 (approx; PR merge) |
 | Per-user stroke isolation | 2026-09-07 |
 | Public onboarding | 2026-09-07 |
 | Password and session security | 2026-09-08 |
@@ -36,3 +33,5 @@
 | Honest recognition strategy for five-character hiragana MVP (Prompt 08) | 2026-09-08 |
 | Learning domain model and versioned migrations (Prompt 09) | 2026-09-08 |
 | Reviewed five-character hiragana starter curriculum (Prompt 10) | 2026-09-08 |
+| Practice attempt APIs replacing whole-board recognition (Prompt 11) | 2026-09-09 |
+| Deterministic target-specific handwriting assessment for hiragana5 MVP (Prompt 12) | 2026-09-09 |

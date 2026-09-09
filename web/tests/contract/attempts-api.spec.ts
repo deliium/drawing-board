@@ -103,6 +103,42 @@ describe('attempts API contract', () => {
     })
   })
 
+  it('assessAttempt surfaces feedback messages from the contract', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        attemptId: 7,
+        characterId: 'hira:あ',
+        glyph: 'あ',
+        status: 'assessed',
+        pass: false,
+        score: 0.4,
+        scoreKind: 'match',
+        assessor: 'target_compare',
+        setId: 'hiragana5',
+        reasons: ['stroke_count_mismatch'],
+        feedback: [
+          {
+            rank: 1,
+            code: 'stroke_count_mismatch',
+            message: 'Use 3 strokes for 「あ」 (you used 2). Assessed attempts are immutable — start a new attempt and focus on stroke count.',
+          },
+        ],
+        candidates: [{ text: 'あ', score: 0.4, scoreKind: 'match' }],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out = await assessAttempt(7)
+    expect(out.scoreKind).toBe('match')
+    expect(out.feedback.length).toBeGreaterThan(0)
+    expect(out.feedback.length).toBeLessThanOrEqual(2)
+    for (const item of out.feedback) {
+      expect(item.code).toBeTruthy()
+      expect(item.message.trim().length).toBeGreaterThan(0)
+    }
+  })
+
   it('getAttemptAssessment uses GET path', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -116,13 +152,20 @@ describe('attempts API contract', () => {
         assessor: 'target_compare',
         setId: 'hiragana5',
         reasons: ['empty_strokes'],
-        feedback: [{ rank: 1, code: 'empty_strokes', message: '' }],
+        feedback: [
+          {
+            rank: 1,
+            code: 'empty_strokes',
+            message: 'No strokes were submitted. Draw the character, then try again.',
+          },
+        ],
       }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const out = await getAttemptAssessment(9)
     expect(out.scoreKind).toBe('match')
+    expect(out.feedback[0]?.message.trim().length).toBeGreaterThan(0)
     expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/attempts/9/assessment')
   })
 })

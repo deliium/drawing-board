@@ -167,6 +167,17 @@ func TestAttemptLifecycleAndIdempotency(t *testing.T) {
 	if assessed.Status != "assessed" || assessed.ScoreKind != recognize.ScoreKindMatch || assessed.Assessor != "target_compare" {
 		t.Fatalf("assessed=%+v", assessed)
 	}
+	if !assessed.Pass {
+		t.Fatalf("gold-ish submit should pass: %+v feedback=%v", assessed, assessed.Feedback)
+	}
+	if len(assessed.Feedback) > 2 {
+		t.Fatalf("feedback len=%d want ≤2", len(assessed.Feedback))
+	}
+	for _, fb := range assessed.Feedback {
+		if fb.Message == "" {
+			t.Fatalf("empty feedback message for code=%s", fb.Code)
+		}
+	}
 	if len(assessed.Candidates) == 0 {
 		t.Fatal("expected live candidates on assess")
 	}
@@ -304,3 +315,60 @@ func TestAttemptCSRFRejected(t *testing.T) {
 		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestAttemptAssessIncorrectFeedbackMessages(t *testing.T) {
+	t.Setenv("LOG_LEVEL", "debug")
+	api, _, uid := newAttemptTestAPI(t, "att-fb-incorrect")
+
+	req := attemptSessionReq(t, api, http.MethodPost, "/api/attempts", uid, `{"characterId":"hira:あ","clientAttemptId":"fb-incorrect-1"}`)
+	rec := httptest.NewRecorder()
+	api.CreateAttempt(rec, req)
+	if rec.Code != 201 && rec.Code != 200 {
+		t.Fatalf("create code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var created attemptResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	id := strconv.FormatInt(created.ID, 10)
+
+	// Two strokes for あ (want 3) → count mismatch coaching.
+	submit := `{
+		"width":300,"height":300,
+		"strokes":[
+			{"color":"#000000","width":2,"points":[{"x":60,"y":66},{"x":240,"y":66}]},
+			{"color":"#000000","width":2,"points":[{"x":156,"y":36},{"x":156,"y":165},{"x":126,"y":216}]}
+		]
+	}`
+	req = withMuxVars(attemptSessionReq(t, api, http.MethodPost, "/api/attempts/"+id+"/submit", uid, submit), id)
+	rec = httptest.NewRecorder()
+	api.SubmitAttempt(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("submit code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = withMuxVars(attemptSessionReq(t, api, http.MethodPost, "/api/attempts/"+id+"/assess", uid, `{}`), id)
+	rec = httptest.NewRecorder()
+	api.AssessAttempt(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("assess code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var assessed assessmentResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &assessed)
+	if assessed.Pass {
+		t.Fatalf("expected non-pass: %+v", assessed)
+	}
+	if assessed.ScoreKind != recognize.ScoreKindMatch {
+		t.Fatalf("scoreKind=%q", assessed.ScoreKind)
+	}
+	if len(assessed.Feedback) == 0 || len(assessed.Feedback) > 2 {
+		t.Fatalf("feedback=%#v", assessed.Feedback)
+	}
+	if assessed.Feedback[0].Code != recognize.CodeStrokeCountMismatch {
+		t.Fatalf("primary code=%s want stroke_count_mismatch", assessed.Feedback[0].Code)
+	}
+	for _, fb := range assessed.Feedback {
+		if strings.TrimSpace(fb.Message) == "" {
+			t.Fatalf("empty message for %s", fb.Code)
+		}
+	}
+}
+

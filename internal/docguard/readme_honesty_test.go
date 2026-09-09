@@ -19,6 +19,8 @@ var forbiddenREADMEPatterns = []struct {
 	{name: "AI-powered", re: regexp.MustCompile(`(?i)AI-powered`)},
 	{name: "AI Recognition", re: regexp.MustCompile(`(?i)AI\s+Recognition`)},
 	{name: "confidence scores", re: regexp.MustCompile(`(?i)confidence\s+scores`)},
+	{name: "calibrated AI confidence claim", re: regexp.MustCompile(`(?i)calibrated\s+AI\s+confidence`)},
+	{name: "X% accurate handwriting claim", re: regexp.MustCompile(`(?i)\d+%\s+accurate\s+handwriting`)},
 	{name: "Machine learning-based", re: regexp.MustCompile(`(?i)Machine\s+learning-based`)},
 	{name: "Higher accuracy (ONNX overclaim)", re: regexp.MustCompile(`(?i)Higher\s+accuracy`)},
 	{name: "ONNX model for advanced recognition", re: regexp.MustCompile(`(?i)ONNX\s+model\s+for\s+advanced\s+recognition`)},
