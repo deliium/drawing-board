@@ -32,6 +32,7 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - Attempt history (`/#/practice/history`), explainable per-character mastery, Leitner-style personal review schedule (pass/fail → box/`due_at`), schedule-aware next suggestion, and self-serve clear of practice data (not free-board)
 - Responsive bilingual (EN/JA) learner chrome with hideable romanization, fluid shared canvas sizing, focus-visible / live regions, and axe-covered critical surfaces
 - Perimeter: origin allowlist, CSRF on mutating `/api/*`, production-secure cookies
+- Staged learning feature flags (`FEATURE_PRACTICE` / `PROGRESS` / `REVIEW` / `AUDIO`) for independently releasable R1–R4 cutovers
 
 ## Non-Functional Requirements
 

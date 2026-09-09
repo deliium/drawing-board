@@ -245,6 +245,7 @@ Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when 
 - `POST /api/logout` — Clear session values and expire the cookie (same Path/HttpOnly/SameSite/Secure). Success `200` `{ "ok": "true" }`. CookieStore sessions are client-side signed blobs: logout cannot revoke a stolen cookie copy until expiry or `COOKIE_KEY` rotation.
 - `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }` (always ensures CSRF cookie).
 - `GET /api/csrf` — Ensures CSRF cookie and returns `{ "csrf": "<token>" }`.
+- `GET /api/features` — Authenticated learning kill-switch mirror `{ practice, progress, review, audio }` (see Release train).
 
 Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
 
@@ -494,6 +495,43 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 | `[learn.review.Suggest]` | Schedule-aware next DEBUG (reasonCode, dueCount) |
 | `[practiceJourney]` / `[strokeOrder]` / `[compareOverlay]` | Vue DEV-only journey / animation / overlay debug (no coordinates) |
 
+## Release train (R1–R4)
+
+Feature work for Prompts 08–19 lives in `.ai-factory/plans/` (historical). Cutover sequencing, feature flags, migration rollback, observability, and release gates are owned by `.ai-factory/plans/japanese-learning-release-sequencing.md`.
+
+| Release | Product outcome | Schema ceiling | Flags (prod recommend until accepted) | Gate |
+|---------|-----------------|----------------|----------------------------------------|------|
+| **R1** | Trustworthy guided lesson for あいうえお | ≥ `0004` | `FEATURE_PRACTICE=1` (others may stay `0`) | `make gate-r1` |
+| **R2** | Bilingual accessible learner chrome | ≥ `0004` | practice on | `make gate-r2` |
+| **R3** | History, mastery, Leitner review | ≥ `0005` | `FEATURE_PROGRESS=1`, `FEATURE_REVIEW=1` | `make gate-r3` |
+| **R4** | Audio/guidance + CI/docs honesty | ≥ `0006` | `FEATURE_AUDIO=1` | `make gate-r4` |
+
+Or: `make gate-release RELEASE=r1`. Gates wrap existing Make/test targets — they do not reimplement the Prompt 18 pyramid.
+
+### Feature flags
+
+Env-driven kill switches (parsed at process start; empty defaults to **on** for local dev). Invalid: `FEATURE_REVIEW=1` with `FEATURE_PROGRESS=0` → process **FATAL**. When a gated route is hit while off, the server returns **404** (not 403), logs `WARN [httpapi] feature_disabled name=…`, and increments `practice_feature_disabled_total`. Free-board + auth are never gated.
+
+| Env | Gates |
+|-----|--------|
+| `FEATURE_PRACTICE` | Attempt lifecycle, lesson/progress reads, Practice nav / `/#/practice*` |
+| `FEATURE_PROGRESS` | Attempt history list, mastery enrichment, `DELETE /api/practice-data`, History nav |
+| `FEATURE_REVIEW` | Review fields on progress, schedule-aware next (requires progress) |
+| `FEATURE_AUDIO` | Pronunciation `audioRef` in lesson payload + play control |
+
+Authenticated SPA mirror: `GET /api/features` → `{ practice, progress, review, audio }`. Startup logs `INFO [main] features practice=… progress=… review=… audio=… schema_version=N`.
+
+### Cutover runbook
+
+1. **Backup** SQLite before upgrade: `cp data.db data.db.bak` (compose volume path may differ).
+2. **Deploy** new binary — `Open` applies pending migrations fail-closed (forward-only; **no production `Down`**).
+3. **Verify** startup: `INFO [main] schema_version=N` matches the cut ceiling; `INFO [main] features …`; seed `INFO [db.seed]`.
+4. **Flip flags** for the cut (e.g. R1: `FEATURE_PRACTICE=1`); smoke `make gate-r1` (or `gate-r2` / `gate-r3` / `gate-r4`) locally or the manual checklist in the sequencing plan.
+5. **Rollback product surfaces**: redeploy prior image and/or set flags to `0` — does **not** require migration down.
+6. **Rollback schema**: restore `data.db.bak`, pin prior binary. Never edit applied migration bodies.
+
+Cutover counters (process-local): `practice_attempt_assess_total`, `practice_feature_disabled_total`, `practice_clear_total`.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -506,6 +544,7 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 7. **Missing pronunciation audio**: Soft-fail — intro shows a polite live-region message; pedagogy text remains. Sync mirror with `make sync-audio` if pack files exist but `web/public/audio/hiragana5/` is stale.
 8. **Blank canvas after resize/zoom but strokes still listed**: Backing-store resize clears the bitmap; practice/free-board canvases should redraw from stroke state. In DEV check `[practiceCanvas] resize … wiped=true`; otherwise hard-reload so `GET /api/strokes` repaints the board.
 9. **Seeing another user's strokes**: Should not happen; verify per-user `sendToUser` (not global broadcast) in logs.
+10. **Practice / History missing or `404` on `/api/attempts`**: Check `FEATURE_*` kill switches and `INFO [main] features=…` / `WARN [httpapi] feature_disabled`. Free-board still works when practice is off.
 
 ### Debug Mode
 
@@ -521,6 +560,8 @@ Verbose server log prefixes for privacy and persistence:
 | `[recognize]` / `[recognize.Assess]` | Startup `recognize_debug=…`; DEBUG assess/recognize; gated dumps when `RECOGNIZE_DEBUG=1` (non-production) |
 | `INFO [main] recognizer=` | `target_compare` + `set=hiragana5` + `contentVersion=` at process start |
 | `INFO [main] schema_version=` | Applied migration version + hiragana5 seed + contentVersion |
+| `INFO [main] features=` | Learning kill switches + schema_version (cutover verification) |
+| `[httpapi] feature_disabled` | WARN when a gated learning route is hit while flag is off |
 | `[db.migrate]` / `[db.seed]` / `[curriculum.*]` | Schema apply / curriculum seed / pack load |
 | `[practiceCanvas]` | DEV-only client debug: attach/detach, resize css/dpr/backing, stroke start/commit/cancel (point counts only) |
 
@@ -598,6 +639,11 @@ make test-e2e         # Playwright learner journeys (needs Chromium once)
 make coverage         # Go coverage HTML under coverage/ (signal only)
 make coverage-web     # Vitest coverage under web/coverage/
 make security-check   # govulncheck + npm audit --omit=dev
+make gate-r1          # R1 cutover: trustworthy hiragana5 guided lesson
+make gate-r2          # R2 cutover: bilingual accessible shell
+make gate-r3          # R3 cutover: history / mastery / review
+make gate-r4          # R4 cutover: audio + full check / e2e / security
+make gate-release RELEASE=r1  # same via scripts/gate-release.sh
 CHECK_E2E=1 make check  # include Playwright in the local PR gate
 ./test.sh recognize-fixtures  # hiragana5 Fixture/Eval + docguard
 ./test.sh race                # same packages as make test-race
@@ -687,6 +733,10 @@ APP_ENV=production              # Enables Secure cookies + COOKIE_KEY validation
 ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in production; no wildcards
 # COOKIE_SECURE=true            # Alternative to APP_ENV=production
 # RECOGNIZE_DEBUG=1             # Local handwriting diagnostics only (ignored in production)
+# FEATURE_PRACTICE=1            # Learning kill switches (empty=on; see Release train)
+# FEATURE_PROGRESS=1
+# FEATURE_REVIEW=1              # Requires FEATURE_PROGRESS=1
+# FEATURE_AUDIO=1
 ```
 
 Production `docker-compose.yml` sets `APP_ENV=production`, `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.

@@ -30,6 +30,7 @@ drawing-board/
 │   ├── recognize/              # hiragana5 multi-criterion assess + heuristic free-board rank; correction catalog
 │   ├── security/               # CORS / CSRF / origin policy helpers
 │   ├── metrics/                # process-local counters
+│   ├── features/               # FEATURE_* learning surface kill switches
 │   └── docguard/               # README honesty regression tests
 ├── web/
 │   ├── public/fonts/           # Self-hosted OFL subsets (IBM Plex Sans, Noto Sans JP)
@@ -40,8 +41,8 @@ drawing-board/
 │   ├── src/components/practice/# Journey chrome (intro, stroke-order, overlay, …)
 │   ├── src/canvas/             # CSS/DPR coords, layout helpers, drawStrokes, hitTest
 │   ├── src/curriculum/         # hiragana5 trace fixtures (geometry for UI)
-│   ├── src/composables/        # usePracticeCanvas, usePracticeJourney, useLocale
-│   ├── src/services/           # apiFetch, attempts/curriculum/progress, wsClient, strokeSync
+│   ├── src/composables/        # usePracticeCanvas, usePracticeJourney, useLocale, useFeatureFlags
+│   ├── src/services/           # apiFetch, attempts/curriculum/progress/features, wsClient, strokeSync
 │   ├── src/stores/             # client state (free-board oriented)
 │   ├── src/router/             # auth/guest guards; guestShell meta on login/register
 │   ├── tests/                  # Vitest unit/contract/integration (+ axe a11y)
@@ -55,8 +56,9 @@ drawing-board/
 ## Dependency Rules
 
 - ✅ `cmd/server` wires `internal/*` packages; packages do not import `cmd/`
-- ✅ `httpapi` and `ws` may call `db`, `auth`, `limits`, `recognize`, `metrics`
+- ✅ `httpapi` and `ws` may call `db`, `auth`, `limits`, `recognize`, `metrics`, `features`
 - ✅ `httpapi` attempt handlers depend on `internal/learn` repos + `recognize.Assessor`; SQLite impl lives in `internal/db`
+- ✅ Learning product surfaces are gated by `internal/features` kill switches; migrations stay forward-only (flags are not substitutes for schema rollback)
 - ✅ Free-board stroke tables stay isolated from attempt stroke tables (no shared FK / clear coupling; no attempt↔board FK)
 - ✅ Board `POST /api/recognize` stays heuristic-only (no `target`); single-character practice uses `/api/attempts`
 - ✅ Practice journey UI uses local canvas ink + REST attempts; free-board WS/`boardRev` must not gate submit/assess
@@ -99,6 +101,7 @@ drawing-board/
 12. **Forgiving personal review** — Leitner-style boxes + UTC wall-clock `due_at`; overdue without shame; next prefers due reviews before new introduction; never market as SM-2/FSRS or streak gamification
 13. **Mastery honesty** — mastery labels are a simple practice summary from assessed attempts (not SM-2 stages, belts, grades, or calibrated scores); abandoned drafts never count
 14. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+15. **Staged learning flags** — `FEATURE_PRACTICE` / `PROGRESS` / `REVIEW` / `AUDIO` gate product surfaces for R1–R4 cutovers; schema remains forward-only with backup/restore rollback
 
 ## Code Organization Note
 

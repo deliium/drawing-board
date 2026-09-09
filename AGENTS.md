@@ -29,17 +29,18 @@ internal/limits/      # shared validators
 internal/recognize/   # hiragana5 multi-criterion assess + heuristic ranking + correction catalog
 internal/security/    # CORS/CSRF/origins
 internal/metrics/     # counters
+internal/features/    # FEATURE_* learning kill switches
 internal/docguard/    # README honesty tests
 web/src/              # Vue SPA
 web/src/pages/        # BoardPage, PracticeHub/History/Character, LoginPage
 web/src/components/   # AppShell (guest vs authed nav); DEV-only Dev metrics panel
 web/src/components/practice/  # intro, stroke-order, canvas, overlay, journey chrome
 web/src/canvas/       # CSS/DPR coords, layout helpers, draw, hit-test helpers
-web/src/composables/  # usePracticeCanvas + usePracticeJourney + useLocale + useRomanizationPreference
+web/src/composables/  # usePracticeCanvas + usePracticeJourney + useLocale + useRomanizationPreference + useFeatureFlags
 web/src/i18n/         # EN/JA catalogs + correction display map
 web/src/curriculum/   # hiragana5 trace fixtures (geometry only)
-web/src/services/     # apiFetch, attempts/curriculum/progress clients, wsClient
-web/src/router/       # auth/guest guards; guestShell meta on login/register
+web/src/services/     # apiFetch, attempts/curriculum/progress/features, wsClient
+web/src/router/       # auth/guest guards; guestShell meta on login/register; feature-gated practice routes
 web/public/fonts/     # self-hosted OFL font subsets
 web/public/audio/hiragana5/  # mirrored mora clips (canonical under content pack)
 web/tests/            # Vitest (+ axe a11y)
@@ -89,7 +90,9 @@ docker/               # compose / nginx helpers
 | `web/src/services/curriculumApi.ts` | Lesson pedagogy fetch |
 | `web/src/services/progressApi.ts` | Progress list / next suggestion / clear practice data |
 | `web/src/components/AppShell.vue` | Brand + guest/authed nav; locale + romanization (authed only) |
-| `Makefile` | Dev/build/docker/`validate-content`/`verify-docs` + quality gates (`check`, `test-race`, `check-web`, `test-e2e`, `security-check`) |
+| `internal/metrics/metrics.go` | Process counters (incl. practice assess / feature-disabled / clear) |
+| `internal/features/features.go` | `FEATURE_*` parse + startup cutover log |
+| `Makefile` | Dev/build/docker/`validate-content`/`verify-docs` + quality gates (`check`, `test-race`, `check-web`, `test-e2e`, `security-check`, `gate-r1`…`gate-r4`) |
 | `scripts/verify-readme-commands.sh` | Fail if README cites missing `make` / `./test.sh` commands |
 | `scripts/e2e-webserver.sh` | Temp SQLite + static SPA for Playwright |
 | `README.md` | Operator + API contract + CI / quality gates + contributing |
@@ -99,7 +102,7 @@ docker/               # compose / nginx helpers
 | Document | Path | Description |
 |----------|------|-------------|
 | README | `README.md` | Product, API, WS, security, troubleshooting |
-| Plans | `.ai-factory/plans/` | Completed feature plans |
+| Plans | `.ai-factory/plans/` | Completed feature plans + release sequencing (`japanese-learning-release-sequencing.md`) |
 | Patches | `.ai-factory/patches/` | Self-improvement notes |
 
 ## AI Context Files
