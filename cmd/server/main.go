@@ -109,6 +109,10 @@ func main() {
 	// Recognize (free-board heuristic only)
 	r.Handle("/api/recognize", authSvc.RequireAuth(http.HandlerFunc(api.Recognize))).Methods(http.MethodPost)
 
+	// Curriculum + progress reads (practice UI)
+	r.Handle("/api/lessons/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetLesson))).Methods(http.MethodGet)
+	r.Handle("/api/progress", authSvc.RequireAuth(http.HandlerFunc(api.ListProgress))).Methods(http.MethodGet)
+
 	// Practice attempts
 	r.Handle("/api/attempts", authSvc.RequireAuth(http.HandlerFunc(api.CreateAttempt))).Methods(http.MethodPost)
 	r.Handle("/api/attempts/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetAttempt))).Methods(http.MethodGet)
