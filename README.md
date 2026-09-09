@@ -71,12 +71,15 @@ The application will be available at:
 
 #### Development with Docker
 ```bash
-# Run in development mode with hot reload
+# Dev compose: published backend :8080 + static frontend :3000, source volume on backend
+# (rebuild/restart for Go changes — not a live hot-reload loop). Prefer host DX below.
 make docker-run-dev
 
 # Or use docker-compose directly
 docker-compose -f docker-compose.dev.yml up -d
 ```
+
+For day-to-day coding, prefer host processes: `make backend` and `make frontend` (Vite HMR on `:5173`).
 
 #### Docker Management Commands
 ```bash
@@ -116,14 +119,14 @@ cd ..
 
 **Terminal 1 - Backend:**
 ```bash
-# Target-compare recognizer (hiragana5) + heuristic free-board ranking
-go run ./cmd/server
+make backend
+# equivalent: go run ./cmd/server
 ```
 
 **Terminal 2 - Frontend:**
 ```bash
-cd web
-npm run dev
+make frontend
+# equivalent: cd web && npm run dev
 ```
 
 ### 4. Open the Application
@@ -188,33 +191,31 @@ Automated: `web/tests/integration/accessibility-parity.spec.ts` runs axe-core on
 ## Advanced Setup
 
 ### Environment Variables
+
+| Variable | Purpose | Notes |
+|----------|---------|--------|
+| `ADDR` | HTTP listen address | Default `:8080` |
+| `STATIC_DIR` | Optional SPA static root | e.g. `web/dist` for `make run` |
+| `DB_PATH` | SQLite DSN/path | e.g. `file:data.db?_fk=1` |
+| `COOKIE_KEY` | Session cookie signing key | ≥32 bytes; required in production-secure mode |
+| `APP_ENV` | Environment mode | `production` enables Secure cookies + fail-fast validation |
+| `COOKIE_SECURE` | Force Secure cookies | `true`/`1`/`yes` alternative to `APP_ENV=production` |
+| `ALLOWED_ORIGINS` | Exact CORS/WS origins | Comma-separated; no `*`; required when `APP_ENV=production` |
+| `LOG_LEVEL` | Auth/session/perimeter log filter | `DEBUG`/`INFO`/`WARN`/`ERROR` |
+| `RECOGNIZE_DEBUG` | Handwriting diagnostic dumps | Off by default; ignored when `APP_ENV=production` |
+| `ONNX_MODEL` | Deprecated | If set, ignored with a single `WARN [main]`; no model is loaded |
+
 ```bash
-# Database configuration
+# Typical local values (illustrative — do not treat as secrets)
 DB_PATH=file:data.db?_fk=1
-
-# Server configuration  
 ADDR=:8080
-
-# Session cookie signing key (≥32 bytes). Changing this invalidates existing cookies.
 COOKIE_KEY=your-secure-random-cookie-key-here
-
-# Production-secure cookies (Secure flag) + fail-fast COOKIE_KEY validation:
 # APP_ENV=production
-# or COOKIE_SECURE=true|1|yes
-
-# Exact browser origins allowed for CORS and WebSocket upgrades (comma-separated).
-# No wildcards (*). Production (APP_ENV=production) requires this variable.
-# Development default when unset: http://localhost:5173,http://127.0.0.1:5173
+# COOKIE_SECURE=true
 # ALLOWED_ORIGINS=https://learn.example.com
-
-# Log level for auth/session/perimeter lines (DEBUG|INFO|WARN|ERROR). Default shows DEBUG.
 # LOG_LEVEL=info
-
-# Handwriting diagnostic dumps (coordinates / ASCII canvas). Off by default.
-# Ignored when APP_ENV=production. Startup logs INFO [recognize] recognize_debug=true|false.
 # RECOGNIZE_DEBUG=1
-
-# Deprecated: ONNX_MODEL is ignored if set (WARN [main] once). No model path is loaded.
+# Deprecated ONNX_MODEL is warn+ignore only (do not assign it for capability).
 ```
 
 Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false`, `INFO [main] origin_policy mode=… count=… origins=…`, and `INFO [main] recognizer=target_compare set=hiragana5`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min` / `please-change-this-32-bytes-min`). With `APP_ENV=production`, missing/empty/`*`/`invalid` `ALLOWED_ORIGINS` also exits before listen.
@@ -310,7 +311,19 @@ Authenticated GETs for the practice hub / journey (CSRF not required on GET). Pe
 
 **Next priority:** due review → first not started → continue learning → encourage steadiness → `all_caught_up` (with optional next future due). Manual practice of a non-due character is always allowed; assess still reschedules from assess `now`.
 
-**Retention:** practice attempt handwriting and assessments are kept until the learner clears them via `DELETE /api/practice-data` or the account is deleted. There is no timed auto-purge and no cross-user export. Free-board strokes are separate.
+**Privacy, retention, deletion, and export**
+
+| Data | Where | Retention / clear |
+|------|--------|-------------------|
+| Free-board strokes | Board tables + WS | Kept until free-board clear (WS clear primary; REST helpers may exist) |
+| Practice attempts, assessments, progress, review schedule | Learning tables | Kept until learner clears via hub UI or `DELETE /api/practice-data` |
+| Account / session | Auth tables + cookie | No timed auto-purge |
+
+- Strokes and practice data are **private per user** (`sendToUser`; no cross-user visibility).
+- `DELETE /api/practice-data` clears **this user’s** practice attempts (CASCADE assessments/strokes) and `user_character_progress` (including review box/`due_at`) only — **not** free-board strokes and **not** the account row.
+- **Self-serve account deletion is not supported** (no `DELETE /api/account`). Removing an account requires an operator/DB action; cascade cleanup of user-owned rows is a storage concern, not a product UI path.
+- **Data export is not supported** (no download/export API). There is no cross-user export.
+- Free-board clear does not clear practice history; practice clear does not clear the free board.
 
 `clientAttemptId` (optional, ≤36, same rules as WS `opId`): same user + same character/lesson → return existing attempt; mismatched reuse → `409 conflict`. Progress counters update on submit/assess as in the learning store.
 
@@ -484,12 +497,15 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 ## Troubleshooting
 
 ### Common Issues
-1. **"Address already in use"**: Stop existing server processes with `pkill -f "go run"`
-2. **Recognition not working**: Check `[httpapi.Recognize]` logs; enable `RECOGNIZE_DEBUG=1` locally only if you need feature dumps
-3. **WebSocket connection failed**: Ensure backend is running on port 8080 and you are signed in
-4. **Frontend not loading**: Check if `npm run dev` is running on port 5173
-5. **Seeing another user's strokes**: Should not happen; verify you are on a build with per-user `sendToUser` (not global broadcast) and check logs below
-6. **Blank canvas after resize/zoom but strokes still listed**: Backing-store resize clears the bitmap; the practice canvas should redraw from `strokes` immediately. In DEV builds check `[practiceCanvas] resize … wiped=true` then a redraw; if the canvas stays blank, hard-reload so `GET /api/strokes` repaints.
+1. **"Address already in use"**: Stop existing server processes with `pkill -f "go run"` (or free `:8080` / `:5173`).
+2. **WebSocket stuck on Connecting / Sync error**: Confirm you are signed in, backend is on `:8080`, and browser `Origin` is allowlisted (`ALLOWED_ORIGINS` or Vite defaults). Soft-reload; on `stale_board` the client reloads from `GET /api/strokes`.
+3. **Recognize button disabled (free board)**: Wait until header status is **Saved** with an empty WS queue and at least one stroke. Practice assessment uses attempt APIs — it is **not** gated on board Saved.
+4. **`403 csrf_rejected`**: Refresh so `GET /api/me` (or `/api/csrf`) sets the `csrf` cookie; mutating calls need `X-CSRF-Token`.
+5. **CORS / WS Origin reject**: Exact origin match only (no `*`). Check `WARN [ws.CheckOrigin]` / `[cors]`.
+6. **Recognition reject codes**: Free-board `POST /api/recognize` and attempt assess return structured `code` values (`invalid_input`, `stale_board`, `rate_limited`, `use_attempt_api`, …). Check `[httpapi.Recognize]` / `[httpapi.Attempt.*]` — never expect ONNX model load errors (there is no model path).
+7. **Missing pronunciation audio**: Soft-fail — intro shows a polite live-region message; pedagogy text remains. Sync mirror with `make sync-audio` if pack files exist but `web/public/audio/hiragana5/` is stale.
+8. **Blank canvas after resize/zoom but strokes still listed**: Backing-store resize clears the bitmap; practice/free-board canvases should redraw from stroke state. In DEV check `[practiceCanvas] resize … wiped=true`; otherwise hard-reload so `GET /api/strokes` repaints the board.
+9. **Seeing another user's strokes**: Should not happen; verify per-user `sendToUser` (not global broadcast) in logs.
 
 ### Debug Mode
 
@@ -518,22 +534,18 @@ For local handwriting diagnostics (features, ASCII preview, sample coords), set 
 
 ## Development
 
-### Speckit Workflow (Cursor)
+### Contributing
 
-The repository is initialized for **Speckit** in Cursor. Use slash commands in
-Cursor chat:
+Concise local workflow (commands verified by `make verify-docs`):
 
-```text
-/speckit.constitution
-/speckit.specify <feature description>
-/speckit.clarify
-/speckit.plan
-/speckit.tasks
-/speckit.implement
-```
+1. Clone the repo; install **Go 1.22+** and **Node 18+**.
+2. `go mod tidy` and `cd web && npm install` (or `npm ci`).
+3. Day-to-day: `make backend` + `make frontend` (Vite `:5173`). Optional: `make docker-run-dev` for compose (rebuild for Go changes — not hot reload).
+4. Before a PR: `make check` (gofmt/vet/build + Go tests + web typecheck/Vitest/build + content validate + README command verify). Optional: `CHECK_E2E=1 make check` or `make test-e2e`.
+5. Recognition honesty: `./test.sh recognize-fixtures` (hiragana5 Fixture/Eval + `go test ./internal/docguard`).
+6. Required GitHub check **names** on `main`: `Go quality`, `Go race`, `Web quality`, `Content validate`, `Security light` (Playwright is non-required until promoted).
 
-Generated project artifacts live in `.specify/`, and Cursor commands are in
-`.cursor/commands/`.
+See `.ai-factory/ARCHITECTURE.md` and `AGENTS.md` for module boundaries. Do not reintroduce learner-visible “Migration Health” chrome or AI/ONNX marketing copy (`internal/docguard`). Documented Make targets and `test.sh` subcommands are checked by `make verify-docs`.
 
 ### Project Structure
 ```
@@ -553,8 +565,9 @@ drawing-board/
 │   ├── recognize/      # hiragana5 target comparison (paths from content pack)
 │   └── ws/             # WebSocket handling
 ├── web/                # Vue 3 frontend
-│   ├── src/           # TypeScript / Vue source
-│   │   └── curriculum/ # Trace rendering fixtures
+│   ├── src/components/ # AppShell (guest vs authed nav), DEV-only Dev metrics panel
+│   ├── src/pages/      # Auth, Board, Practice hub/history/character
+│   ├── src/router/     # Auth/guest guards; guestShell meta on login/register
 │   └── public/        # Static assets
 └── .ai-factory/        # Plans, patches, AI context
 ```
@@ -563,18 +576,20 @@ drawing-board/
 
 #### Development Commands
 ```bash
-make backend          # Run Go backend
-make frontend         # Run Vue frontend
+make backend          # Run Go backend (go run ./cmd/server)
+make frontend         # Run Vue Vite dev server
 make build-web        # Build frontend for production
-make run              # Run production server
-make validate-content # Validate hiragana5 content pack
+make run              # Serve production build (STATIC_DIR=web/dist)
+make sync-audio       # Mirror content/hiragana5/v1/audio → web/public/audio/hiragana5
+make validate-content # sync-audio + pack validate + audio mirror diff
+make verify-docs      # Assert README-cited Make targets and test.sh subcommands exist
 make test             # Go unit/integration (./test.sh all; no race)
 make test-verbose     # Go tests with -v
 ```
 
 #### Quality gates (local mirrors of CI)
 ```bash
-make check            # PR-like: check-go + check-web + validate-content
+make check            # PR-like: check-go + check-web + validate-content + verify-docs
 make check-go         # gofmt + vet + golangci-lint (if installed) + build + Go tests
 make test-race        # CGO race on ws/db/httpapi (override TEST_RACE_PKGS)
 make check-web        # typecheck + Vitest + production build
@@ -656,11 +671,11 @@ The production Docker setup includes:
 - **Security headers** and optimizations
 
 ### Development Setup
-The development setup provides:
-- **Hot reload** capabilities
-- **Volume mounting** for live code changes
+The development compose file (`docker-compose.dev.yml`) provides:
+- **Published ports** for backend (`:8080`) and static frontend (`:3000`)
+- **Volume mount** of the repo into the backend container (rebuild/restart for Go binary changes — not a live hot-reload loop)
 - **Separate networks** for isolation
-- **Debug-friendly** configuration
+- Prefer host `make backend` + `make frontend` for Vite HMR day-to-day
 
 ### Environment Variables
 ```bash

@@ -32,17 +32,19 @@ internal/metrics/     # counters
 internal/docguard/    # README honesty tests
 web/src/              # Vue SPA
 web/src/pages/        # BoardPage, PracticeHub/History/Character, LoginPage
+web/src/components/   # AppShell (guest vs authed nav); DEV-only Dev metrics panel
 web/src/components/practice/  # intro, stroke-order, canvas, overlay, journey chrome
 web/src/canvas/       # CSS/DPR coords, layout helpers, draw, hit-test helpers
 web/src/composables/  # usePracticeCanvas + usePracticeJourney + useLocale + useRomanizationPreference
 web/src/i18n/         # EN/JA catalogs + correction display map
 web/src/curriculum/   # hiragana5 trace fixtures (geometry only)
 web/src/services/     # apiFetch, attempts/curriculum/progress clients, wsClient
+web/src/router/       # auth/guest guards; guestShell meta on login/register
 web/public/fonts/     # self-hosted OFL font subsets
 web/public/audio/hiragana5/  # mirrored mora clips (canonical under content pack)
 web/tests/            # Vitest (+ axe a11y)
 web/e2e/              # Playwright learner-journey smoke
-scripts/              # e2e-webserver and CI helpers
+scripts/              # e2e-webserver, verify-readme-commands, CI helpers
 .github/workflows/    # PR CI + nightly
 .ai-factory/          # plans, patches, AI context
 docker/               # compose / nginx helpers
@@ -86,9 +88,11 @@ docker/               # compose / nginx helpers
 | `web/src/services/attemptsApi.ts` | Practice attempt REST + history list |
 | `web/src/services/curriculumApi.ts` | Lesson pedagogy fetch |
 | `web/src/services/progressApi.ts` | Progress list / next suggestion / clear practice data |
-| `Makefile` | Dev/build/docker/`validate-content` + quality gates (`check`, `test-race`, `check-web`, `test-e2e`, `security-check`) |
+| `web/src/components/AppShell.vue` | Brand + guest/authed nav; locale + romanization (authed only) |
+| `Makefile` | Dev/build/docker/`validate-content`/`verify-docs` + quality gates (`check`, `test-race`, `check-web`, `test-e2e`, `security-check`) |
+| `scripts/verify-readme-commands.sh` | Fail if README cites missing `make` / `./test.sh` commands |
 | `scripts/e2e-webserver.sh` | Temp SQLite + static SPA for Playwright |
-| `README.md` | Operator + API contract + CI / quality gates |
+| `README.md` | Operator + API contract + CI / quality gates + contributing |
 
 ## Documentation
 

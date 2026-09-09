@@ -1,6 +1,4 @@
 data.db*
-models/*.onnx
-models/handwriting.onnx
 .idea
 web/node_modules
 dist/

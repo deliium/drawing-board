@@ -1,9 +1,12 @@
 SHELL := /usr/bin/zsh
 
-.PHONY: dev backend frontend build-web run zinnia-build zinnia-model \
-	docker-build docker-run docker-stop docker-clean \
+.PHONY: backend frontend build-web run \
+	docker-build docker-build-backend docker-build-frontend \
+	docker-run docker-run-dev docker-stop docker-stop-dev docker-clean \
+	docker-logs docker-logs-backend docker-logs-frontend \
+	docker-shell-backend docker-shell-frontend \
 	test test-verbose test-web test-race test-e2e \
-	check check-go check-web validate-content sync-audio \
+	check check-go check-web validate-content sync-audio verify-docs \
 	coverage coverage-web security-check
 
 # --- Dev ---
@@ -151,7 +154,13 @@ security-check:
 	@echo "[check] ok name=security-check"
 
 # PR-like local gate. Set CHECK_E2E=1 to include Playwright.
-check: check-go check-web validate-content
+check: check-go check-web validate-content verify-docs
 	@echo "[check] start name=check (PR-like)"
 	@if [ "$(CHECK_E2E)" = "1" ]; then $(MAKE) test-e2e; fi
 	@echo "[check] ok name=check"
+
+# Assert README-cited make / test.sh commands exist.
+verify-docs:
+	@echo "[check] start name=verify-docs"
+	./scripts/verify-readme-commands.sh
+	@echo "[check] ok name=verify-docs"

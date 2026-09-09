@@ -36,13 +36,14 @@ drawing-board/
 │   ├── src/styles/             # Design tokens, focus, reduced-motion, font-face
 │   ├── src/i18n/               # Lightweight EN/JA catalogs + correction display map
 │   ├── src/pages/              # AuthPage, BoardPage, PracticeHub/History/Character
+│   ├── src/components/         # AppShell (guestShell vs authed nav); DEV-only Dev metrics
 │   ├── src/components/practice/# Journey chrome (intro, stroke-order, overlay, …)
 │   ├── src/canvas/             # CSS/DPR coords, layout helpers, drawStrokes, hitTest
 │   ├── src/curriculum/         # hiragana5 trace fixtures (geometry for UI)
 │   ├── src/composables/        # usePracticeCanvas, usePracticeJourney, useLocale
 │   ├── src/services/           # apiFetch, attempts/curriculum/progress, wsClient, strokeSync
 │   ├── src/stores/             # client state (free-board oriented)
-│   ├── src/router/             # auth/guest guards + practice routes
+│   ├── src/router/             # auth/guest guards; guestShell meta on login/register
 │   ├── tests/                  # Vitest unit/contract/integration (+ axe a11y)
 │   └── e2e/                    # Playwright learner-journey smoke (Chromium)
 ├── scripts/                    # e2e-webserver.sh and other CI helpers
@@ -65,6 +66,7 @@ drawing-board/
 - ✅ Optional `kanjiExtensions` in pack JSON is a future hook only — hiragana5 keeps it empty
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
 - ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; `i18n/` owns learner chrome strings; pages compose UI + call services
+- ✅ Learner-facing builds must not mount internal DEV metrics (`MigrationHealthPanel` / “Dev metrics”) — `import.meta.env.DEV` only
 - ❌ Do not add a global WS broadcast path — delivery is `sendToUser(userID, …)` only
 - ❌ Do not put recognition rasterization / large allocations before `limits.CheckCanvas` / validators
 - ❌ Frontend must not treat unmatched inbound stroke creates as authoritative canvas state
@@ -93,7 +95,7 @@ drawing-board/
 8. **Language-learning chrome** — on-demand pronunciation play, hideable romanization preference, concise bilingual guidance; kanji extension points in schema without kanji UI
 9. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row; UI should prefer score + feedback over candidates
 10. **Guided journey UI** — `/practice` hub + `/practice/history` + `/practice/:characterId` stage machine; curriculum/progress GETs for pedagogy; compute-on-read mastery + schedule-aware next suggestion; practice-data clear is personal only; trace geometry from client fixtures; no WS for attempt ink
-11. **Responsive bilingual accessible SPA** — mobile-first tokens (`--canvas-size`), client EN/JA preference (`web/src/i18n`), correction **display** by code (API EN message persisted), skip link / focus-visible / live regions / textual result summary; axe in Vitest
+11. **Responsive bilingual accessible SPA** — mobile-first tokens (`--canvas-size`), client EN/JA preference (`web/src/i18n`), correction **display** by code (API EN message persisted), skip link / focus-visible / live regions / textual result summary; axe in Vitest; AppShell hides Practice/History/Board nav on `guestShell` auth routes; learner builds omit DEV diagnostics panel
 12. **Forgiving personal review** — Leitner-style boxes + UTC wall-clock `due_at`; overdue without shame; next prefers due reviews before new introduction; never market as SM-2/FSRS or streak gamification
 13. **Mastery honesty** — mastery labels are a simple practice summary from assessed attempts (not SM-2 stages, belts, grades, or calibrated scores); abandoned drafts never count
 14. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
