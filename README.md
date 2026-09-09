@@ -8,20 +8,20 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Go backend** with Gorilla mux, WebSocket, SQLite persistence
 - **User authentication** with session-based login/register/logout
 - **Drawing tools**: Pencil and Eraser with hit-testing
-- **Undo functionality**: Ctrl+Z to undo last stroke
+- **Undo (free board)**: Ctrl/Cmd+Z undoes the last free-board stroke
 - **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) via guided practice UI + attempt APIs, plus free-board heuristic ranking with match scores (not a trained AI model)
 - **Guided practice journey**: `/#/practice` lesson hub and per-character stages (intro → stroke order → trace → free-write → assess → corrections)
 - **Attempt history, mastery & review**: `/#/practice/history` for personal assessed attempts; hub shows explainable mastery labels, a schedule-aware next suggestion, and quiet due hints (Leitner-style personal review — not SM-2/FSRS or streak gamification)
 - **Responsive bilingual UI**: mobile-first practice-notebook layout, EN/JA locale preference (`localStorage`), shared fluid canvas sizing, and keyboard/SR-oriented result summaries
-- **Private stroke persistence**: drawings are scoped per user and restored only for that account
+- **Private stroke persistence**: free-board drawings are scoped per user and restored on login; guided practice resumes from `sessionStorage` + attempt status (separate from the board)
 
 ## Features
 
 ### Drawing Tools
 - **Pencil**: Draw with customizable color and width
 - **Eraser**: Remove individual strokes by clicking on them
-- **Undo**: Press `Ctrl+Z` (or `Cmd+Z` on Mac) to undo the last stroke
-- **Clear**: Remove all your drawings from the canvas and database
+- **Undo (free board)**: Press `Ctrl+Z` (or `Cmd+Z` on Mac) on the free board to undo the last stroke
+- **Clear**: Remove all your free-board drawings from the canvas and database
 
 ### Handwriting Recognition
 - **Target comparison (MVP)**: Deterministic scoring against five hiragana templates (`hiragana5`: あ, い, う, え, お) via `POST /api/attempts/…/assess`
@@ -33,7 +33,8 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Registration**: Create new accounts with email and password
 - **Login/Logout**: Secure session-based authentication
 - **Private practice**: Each user's strokes stay private (REST + WebSocket are per-user)
-- **Auto-restore**: Your practice strokes load automatically when you log in
+- **Free-board restore**: Your free-board strokes load from the server when you open the board after login
+- **Practice resume**: Guided practice resumes in-progress draft state from `sessionStorage` plus attempt status (not the free-board store)
 
 ## Requirements
 
@@ -148,8 +149,8 @@ Registration and login are **not** on the board header; they live only on the pu
 - **Width Slider**: Adjust line thickness from 1-20 pixels
 - **Pencil Tool**: Default drawing tool
 - **Eraser Tool**: Click on any stroke to remove it
-- **Undo Button**: Click to undo the last stroke (or use Ctrl+Z)
-- **Clear Button**: Remove all your drawings
+- **Undo Button**: Click to undo the last free-board stroke (or use Ctrl/Cmd+Z on the free board)
+- **Clear Button**: Remove all your free-board drawings
 
 ### Handwriting Recognition
 1. **Guided practice** — open `/#/practice`, pick a character, follow stroke-order → trace → free-write, then **Submit**. The UI shows a comparison overlay, **Match** score (`scoreKind=match`), and at most two corrections — not confidence / AI language, and not the `candidates` list as primary coaching.
@@ -157,8 +158,8 @@ Registration and login are **not** on the board header; they live only on the pu
 3. Scores are **match scores**, not confidence.
 
 ### Keyboard Shortcuts
-- **Ctrl+Z** (Windows/Linux) or **Cmd+Z** (Mac): Undo last stroke
-- **Escape**: Cancel an in-progress pencil stroke (does not enqueue a create); same abort as `pointercancel`
+- **Ctrl+Z** (Windows/Linux) or **Cmd+Z** (Mac): Undo last stroke on the **free board** only (`/#/`). Practice canvases use the on-screen Undo control when present — Ctrl/Cmd+Z is not wired there.
+- **Escape**: Cancel an in-progress pencil stroke on the free board **and** practice canvases (does not enqueue a create); same abort as `pointercancel`
 
 ### Practice canvas coordinates
 Stroke points are stored in **CSS logical pixels** relative to the canvas layout box. The backing store uses `devicePixelRatio` (`backing = round(css × dpr)`) with a matching 2d transform so drawing stays sharp on high-DPI displays without rewriting historical coordinates. Practice and free-board canvases share CSS token `--canvas-size` (`min(92vw, min(70dvh, 420px))`); submit/recognize `width`/`height` are the **live logical CSS** size from the layout box (never a stale 300 constant). One-point taps are persisted and rendered as dots and can be erased.
