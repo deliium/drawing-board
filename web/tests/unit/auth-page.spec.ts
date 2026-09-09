@@ -4,12 +4,24 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginPage from '../../src/pages/LoginPage.vue'
 import { initLocale, setLocale } from '../../src/i18n'
 import { setAuthenticatedUser } from '../../src/services/sessionContext'
+import {
+  getFeatureFlags,
+  resetFeatureFlagsForTest,
+  setFeatureFlagsForTest,
+} from '../../src/services/featuresApi'
 
 const apiFetch = vi.fn()
 
 vi.mock('../../src/services/apiClient', () => ({
   apiFetch: (...args: unknown[]) => apiFetch(...args),
 }))
+
+const ALL_FEATURES = {
+  practice: true,
+  progress: true,
+  review: true,
+  audio: true,
+}
 
 async function flush() {
   await nextTick()
@@ -59,6 +71,7 @@ describe('AuthPage behavior', () => {
   beforeEach(() => {
     apiFetch.mockReset()
     setAuthenticatedUser(null)
+    resetFeatureFlagsForTest()
     document.body.innerHTML = ''
     initLocale()
     setLocale('en')
@@ -76,13 +89,15 @@ describe('AuthPage behavior', () => {
   })
 
   it('disables submit while loading and maps success to board', async () => {
-    let resolveFetch: (value: unknown) => void = () => undefined
-    apiFetch.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveFetch = resolve
-        }),
-    )
+    let resolveLogin: (value: unknown) => void = () => undefined
+    apiFetch.mockImplementation((path: string) => {
+      if (path === '/api/features') {
+        return Promise.resolve(ALL_FEATURES)
+      }
+      return new Promise((resolve) => {
+        resolveLogin = resolve
+      })
+    })
     const { root, router } = await mountAuth('login')
     await setInput(root.querySelector('#auth-email') as HTMLInputElement, 'learner@example.com')
     await setInput(root.querySelector('#auth-password') as HTMLInputElement, 'password1')
@@ -95,10 +110,48 @@ describe('AuthPage behavior', () => {
     expect(submit.disabled).toBe(true)
     expect(form.getAttribute('aria-busy')).toBe('true')
 
-    resolveFetch({ id: 7, email: 'learner@example.com' })
+    resolveLogin({ id: 7, email: 'learner@example.com' })
     await vi.waitFor(() => {
       expect(router.currentRoute.value.name).toBe('board')
     })
+    expect(apiFetch).toHaveBeenCalledWith('/api/features')
+  })
+
+  it('refreshes feature flags after login before navigating to board', async () => {
+    setFeatureFlagsForTest({
+      practice: true,
+      progress: true,
+      review: true,
+      audio: true,
+    })
+    apiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/login') {
+        return { id: 3, email: 'flag@example.com' }
+      }
+      if (path === '/api/features') {
+        return { practice: false, progress: false, review: false, audio: false }
+      }
+      throw new Error(`unexpected path ${path}`)
+    })
+
+    const { root, router } = await mountAuth('login')
+    await setInput(root.querySelector('#auth-email') as HTMLInputElement, 'flag@example.com')
+    await setInput(root.querySelector('#auth-password') as HTMLInputElement, 'password1')
+
+    const form = root.querySelector('form') as HTMLFormElement
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => {
+      expect(router.currentRoute.value.name).toBe('board')
+    })
+    expect(getFeatureFlags()).toEqual({
+      practice: false,
+      progress: false,
+      review: false,
+      audio: false,
+    })
+    const paths = apiFetch.mock.calls.map((c) => c[0])
+    expect(paths).toEqual(['/api/login', '/api/features'])
   })
 
   it('switches to create account mode via tab control', async () => {

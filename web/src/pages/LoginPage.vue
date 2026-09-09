@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useLocale } from '../composables/useLocale'
 import { apiFetch, type ApiError } from '../services/apiClient'
+import { loadFeatureFlags } from '../services/featuresApi'
 import { setAuthenticatedUser } from '../services/sessionContext'
 
 const props = withDefaults(
@@ -178,7 +179,12 @@ async function submit() {
     })
     password.value = ''
     setAuthenticatedUser(user)
-    authDebug(mode.value, 'success')
+    // Guest bootstrap skips /api/features (auth-only); refresh kill switches before nav.
+    const flags = await loadFeatureFlags()
+    if (isDev) {
+      console.debug('[FIX] feature flags refreshed after auth', { mode: mode.value, flags })
+    }
+    authDebug(mode.value, 'success', flags)
     await router.replace({ name: 'board' })
   } catch (err) {
     const code = (err as ApiError)?.code
