@@ -218,7 +218,7 @@ COOKIE_KEY=your-secure-random-cookie-key-here
 # Deprecated ONNX_MODEL is warn+ignore only (do not assign it for capability).
 ```
 
-Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false`, `INFO [main] origin_policy mode=… count=… origins=…`, and `INFO [main] recognizer=target_compare set=hiragana5`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min` / `please-change-this-32-bytes-min`). With `APP_ENV=production`, missing/empty/`*`/`invalid` `ALLOWED_ORIGINS` also exits before listen.
+Local `make run` without `APP_ENV=production` / `COOKIE_SECURE` keeps `Secure=false` so HTTP/Vite works. Startup logs `INFO [main] cookie_secure=true|false`, `INFO [main] origin_policy mode=… count=… origins=…`, and `INFO [main] recognizer=target_compare set=hiragana5`. In non-production mode a weak/default `COOKIE_KEY` only warns; in production-secure mode the process exits if `COOKIE_KEY` is missing, shorter than 32 bytes, or equal to a documented sentinel (`change-me-please-32-bytes-min`, `please-change-this-32-bytes-min`, `replace-me-with-a-long-random-cookie-key`, `your-secure-random-cookie-key-here`, `dev-secret-key-change-me-32bytes!!`). With `APP_ENV=production`, missing/empty/`*`/`invalid` `ALLOWED_ORIGINS` also exits before listen.
 
 If TLS terminates at Nginx in front of Go, the public site must still be HTTPS for browsers to send `Secure` cookies, and `ALLOWED_ORIGINS` must match the browser-facing origin exactly (e.g. `https://learn.example.com`). See `docker/nginx-tls.conf.example`. Forwarded headers may be set for logs; they are **not** used for origin allowlisting or auth.
 
@@ -728,7 +728,7 @@ The development compose file (`docker-compose.dev.yml`) provides:
 # Backend environment variables
 ADDR=:8080                      # Listen address (preferred over unused PORT)
 DB_PATH=/data/drawing-board.db  # Database file path
-COOKIE_KEY=replace-me-with-a-long-random-cookie-key  # ≥32 bytes; required
+COOKIE_KEY=<strong-random-≥32-bytes>  # required; compose placeholder replace-me-… is a blocked sentinel
 APP_ENV=production              # Enables Secure cookies + COOKIE_KEY validation (prod compose)
 ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in production; no wildcards
 # COOKIE_SECURE=true            # Alternative to APP_ENV=production
@@ -739,7 +739,7 @@ ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in product
 # FEATURE_AUDIO=1
 ```
 
-Production `docker-compose.yml` sets `APP_ENV=production`, `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.
+Production `docker-compose.yml` sets `APP_ENV=production`, a placeholder `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The placeholder is a **blocked sentinel**: replace it with a strong random key (≥32 bytes) before the backend will listen. The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works (that key is also a sentinel if copied into production-secure mode). Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.
 
 ## License
 CC0 1.0 Universal — see `LICENSE` at the repository root. Curriculum stroke/trace data and short pedagogy glosses are also under CC0; pronunciation audio provenance/licenses are listed in `content/hiragana5/LICENSES.md`. UI fonts under `web/public/fonts/` are **SIL Open Font License** subsets: IBM Plex Sans and Noto Sans JP (vendored from Fontsource builds for self-hosting; `font-display: swap`).

@@ -60,20 +60,29 @@ func TestValidateCookieKey(t *testing.T) {
 	if err := ValidateCookieKey(strong, true); err != nil {
 		t.Fatalf("strong key should pass: %v", err)
 	}
-	if err := ValidateCookieKey(CookieKeyDefaultSentinel, true); err == nil {
-		t.Fatal("default sentinel must fail in secure mode")
+	sentinels := []string{
+		CookieKeyDefaultSentinel,
+		CookieKeyREADMESentinel,
+		CookieKeyComposeSentinel,
+		CookieKeyEnvExampleSentinel,
+		CookieKeyDevComposeSentinel,
 	}
-	if err := ValidateCookieKey(CookieKeyREADMESentinel, true); err == nil {
-		t.Fatal("readme sentinel must fail in secure mode")
+	for _, sentinel := range sentinels {
+		if err := ValidateCookieKey(sentinel, true); err == nil {
+			t.Fatalf("sentinel %q must fail in secure mode", sentinel)
+		}
+		if !IsWeakCookieKey(sentinel) {
+			t.Fatalf("IsWeakCookieKey should detect sentinel %q", sentinel)
+		}
+		if err := ValidateCookieKey(sentinel, false); err != nil {
+			t.Fatalf("non-secure mode should allow weak key %q: %v", sentinel, err)
+		}
 	}
 	if err := ValidateCookieKey("short", true); err == nil {
 		t.Fatal("short key must fail in secure mode")
 	}
-	if err := ValidateCookieKey(CookieKeyDefaultSentinel, false); err != nil {
-		t.Fatalf("non-secure mode should allow weak keys: %v", err)
-	}
-	if !IsWeakCookieKey(CookieKeyDefaultSentinel) || !IsWeakCookieKey("x") {
-		t.Fatal("IsWeakCookieKey should detect sentinels and short keys")
+	if !IsWeakCookieKey("x") {
+		t.Fatal("IsWeakCookieKey should detect short keys")
 	}
 }
 

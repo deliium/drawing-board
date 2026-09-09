@@ -12,6 +12,7 @@ services:
       - ADDR=:8080
       - DB_PATH=/data/drawing-board.db
       - APP_ENV=production
+      # Placeholder is a blocked production sentinel — replace before deploy or the process exits.
       - COOKIE_KEY=replace-me-with-a-long-random-cookie-key
       # Browser-facing origin. Local HTTP compose demos use http://localhost;
       # real deployments MUST set https://your.public.origin (Secure cookies need HTTPS).
