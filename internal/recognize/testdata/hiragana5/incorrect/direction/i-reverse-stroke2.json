@@ -1,0 +1,40 @@
+{
+  "name": "i-reverse-both",
+  "target": "い",
+  "strokes": [
+    {
+      "points": [
+        {
+          "x": 0.3,
+          "y": 0.82
+        },
+        {
+          "x": 0.22,
+          "y": 0.55
+        },
+        {
+          "x": 0.28,
+          "y": 0.22
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "x": 0.68,
+          "y": 0.8
+        },
+        {
+          "x": 0.72,
+          "y": 0.55
+        },
+        {
+          "x": 0.62,
+          "y": 0.28
+        }
+      ]
+    }
+  ],
+  "expectPass": false,
+  "expectFeedbackCode": "start_direction"
+}

@@ -1,0 +1,36 @@
+{
+  "name": "a-drop-last",
+  "target": "あ",
+  "strokes": [
+    {
+      "points": [
+        {
+          "x": 0.2,
+          "y": 0.22
+        },
+        {
+          "x": 0.8,
+          "y": 0.22
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "x": 0.52,
+          "y": 0.12
+        },
+        {
+          "x": 0.52,
+          "y": 0.55
+        },
+        {
+          "x": 0.42,
+          "y": 0.72
+        }
+      ]
+    }
+  ],
+  "expectPass": false,
+  "expectFeedbackCode": "stroke_count_mismatch"
+}

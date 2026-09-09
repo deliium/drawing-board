@@ -10,13 +10,16 @@ Trusted curriculum for the five-vowel starter set `あ い う え お` (`set_id
 | `drafts/` | Untrusted AI or WIP material — **never** imported by seed or recognize |
 | `LICENSES.md` | Font / stroke-data / example-word notes |
 
+| `v1/assessment_review.json` | Human review of scoring tolerances + correction copy (Prompt 12) |
+
 ## Authoring
 
 1. Edit files under `v1/` (or stage WIP in `drafts/`).
 2. Run `make validate-content` (or `go test ./internal/curriculum` / `go run ./cmd/contentvalidate`).
 3. Open a PR with the reviewer checklist below.
 4. After a qualified Japanese-speaker review, fill `v1/review.json`, set `manifest.reviewStatus` to `published`, refresh `contentHash`.
-5. Merge — `SeedHiragana5` and recognize load the published pack only.
+5. For assessment tolerance/copy changes, also update `v1/assessment_review.json` (`correctionsReviewed=true`) and re-run `go test ./internal/recognize -run 'Eval|Fixture' -v`.
+6. Merge — `SeedHiragana5` and recognize load the published pack only.
 
 Seed and recognize **fail closed** if the pinned pack is missing, invalid, or not `published`.
 
@@ -35,6 +38,17 @@ Completed for `v1` (see `v1/review.json`; `manifest.reviewStatus=published`):
 - [x] License notes accurate
 
 Reuse this list (unchecked) when publishing a future `vN` pack.
+
+### Assessment review (Prompt 12)
+
+See `v1/assessment_review.json`. Before claiming pedagogy-grade scoring:
+
+- [x] Tolerances / weights reviewed as engineering criteria only
+- [x] Correction catalog age-neutral; codes stable; ≤2 feedback
+- [x] Diagnostics separate from learner-facing messages
+- [x] Gold / incorrect / short-stroke fixture suites spot-checked
+- [x] Retry guidance present (new attempt; focus on listed corrections)
+- [x] No calibrated confidence / AI accuracy claims
 
 **Qualified reviewer:** native or near-native Japanese literacy sufficient to judge kana stroke order and elementary vocabulary.
 

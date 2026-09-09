@@ -1,0 +1,40 @@
+{
+  "name": "i-shift-stroke2",
+  "target": "い",
+  "strokes": [
+    {
+      "points": [
+        {
+          "x": 0.28,
+          "y": 0.22
+        },
+        {
+          "x": 0.22,
+          "y": 0.55
+        },
+        {
+          "x": 0.3,
+          "y": 0.82
+        }
+      ]
+    },
+    {
+      "points": [
+        {
+          "x": 1.07,
+          "y": 0.28
+        },
+        {
+          "x": 1.17,
+          "y": 0.55
+        },
+        {
+          "x": 1.1300000000000001,
+          "y": 0.8
+        }
+      ]
+    }
+  ],
+  "expectPass": false,
+  "expectFeedbackCode": "relative_placement"
+}

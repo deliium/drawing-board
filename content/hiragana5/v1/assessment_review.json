@@ -1,0 +1,37 @@
+{
+  "reviewer": "deliium",
+  "reviewedAt": "2026-09-09",
+  "notes": "Engineering tolerances and English correction catalog for hiragana5 multi-criterion assessment (Prompt 12). Scores are deterministic match components — not calibrated confidence. Gold and incorrect fixture suites spot-checked against pack templates.",
+  "checklist": {
+    "tolerancesReviewed": true,
+    "weightsReviewed": true,
+    "correctionsReviewed": true,
+    "correctionsAgeNeutral": true,
+    "codesStable": true,
+    "diagnosticsSeparateFromLearnerCopy": true,
+    "goldSuiteSpotChecked": true,
+    "incorrectSuitesSpotChecked": true,
+    "shortStrokeBehaviorChecked": true,
+    "retryGuidanceInCopy": true,
+    "noCalibratedConfidenceClaims": true
+  },
+  "tolerances": {
+    "T_pass": 0.70,
+    "epsilonBounds": 1e-9,
+    "L_short": 0.04,
+    "T_place": 0.15,
+    "T_prop": 0.35,
+    "N_resample": 16,
+    "softCriterionThreshold": 0.75,
+    "hardFailMaxStrokeCount": 3
+  },
+  "weights": {
+    "stroke_count": 0.15,
+    "stroke_order": 0.15,
+    "start_end_direction": 0.15,
+    "relative_placement": 0.15,
+    "proportions": 0.10,
+    "shape": 0.30
+  },
+  "passRule": "overall >= T_pass AND no stroke-count hard-fail (want<=3) AND target is top-ranked in hiragana5 set"
+}
