@@ -23,6 +23,7 @@
 - [x] **Lightweight spaced-review queue (Prompt 16)** — Leitner-style personal review from assessed pass/fail; due dates + next/why; forgiving missed days; no streaks, notifications, or SM-2/FSRS
 - [x] **Handwriting practice with basic language learning (Prompt 17)** — per-character pronunciation audio, example vocabulary, hideable romanization, concise learner guidance; kanji-ready content extension points without implementing kanji
 - [x] **Test pyramid and CI confidence (Prompt 18)** — balanced Go unit/integration + SQLite migrations + HTTP/WS contracts + Vitest/axe/canvas + small Playwright learner journeys; WS race detection; coverage as signal; lint/type/build; GitHub Actions with caching/artifacts/security scanning and required PR checks; local Makefile equivalents
+- [x] **Product copy, shell, and documentation honesty (Prompt 19)** — gate/remove learner-visible migration diagnostics; consolidate app shell/nav/branding; accurate keyboard/feature/recognition copy; verified setup/env/Makefile/Docker docs; privacy retention + deletion/export honesty; troubleshooting + architecture notes + concise contributor workflow; command verification + docguard/tests
 
 ## Completed
 
@@ -47,3 +48,4 @@
 | Lightweight spaced-review queue (Prompt 16) | 2026-09-09 |
 | Handwriting practice with basic language learning (Prompt 17) | 2026-09-09 |
 | Test pyramid and CI confidence (Prompt 18) | 2026-09-09 |
+| Product copy, shell, and documentation honesty (Prompt 19) | 2026-09-09 |
