@@ -17,6 +17,7 @@
 - [x] **Reviewed five-character hiragana starter curriculum (Prompt 10)** — versioned `hiragana5` content pack (あ行); pedagogy fields, stroke/trace data, human review gate, deterministic seed; AI drafts excluded until reviewed
 - [x] **Practice attempt APIs replacing whole-board recognition (Prompt 11)** — start/submit/assess/retry attempt REST; assessment uses submitted attempt strokes only (not board store); idempotency + immutable assessed rows; coexist with WS/`boardRev`
 - [x] **Deterministic target-specific handwriting assessment for hiragana5 MVP (Prompt 12)** — normalize learner/canonical strokes; multi-criterion match scoring; ≤2 actionable corrections; fixtures + expert review; diagnostics separate from learner copy; match scores only (not calibrated confidence)
+- [x] **Core learner journey UI for one hiragana character (Prompt 13)** — guided intro (glyph/pronunciation/stroke count/example); stroke-order animation; trace + free-write; attempt submit/assess; comparison overlay + ≤2 corrections; retry or completion; progress resume; age-neutral Vue practice routes
 
 ## Completed
 
@@ -35,3 +36,4 @@
 | Reviewed five-character hiragana starter curriculum (Prompt 10) | 2026-09-08 |
 | Practice attempt APIs replacing whole-board recognition (Prompt 11) | 2026-09-09 |
 | Deterministic target-specific handwriting assessment for hiragana5 MVP (Prompt 12) | 2026-09-09 |
+| Core learner journey UI for one hiragana character (Prompt 13) | 2026-09-09 |

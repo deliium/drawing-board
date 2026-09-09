@@ -28,6 +28,7 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - Durable learning schema (characters/lessons/attempts/assessments/progress) via versioned SQLite migrations, separate from free-board strokes
 - Reviewed five-vowel starter curriculum pack (`content/hiragana5/`) with pedagogy fields, stroke/trace templates, and deterministic seed
 - Attempt-scoped practice assessment REST (`/api/attempts`) — submit strokes for one character, assess via target comparison + correction catalog, persist engine feedback without reading the free-board
+- Guided learner journey UI (`/#/practice`) for hiragana5 — intro, stroke-order animation, trace/free-write, comparison overlay with ≤2 corrections; curriculum/progress read APIs
 - Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
 
 ## Non-Functional Requirements

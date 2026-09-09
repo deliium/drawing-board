@@ -31,9 +31,12 @@ internal/security/    # CORS/CSRF/origins
 internal/metrics/     # counters
 internal/docguard/    # README honesty tests
 web/src/              # Vue SPA
+web/src/pages/        # BoardPage, PracticeHub/Character, LoginPage
+web/src/components/practice/  # intro, stroke-order, canvas, overlay, journey chrome
 web/src/canvas/       # CSS/DPR coords, draw, hit-test helpers
-web/src/composables/  # usePracticeCanvas lifecycle
-web/src/curriculum/   # hiragana5 trace fixtures
+web/src/composables/  # usePracticeCanvas + usePracticeJourney
+web/src/curriculum/   # hiragana5 trace fixtures (geometry only)
+web/src/services/     # apiFetch, attempts/curriculum/progress clients, wsClient
 web/tests/            # Vitest
 .ai-factory/          # plans, patches, AI context
 docker/               # compose / nginx helpers
@@ -53,17 +56,23 @@ docker/               # compose / nginx helpers
 | `internal/recognize/normalize.go` | Shared unit-space normalization + short-stroke classification |
 | `internal/recognize/criteria.go` / `corrections.go` | Criterion scorers + ≤2 learner correction catalog |
 | `internal/httpapi/attempts.go` | Practice attempt REST lifecycle |
+| `internal/httpapi/curriculum.go` | Lesson + progress read endpoints |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
 | `internal/db/migrate.go` | versioned schema runner + `schema_migrations` |
 | `internal/db/learn_store.go` | SQLite learning repos (attempts/assessments/progress) |
 | `internal/learn/` | learning-domain types + repository interfaces |
-| `web/src/pages/BoardPage.vue` | Practice canvas UI (tools/WS/recognize) |
+| `web/src/pages/BoardPage.vue` | Free-board canvas UI (tools/WS/recognize) |
+| `web/src/pages/PracticeHubPage.vue` | Hiragana5 lesson hub + progress |
+| `web/src/pages/PracticeCharacterPage.vue` | Guided single-character journey shell |
+| `web/src/composables/usePracticeJourney.ts` | Stage machine, session resume, attempt orchestration |
 | `web/src/composables/usePracticeCanvas.ts` | Pointer lifecycle, DPR resize redraw, Escape cancel |
 | `web/src/canvas/*` | CSS-logical coords, stroke paint (incl. dots), hit-test |
-| `web/src/curriculum/*` | Trace template fixtures for Vitest / future lesson UI |
+| `web/src/curriculum/*` | Trace template fixtures for animation/overlay |
 | `web/src/services/wsClient.ts` | WS queue / reconnect / status / baseRev |
 | `web/src/services/strokeSync.ts` | Merge ack/echo/clear into local strokes |
 | `web/src/services/attemptsApi.ts` | Thin typed client for practice attempt REST |
+| `web/src/services/curriculumApi.ts` | Lesson pedagogy fetch |
+| `web/src/services/progressApi.ts` | Progress list fetch |
 | `Makefile` | Dev/build/docker/`validate-content` targets |
 | `README.md` | Operator + API contract |
 

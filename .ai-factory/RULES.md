@@ -12,6 +12,7 @@ Hard requirements for this repository. More specific files under `.ai-factory/ru
 - Practice assessment reads **attempt** strokes only (never `ListStrokesWithRev` / board tables); free-board `POST /api/recognize` is heuristic playground and must not accept `target`.
 - Retry always creates a **new** attempt row; never reopen `assessed` / `abandoned`. Assessed attempts are immutable — retry focuses on listed corrections.
 - Draft attempts persist metadata only — stroke geometry is client-held until `SubmitStrokes`; attempt APIs must not require `boardRev`.
+- Guided practice UI (`/#/practice`) draws attempt ink **locally** — do not enqueue practice strokes on WebSocket / `boardRev`; free-board remains the WS scratchpad.
 - SQLite schema changes use **versioned, fail-closed migrations** (`schema_migrations`); do not reintroduce ad-hoc unversioned DDL on `Open`.
 - Trusted curriculum is versioned under `content/hiragana5/vN` only; AI/WIP drafts stay in `content/hiragana5/drafts/` and must never be seeded or embedded for recognition.
 - Seed and recognize must agree on the `hiragana5` glyph set, stroke counts, and pack `contentVersion` (single pack source of truth).

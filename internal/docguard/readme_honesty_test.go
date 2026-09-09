@@ -29,6 +29,7 @@ var forbiddenREADMEPatterns = []struct {
 	{name: "ONNX_MODEL env capability", re: regexp.MustCompile(`(?i)ONNX_MODEL\s*=`)},
 	{name: "AI-authored curriculum", re: regexp.MustCompile(`(?i)AI[- ]authored\s+curriculum`)},
 	{name: "expert-reviewed curriculum overclaim", re: regexp.MustCompile(`(?i)expert-reviewed\s+curriculum`)},
+	{name: "AI lesson marketing", re: regexp.MustCompile(`(?i)AI\s+lesson`)},
 }
 
 func moduleRoot(t *testing.T) string {

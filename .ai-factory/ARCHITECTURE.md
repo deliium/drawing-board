@@ -32,13 +32,14 @@ drawing-board/
 │   ├── metrics/                # process-local counters
 │   └── docguard/               # README honesty regression tests
 ├── web/
-│   ├── src/pages/              # AuthPage, BoardPage
+│   ├── src/pages/              # AuthPage, BoardPage, PracticeHub/Character
+│   ├── src/components/practice/# Journey chrome (intro, stroke-order, overlay, …)
 │   ├── src/canvas/             # CSS/DPR coords, drawStrokes, hitTest
-│   ├── src/curriculum/         # hiragana5 trace fixtures (Prompt 13 UI later)
-│   ├── src/composables/        # usePracticeCanvas (pointer/resize lifecycle)
-│   ├── src/services/           # apiFetch, wsClient, strokeSync
-│   ├── src/stores/             # client state
-│   ├── src/router/             # auth/guest guards
+│   ├── src/curriculum/         # hiragana5 trace fixtures (geometry for UI)
+│   ├── src/composables/        # usePracticeCanvas, usePracticeJourney
+│   ├── src/services/           # apiFetch, attempts/curriculum/progress, wsClient, strokeSync
+│   ├── src/stores/             # client state (free-board oriented)
+│   ├── src/router/             # auth/guest guards + practice routes
 │   └── tests/                  # Vitest unit/contract/integration
 ├── docker/                     # Nginx examples, compose assets
 └── .ai-factory/                # AI Factory plans, patches, context
@@ -51,6 +52,7 @@ drawing-board/
 - ✅ `httpapi` attempt handlers depend on `internal/learn` repos + `recognize.Assessor`; SQLite impl lives in `internal/db`
 - ✅ Free-board stroke tables stay isolated from attempt stroke tables (no shared FK / clear coupling; no attempt↔board FK)
 - ✅ Board `POST /api/recognize` stays heuristic-only (no `target`); single-character practice uses `/api/attempts`
+- ✅ Practice journey UI uses local canvas ink + REST attempts; free-board WS/`boardRev` must not gate submit/assess
 - ✅ Schema evolves only via versioned migrations in `internal/db/migrations` (fail-closed on `Open`)
 - ✅ Trusted curriculum lives under `content/hiragana5/vN`; `internal/curriculum` loads/validates; seed + recognize both consume the pack (no dual-maintained stroke JSON)
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
@@ -77,7 +79,8 @@ drawing-board/
 6. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
 7. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
 8. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row; UI should prefer score + feedback over candidates
-9. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+9. **Guided journey UI** — `/practice` hub + `/practice/:characterId` stage machine; curriculum/progress GETs for pedagogy; trace geometry from client fixtures; no WS for attempt ink
+10. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 

@@ -9,7 +9,8 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **User authentication** with session-based login/register/logout
 - **Drawing tools**: Pencil and Eraser with hit-testing
 - **Undo functionality**: Ctrl+Z to undo last stroke
-- **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) via practice attempt APIs, plus free-board heuristic ranking with match scores (not a trained AI model)
+- **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) via guided practice UI + attempt APIs, plus free-board heuristic ranking with match scores (not a trained AI model)
+- **Guided practice journey**: `/#/practice` lesson hub and per-character stages (intro → stroke order → trace → free-write → assess → corrections)
 - **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
 ## Features
@@ -131,9 +132,12 @@ npm run dev
 ### Getting Started
 1. **Open the app** — unauthenticated visits land on the public auth page (`/#/login`, or `/#/register` to create an account).
 2. **Create account or sign in** — email and password (8–72 bytes). A session cookie (`sid`) is set; the client sends `credentials: 'include'`.
-3. **Practice** — after auth you are redirected to the private board. Use the pencil tool to write characters on the canvas.
-4. **Save** — strokes are queued and persisted over WebSocket with per-operation `opId` acknowledgements and monotonic `boardRev` / `baseRev` ordering (header shows Connecting / Saving / Saved / Offline / Sync error).
+3. **Practice** — after auth you can open **Practice hiragana** (`/#/practice`) for the guided single-character journey, or stay on the free board for scratchpad drawing + heuristic Recognize.
+4. **Save (free board)** — strokes are queued and persisted over WebSocket with per-operation `opId` acknowledgements and monotonic `boardRev` / `baseRev` ordering (header shows Connecting / Saving / Saved / Offline / Sync error).
 5. **Logout** — use Logout on the board to clear the session and return to the auth page.
+
+### Guided practice journey
+Routes: `/#/practice` (hub) and `/#/practice/:characterId` (e.g. `hira:%E3%81%82`). Stages: loading → intro → animate → trace → freewrite → submitting → result → complete (plus error/empty). Attempt ink is local-only until Submit; refresh resume uses `sessionStorage` (`practice:v1:{characterId}`) plus attempt status. Leaving mid-draft best-effort `abandon`s. Overlay shows Match score and ≤2 corrections — not candidates as primary UI.
 
 Registration and login are **not** on the board header; they live only on the public auth routes.
 
@@ -146,10 +150,9 @@ Registration and login are **not** on the board header; they live only on the pu
 - **Clear Button**: Remove all your drawings
 
 ### Handwriting Recognition
-1. **Draw a character** on the canvas (try あ / い / う, or simple shapes for free-board ranking)
-2. **Click "Recognize"** for heuristic match-score candidates (board UI)
-3. **Practice assessment** (API): create an attempt for one character, submit ordered strokes, then assess — never via board-loaded `target` on `/api/recognize`
-4. Scores are **match scores**, not confidence
+1. **Guided practice** — open `/#/practice`, pick a character, follow stroke-order → trace → free-write, then **Submit**. The UI shows a comparison overlay, **Match** score (`scoreKind=match`), and at most two corrections — not confidence / AI language, and not the `candidates` list as primary coaching.
+2. **Free board** — draw on `/#/` and click **Recognize** for heuristic match-score candidates (playground only).
+3. Scores are **match scores**, not confidence.
 
 ### Keyboard Shortcuts
 - **Ctrl+Z** (Windows/Linux) or **Cmd+Z** (Mac): Undo last stroke
@@ -250,7 +253,7 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 
 ### Practice Attempt Endpoints
 
-Canonical **single-character practice** assessment. Attempt routes do **not** use `boardRev` / WS queue gating. Draft rows persist metadata only — stroke geometry is sent once on submit and then frozen. Retry = new `POST /api/attempts` (new `clientAttemptId`). Board clear/undo does not mutate attempts.
+Canonical **single-character practice** assessment. Attempt routes do **not** use `boardRev` / WS queue gating. Draft rows persist metadata only — stroke geometry is sent once on submit and then frozen. Retry = new `POST /api/attempts` (new `clientAttemptId`). Board clear/undo does not mutate attempts. The Vue journey at `/#/practice/:characterId` draws locally (no WS for attempt ink).
 
 State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned`.
 
@@ -262,6 +265,15 @@ State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned
 | `POST` | `/api/attempts/{id}/assess` | Empty body; multi-criterion assess on **attempt** strokes only; returns ≤2 `feedback` messages; idempotent if already assessed |
 | `GET` | `/api/attempts/{id}/assessment` | Persisted result (`scoreKind=match`, `feedback[]`; no live `candidates`) |
 | `POST` | `/api/attempts/{id}/abandon` | Only from `draft` |
+
+### Curriculum & Progress Read Endpoints
+
+Authenticated GETs for the practice hub / journey (CSRF not required). Pedagogy comes from the seeded pack; stroke **geometry** stays in client fixtures (`hiragana5Traces`).
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/lessons/{id}` | Published lesson only (`lesson:hiragana5`); characters include glyph, romanization, strokeCount, pronunciation JSON, example word |
+| `GET` | `/api/progress` | `{ items:[{ characterId, status, attemptCount, passCount, … }] }`; optional `?lessonId=` / `?setId=` |
 
 `clientAttemptId` (optional, ≤36, same rules as WS `opId`): same user + same character/lesson → return existing attempt; mismatched reuse → `409 conflict`. Progress counters update on submit/assess as in the learning store.
 
@@ -422,6 +434,8 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 | `[curriculum.load]` / `[curriculum.validate]` | Pack load + invariant checks (no coordinates) |
 | `INFO [main] schema_version=` | Final version + `learn_seed=hiragana5` + `contentVersion=` |
 | `[learn.*]` | Attempt/assessment repo DEBUG/INFO (ids/status/counts — no coordinates) |
+| `[httpapi.Lesson.Get]` / `[httpapi.Progress.List]` | Curriculum/progress reads (counts/ids — no stroke geometry) |
+| `[practiceJourney]` / `[strokeOrder]` / `[compareOverlay]` | Vue DEV-only journey / animation / overlay debug (no coordinates) |
 
 ## Troubleshooting
 

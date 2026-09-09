@@ -44,6 +44,8 @@ func TestAttemptE2ELifecycle(t *testing.T) {
 	}
 
 	r := mux.NewRouter()
+	r.Handle("/api/lessons/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetLesson))).Methods(http.MethodGet)
+	r.Handle("/api/progress", authSvc.RequireAuth(http.HandlerFunc(api.ListProgress))).Methods(http.MethodGet)
 	r.Handle("/api/attempts", authSvc.RequireAuth(http.HandlerFunc(api.CreateAttempt))).Methods(http.MethodPost)
 	r.Handle("/api/attempts/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetAttempt))).Methods(http.MethodGet)
 	r.Handle("/api/attempts/{id}/submit", authSvc.RequireAuth(http.HandlerFunc(api.SubmitAttempt))).Methods(http.MethodPost)
@@ -144,5 +146,40 @@ func TestAttemptE2ELifecycle(t *testing.T) {
 	rec = do(http.MethodGet, "/api/attempts/"+id+"/assessment", "")
 	if rec.Code != 200 {
 		t.Fatalf("assessment after board clear: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Progress GET should reflect the assessed attempt (coexistence with curriculum reads).
+	rec = do(http.MethodGet, "/api/progress?lessonId=lesson:hiragana5", "")
+	if rec.Code != 200 {
+		t.Fatalf("progress: %d %s", rec.Code, rec.Body.String())
+	}
+	var progress progressListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &progress); err != nil {
+		t.Fatalf("progress decode: %v", err)
+	}
+	found := false
+	for _, item := range progress.Items {
+		if item.CharacterID == "hira:あ" {
+			found = true
+			if item.AttemptCount < 1 {
+				t.Fatalf("progress item=%+v", item)
+			}
+			t.Logf("progress after assess: status=%s attempts=%d passes=%d", item.Status, item.AttemptCount, item.PassCount)
+		}
+	}
+	if !found {
+		t.Fatalf("expected progress for hira:あ, got %+v", progress.Items)
+	}
+
+	rec = do(http.MethodGet, "/api/lessons/lesson:hiragana5", "")
+	if rec.Code != 200 {
+		t.Fatalf("lesson: %d %s", rec.Code, rec.Body.String())
+	}
+	var lesson lessonResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &lesson); err != nil {
+		t.Fatalf("lesson decode: %v", err)
+	}
+	if len(lesson.Characters) != 5 {
+		t.Fatalf("lesson characters=%d", len(lesson.Characters))
 	}
 }
