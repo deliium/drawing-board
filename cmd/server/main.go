@@ -112,8 +112,11 @@ func main() {
 	// Curriculum + progress reads (practice UI)
 	r.Handle("/api/lessons/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetLesson))).Methods(http.MethodGet)
 	r.Handle("/api/progress", authSvc.RequireAuth(http.HandlerFunc(api.ListProgress))).Methods(http.MethodGet)
+	r.Handle("/api/progress/next", authSvc.RequireAuth(http.HandlerFunc(api.GetProgressNext))).Methods(http.MethodGet)
+	r.Handle("/api/practice-data", authSvc.RequireAuth(http.HandlerFunc(api.ClearPracticeData))).Methods(http.MethodDelete)
 
 	// Practice attempts
+	r.Handle("/api/attempts", authSvc.RequireAuth(http.HandlerFunc(api.ListAttempts))).Methods(http.MethodGet)
 	r.Handle("/api/attempts", authSvc.RequireAuth(http.HandlerFunc(api.CreateAttempt))).Methods(http.MethodPost)
 	r.Handle("/api/attempts/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetAttempt))).Methods(http.MethodGet)
 	r.Handle("/api/attempts/{id}/submit", authSvc.RequireAuth(http.HandlerFunc(api.SubmitAttempt))).Methods(http.MethodPost)

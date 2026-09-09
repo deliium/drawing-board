@@ -71,7 +71,7 @@ type csrfErrorBody struct {
 	Message string `json:"message"`
 }
 
-// CSRF protects POST /api/* with double-submit cookie verification.
+// CSRF protects mutating /api/* methods with double-submit cookie verification.
 // Safe GET under /api/ ensures a csrf cookie is present.
 // /healthz and /ws are not under this rule when paths do not match.
 func CSRF(secure bool, next http.Handler) http.Handler {
@@ -94,25 +94,25 @@ func CSRF(secure bool, next http.Handler) http.Handler {
 		case http.MethodOptions:
 			next.ServeHTTP(w, r)
 			return
-		case http.MethodPost:
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 			cookie, err := r.Cookie(CSRFCookieName)
 			if err != nil || cookie.Value == "" {
-				secLogf("DEBUG", "[csrf] reject reason=missing_cookie path=%s", path)
+				secLogf("DEBUG", "[csrf] reject reason=missing_cookie path=%s method=%s", path, r.Method)
 				writeCSRFError(w, http.StatusForbidden, "csrf_rejected", "CSRF token missing or invalid. Refresh and try again.")
 				return
 			}
 			header := strings.TrimSpace(r.Header.Get(CSRFHeaderName))
 			if header == "" {
-				secLogf("DEBUG", "[csrf] reject reason=missing_header path=%s", path)
+				secLogf("DEBUG", "[csrf] reject reason=missing_header path=%s method=%s", path, r.Method)
 				writeCSRFError(w, http.StatusForbidden, "csrf_rejected", "CSRF token missing or invalid. Refresh and try again.")
 				return
 			}
 			if !TokensEqual(cookie.Value, header) {
-				secLogf("DEBUG", "[csrf] reject reason=mismatch path=%s", path)
+				secLogf("DEBUG", "[csrf] reject reason=mismatch path=%s method=%s", path, r.Method)
 				writeCSRFError(w, http.StatusForbidden, "csrf_rejected", "CSRF token missing or invalid. Refresh and try again.")
 				return
 			}
-			secLogf("DEBUG", "[csrf] ok path=%s", path)
+			secLogf("DEBUG", "[csrf] ok path=%s method=%s", path, r.Method)
 			next.ServeHTTP(w, r)
 			return
 		default:

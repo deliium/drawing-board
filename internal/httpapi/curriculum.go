@@ -41,13 +41,14 @@ type lessonResponse struct {
 }
 
 type progressItemResponse struct {
-	CharacterID   string  `json:"characterId"`
-	Status        string  `json:"status"`
-	AttemptCount  int     `json:"attemptCount"`
-	PassCount     int     `json:"passCount"`
-	LastAttemptID *int64  `json:"lastAttemptId,omitempty"`
-	LastPassedAt  *string `json:"lastPassedAt,omitempty"`
-	UpdatedAt     string  `json:"updatedAt"`
+	CharacterID   string            `json:"characterId"`
+	Status        string            `json:"status"`
+	AttemptCount  int               `json:"attemptCount"`
+	PassCount     int               `json:"passCount"`
+	LastAttemptID *int64            `json:"lastAttemptId,omitempty"`
+	LastPassedAt  *string           `json:"lastPassedAt,omitempty"`
+	UpdatedAt     string            `json:"updatedAt"`
+	Mastery       *masteryResponse  `json:"mastery,omitempty"`
 }
 
 type progressListResponse struct {
@@ -201,6 +202,7 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]progressItemResponse, 0, len(rows))
+	charIDs := make([]string, 0, len(rows))
 	for _, p := range rows {
 		if len(allow) > 0 {
 			if _, ok := allow[p.CharacterID]; !ok {
@@ -208,10 +210,30 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		items = append(items, progressItemFromLearn(p))
+		charIDs = append(charIDs, p.CharacterID)
 	}
 
-	apiLog("INFO", "[httpapi.Progress.List] userID=%d progressCount=%d lessonId=%s setId=%s",
-		uid, len(items), lessonID, setID)
+	outcomes, err := ls.Progress().ListAssessedOutcomes(r.Context(), uid, charIDs, learn.MasteryOutcomeWindow)
+	if err != nil {
+		apiLog("ERROR", "[httpapi.Progress.List] outcomes userID=%d: %v", uid, err)
+		writeAPIError(w, 500, "internal_error", "failed to load progress")
+		return
+	}
+
+	for i := range items {
+		m := learn.DeriveMastery(outcomes[items[i].CharacterID])
+		mr := masteryFromLearn(m)
+		items[i].Mastery = &mr
+		apiLog("DEBUG", "[learn.mastery] userID=%d characterID=%s state=%s reasonCode=%s assessedCount=%d",
+			uid, items[i].CharacterID, m.State, m.ReasonCode, m.AssessedCount)
+		if items[i].Status == learn.ProgressStatusPassed && m.AssessedCount == 0 {
+			apiLog("WARN", "[httpapi.Progress.List] data inconsistency userID=%d characterID=%s status=passed assessedCount=0",
+				uid, items[i].CharacterID)
+		}
+	}
+
+	apiLog("INFO", "[httpapi.Progress.List] userID=%d progressCount=%d masteryAttached=%d lessonId=%s setId=%s",
+		uid, len(items), len(charIDs), lessonID, setID)
 	writeJSON(w, 200, progressListResponse{Items: items})
 }
 
