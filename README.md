@@ -9,7 +9,7 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **User authentication** with session-based login/register/logout
 - **Drawing tools**: Pencil and Eraser with hit-testing
 - **Undo functionality**: Ctrl+Z to undo last stroke
-- **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) plus free-board heuristic ranking with match scores (not a trained AI model)
+- **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) via practice attempt APIs, plus free-board heuristic ranking with match scores (not a trained AI model)
 - **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
 ## Features
@@ -21,8 +21,8 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Clear**: Remove all your drawings from the canvas and database
 
 ### Handwriting Recognition
-- **Target comparison (MVP)**: Deterministic scoring against five hiragana templates (`hiragana5`: あ, い, う, え, お) when `target` is supplied
-- **Free-board heuristic**: Pattern-based ranking for practice feedback without a target
+- **Target comparison (MVP)**: Deterministic scoring against five hiragana templates (`hiragana5`: あ, い, う, え, お) via `POST /api/attempts/…/assess`
+- **Free-board heuristic**: Pattern-based ranking on the board Recognize button (playground only; not the practice assessment path)
 - **Match scores**: Ranking / criterion scores (`scoreKind: "match"`), not calibrated confidence
 - **Non-goals**: No unrestricted kanji OCR; no ML/ONNX upgrade path in this release
 
@@ -148,7 +148,7 @@ Registration and login are **not** on the board header; they live only on the pu
 ### Handwriting Recognition
 1. **Draw a character** on the canvas (try あ / い / う, or simple shapes for free-board ranking)
 2. **Click "Recognize"** for heuristic match-score candidates (board UI)
-3. **Optional target mode** (API): send `target` (one of あいうえお) for pass/fail assessment vs templates
+3. **Practice assessment** (API): create an attempt for one character, submit ordered strokes, then assess — never via board-loaded `target` on `/api/recognize`
 4. Scores are **match scores**, not confidence
 
 ### Keyboard Shortcuts
@@ -248,10 +248,37 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 - `POST /api/strokes/clear` — revision-gated clear via the same store helper as WS (`opId`/`baseRev` optional in body; server may generate). Returns `{ "ok": true, "boardRev": <n> }`. **Vue board uses WS `clear`** so other tabs receive a live echo; REST clear is for scripts/tests and does not fan out over the hub
 - `POST /api/strokes/delete?id={id}` — thin REST delete wrapper (UI uses WS delete)
 
-### Recognition Endpoint
+### Practice Attempt Endpoints
+
+Canonical **single-character practice** assessment. Attempt routes do **not** use `boardRev` / WS queue gating. Draft rows persist metadata only — stroke geometry is sent once on submit and then frozen. Retry = new `POST /api/attempts` (new `clientAttemptId`). Board clear/undo does not mutate attempts.
+
+State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned`.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/attempts` | Create draft `{ characterId, lessonId?, clientAttemptId? }` → `201` (or `200` on idempotent `clientAttemptId` replay) |
+| `GET` | `/api/attempts/{id}` | Metadata; includes `canvasWidth`/`canvasHeight`/`strokeCount` after submit (no full points) |
+| `POST` | `/api/attempts/{id}/submit` | Body max **64 KiB**: `{ width, height, strokes:[{color,width,points}] }` → freezes strokes |
+| `POST` | `/api/attempts/{id}/assess` | Empty body; assesses **attempt** strokes only; idempotent if already assessed |
+| `GET` | `/api/attempts/{id}/assessment` | Persisted result (`scoreKind=match`; no live `candidates`) |
+| `POST` | `/api/attempts/{id}/abandon` | Only from `draft` |
+
+`clientAttemptId` (optional, ≤36, same rules as WS `opId`): same user + same character/lesson → return existing attempt; mismatched reuse → `409 conflict`. Progress counters update on submit/assess as in the learning store.
+
+| HTTP | Code | Meaning |
+|------|------|---------|
+| 400 | `invalid_input` / `character_not_active` / limit codes / `body_too_large` | Validation |
+| 401 | `unauthorized` | No session |
+| 403 | `csrf_rejected` | Missing/mismatched CSRF on POST |
+| 404 | `not_found` | Unknown/foreign attempt, character, or lesson |
+| 409 | `conflict` / `invalid_status` | Idempotency mismatch or wrong lifecycle state |
+| 429 | `rate_limited` | Assess rate limit (same defaults as recognize) |
+| 503 | `recognizer_unavailable` | Assessor not configured |
+
+### Recognition Endpoint (free-board playground)
 - `POST /api/recognize` — Params only (strokes come from the user store at `boardRev`). Max body **4 KiB**.
   - Free-board: `{ topN: 10, width: 300, height: 300, boardRev: <n> }` → `{ "boardRev": <n>, "candidates": [...], "scoreKind": "match" }`
-  - Target mode (optional): add `"target": "あ"` (one of `あいうえお`) → same envelope plus `"assessment": { "target", "pass", "score", "scoreKind": "match", "reasons": [...] }` with candidates ranked within the five-char set
+  - Non-empty `target` is **rejected** (`400` `use_attempt_api`) — use `/api/attempts` for single-character practice
   - Mismatch: `409` `{ "error": "stale_revision", "message": "…", "boardRev": <current> }`
 
 | HTTP | Code | Meaning |
@@ -260,7 +287,7 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 | 400 | `payload_too_large` | Body exceeds 4 KiB |
 | 400 | `invalid_dimensions` | `width`/`height` outside 1…2048 or pixel product too large |
 | 400 | `invalid_top_n` | Present `topN` outside 1…32 (omitted → default 10) |
-| 400 | `unsupported_target` | `target` present but not in the `hiragana5` MVP set |
+| 400 | `use_attempt_api` | Non-empty `target` — practice assessment moved to `/api/attempts` |
 | 400 | `too_many_strokes` | More than 64 stored strokes |
 | 400 | `too_many_points` | Per-stroke or total point caps exceeded |
 | 400 | `invalid_stroke_data` | NaN/Inf/out-of-range coords in stored strokes |
@@ -270,7 +297,7 @@ Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-2
 | 503 | `recognizer_unavailable` | No recognizer configured |
 | 500 | `internal_error` | Store/recognizer failure (no raw error text) |
 
-Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (`topN: 10`, ~300px canvas, width 1–20) is unchanged. Recognize is enabled in the UI only when sync status is **Saved**, the WS queue is empty, and there is at least one stroke. `score` values are **match scores** (`scoreKind: "match"`), not calibrated confidence.
+Canvas bounds: width/height **1…2048**, max pixels **2048²**. Legitimate UI (`topN: 10`, ~300px canvas, width 1–20) is unchanged. Board Recognize is enabled in the UI only when sync status is **Saved**, the WS queue is empty, and there is at least one stroke. `score` values are **match scores** (`scoreKind: "match"`), not calibrated confidence.
 
 ### WebSocket
 - `WS /ws` - Authenticated **private persist + echo** channel (cookie session required)
@@ -319,14 +346,14 @@ Startup always wires **target comparison** for the fixed MVP set `hiragana5` (�
 
 ### Target comparison (`hiragana5`)
 
-Assessment paths come from the reviewed content pack at `content/hiragana5/v1/` (same source as seed). Scores are **match scores**, not calibrated confidence.
+Assessment paths come from the reviewed content pack at `content/hiragana5/v1/` (same source as seed). Scores are **match scores**, not calibrated confidence. Practice assessment is via **attempt APIs** (`ListStrokes` on the attempt → `Assessor.Assess` → `SaveResult`); free-board `/api/recognize` does not accept `target`.
 - Compares learner strokes to canonical templates (stroke count + normalized geometry)
 - Returns explainable **match scores** and `pass` when top match is the target and score ≥ engineering threshold `T_pass=0.70`
 - Fixture eval: `go test ./internal/recognize -run Eval -v` (gold must pass; wrong-character samples must not)
 
 ### Free-board heuristic ranking
-- Used when `target` is omitted (board **Recognize** button)
-- Pattern-based candidate ranking with `scoreKind: "match"` — useful for practice feedback, **not** calibrated confidence
+- Used by board **Recognize** (no `target`)
+- Pattern-based candidate ranking with `scoreKind: "match"` — useful for playground feedback, **not** calibrated confidence
 - Not unrestricted kanji OCR; do not treat heuristic suggestions as ground truth
 
 ### Logging prefixes
@@ -335,7 +362,8 @@ Assessment paths come from the reviewed content pack at `content/hiragana5/v1/` 
 | `INFO [main] recognizer=…` | Honest recognizer identity + set id at startup |
 | `[recognize.Recognize]` / `[recognize.Assess]` | DEBUG entry/result counts (no coordinates unless `RECOGNIZE_DEBUG`) |
 | `[recognize.templates]` | Template load (`loaded count=5 version=…`) |
-| `[httpapi.Recognize]` | `mode=heuristic\|target`, `target=`, result codes — no stroke dumps |
+| `[httpapi.Recognize]` | Free-board heuristic result codes — no stroke dumps |
+| `[httpapi.Attempt.*]` | create/submit/assess/abandon (`attemptID`, status, pass/scoreKind; no coordinates) |
 
 ## Learning schema & migrations
 
@@ -402,7 +430,8 @@ Verbose server log prefixes for privacy and persistence:
 | `[ws.Handle]` | Connect/disconnect (`userID`, remote), inbound stroke/delete/clear + `baseRev`, save/delete/clear INFO with `boardRev`, upgrade/read errors, reject codes |
 | `[ws.sendToUser]` | Delivery to one user's connections; `recipients=` should stay within that account (e.g. 1–N tabs) |
 | `[httpapi.ListStrokes]` / `[httpapi.ClearStrokes]` / `[httpapi.DeleteStroke]` | Authenticated REST entry (`userID`), clear count, delete success, store errors |
-| `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), `mode=heuristic\|target`, stroke/point/candidate counts — no coordinates |
+| `[httpapi.Recognize]` | Recognize result (`ok`/`reject` + code), stroke/point/candidate counts — no coordinates |
+| `[httpapi.Attempt.*]` | Attempt lifecycle (`op` create/submit/assess/abandon; no coordinates) |
 | `[recognize]` / `[recognize.Assess]` | Startup `recognize_debug=…`; DEBUG assess/recognize; gated dumps when `RECOGNIZE_DEBUG=1` (non-production) |
 | `INFO [main] recognizer=` | `target_compare` + `set=hiragana5` + `contentVersion=` at process start |
 | `INFO [main] schema_version=` | Applied migration version + hiragana5 seed + contentVersion |

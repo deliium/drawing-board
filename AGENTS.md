@@ -48,7 +48,8 @@ docker/               # compose / nginx helpers
 | `internal/curriculum/` | Load + validate published hiragana5 pack |
 | `content/hiragana5/v1/` | Reviewed curriculum source of truth |
 | `internal/ws/handler.go` | WS upgrade, ingest, ack/echo, boardRev mutates |
-| `internal/httpapi/handlers.go` | REST strokes / recognize |
+| `internal/httpapi/handlers.go` | REST strokes / free-board recognize |
+| `internal/httpapi/attempts.go` | Practice attempt REST lifecycle |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
 | `internal/db/migrate.go` | versioned schema runner + `schema_migrations` |
 | `internal/db/learn_store.go` | SQLite learning repos (attempts/assessments/progress) |
@@ -59,6 +60,7 @@ docker/               # compose / nginx helpers
 | `web/src/curriculum/*` | Trace template fixtures for Vitest / future lesson UI |
 | `web/src/services/wsClient.ts` | WS queue / reconnect / status / baseRev |
 | `web/src/services/strokeSync.ts` | Merge ack/echo/clear into local strokes |
+| `web/src/services/attemptsApi.ts` | Thin typed client for practice attempt REST |
 | `Makefile` | Dev/build/docker/`validate-content` targets |
 | `README.md` | Operator + API contract |
 
