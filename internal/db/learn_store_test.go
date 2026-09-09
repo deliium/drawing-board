@@ -326,3 +326,193 @@ func TestListStrokesAfterSubmit(t *testing.T) {
 		t.Fatalf("other user want not_found, got %v", err)
 	}
 }
+
+
+func TestListAttemptsPaginationAndFilters(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "list-hist.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.SQL.Close()
+	uid, _ := store.CreateUser("hist@example.com", "hash")
+	other, _ := store.CreateUser("hist-other@example.com", "hash")
+	ls := NewLearnStore(store)
+	ctx := context.Background()
+	chars, _ := ls.Characters().ListBySet(ctx, recognize.SetIDHiragana5)
+	lessonID := "lesson:hiragana5"
+
+	makeAssessed := func(charID string, pass bool) int64 {
+		d, err := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: charID, LessonID: lessonID})
+		if err != nil {
+			t.Fatalf("draft: %v", err)
+		}
+		if err := ls.Attempts().SubmitStrokes(ctx, uid, d.ID, []learn.StrokeInput{
+			{Width: 2, Color: "#000000", Points: []learn.StrokePoint{{X: 1, Y: 1}}},
+		}, 300, 300); err != nil {
+			t.Fatalf("submit: %v", err)
+		}
+		_, err = ls.Assessments().SaveResult(ctx, uid, learn.SaveAssessment{
+			AttemptID: d.ID, Pass: pass, Score: 0.5, ScoreKind: recognize.ScoreKindMatch,
+			Assessor: learn.AssessorTargetCompare, SetID: recognize.SetIDHiragana5,
+			Feedback: []learn.FeedbackItem{{Rank: 1, Code: "stroke_count", Message: "check count"}},
+		})
+		if err != nil {
+			t.Fatalf("assess: %v", err)
+		}
+		return d.ID
+	}
+
+	id1 := makeAssessed(chars[0].ID, true)
+	id2 := makeAssessed(chars[0].ID, false)
+	_ = makeAssessed(chars[1].ID, true)
+
+	abandoned, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: chars[0].ID, LessonID: lessonID})
+	_ = ls.Attempts().Abandon(ctx, uid, abandoned.ID)
+
+	page, err := ls.Attempts().List(ctx, uid, learn.AttemptListFilter{Limit: 1})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(page.Items) != 1 || !page.HasNext || page.NextID == nil {
+		t.Fatalf("page1: %+v", page)
+	}
+	if page.Items[0].Pass == nil {
+		t.Fatal("assessed row missing pass")
+	}
+	// Ensure no points field exists on history item (struct has none) — glyph present.
+	if page.Items[0].Glyph == "" {
+		t.Fatal("missing glyph")
+	}
+
+	page2, err := ls.Attempts().List(ctx, uid, learn.AttemptListFilter{
+		Limit: 1, AfterStartedAt: page.NextStartedAt, AfterID: page.NextID,
+	})
+	if err != nil || len(page2.Items) != 1 {
+		t.Fatalf("page2: %+v err=%v", page2, err)
+	}
+	if page2.Items[0].ID == page.Items[0].ID {
+		t.Fatal("cursor did not advance")
+	}
+
+	filtered, err := ls.Attempts().List(ctx, uid, learn.AttemptListFilter{
+		CharacterID: chars[0].ID, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range filtered.Items {
+		if it.CharacterID != chars[0].ID {
+			t.Fatalf("filter leak: %s", it.CharacterID)
+		}
+		if it.Status != learn.AttemptStatusAssessed {
+			t.Fatalf("default status filter: %s", it.Status)
+		}
+	}
+	if len(filtered.Items) != 2 {
+		t.Fatalf("char0 assessed count=%d want 2 (ids %d %d)", len(filtered.Items), id1, id2)
+	}
+
+	withAbandon, err := ls.Attempts().List(ctx, uid, learn.AttemptListFilter{
+		Statuses: []string{learn.AttemptStatusAssessed, learn.AttemptStatusAbandoned},
+		Limit:    50,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundAbandon := false
+	for _, it := range withAbandon.Items {
+		if it.Status == learn.AttemptStatusAbandoned {
+			foundAbandon = true
+			if it.Pass != nil || it.Score != nil {
+				t.Fatalf("abandoned should omit assessment: %+v", it)
+			}
+		}
+	}
+	if !foundAbandon {
+		t.Fatal("expected abandoned in optional filter")
+	}
+
+	cross, err := ls.Attempts().List(ctx, other, learn.AttemptListFilter{Limit: 20})
+	if err != nil || len(cross.Items) != 0 {
+		t.Fatalf("cross-user list: %+v err=%v", cross, err)
+	}
+}
+
+func TestClearPracticeDataKeepsBoard(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "clear-practice.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.SQL.Close()
+	uid, _ := store.CreateUser("clearprac@example.com", "hash")
+	ls := NewLearnStore(store)
+	ctx := context.Background()
+	chars, _ := ls.Characters().ListBySet(ctx, recognize.SetIDHiragana5)
+	d, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: chars[0].ID})
+	_ = ls.Attempts().SubmitStrokes(ctx, uid, d.ID, []learn.StrokeInput{
+		{Width: 2, Color: "#000000", Points: []learn.StrokePoint{{X: 1, Y: 1}}},
+	}, 300, 300)
+	_, _ = ls.Assessments().SaveResult(ctx, uid, learn.SaveAssessment{
+		AttemptID: d.ID, Pass: true, Score: 0.9, ScoreKind: recognize.ScoreKindMatch,
+		Assessor: learn.AssessorTargetCompare, SetID: recognize.SetIDHiragana5,
+	})
+	_, err = store.ApplyStrokeCreate(uid, 0, "board-keep-1", "#000000", 2, 1, []StrokePoint{{X: 2, Y: 2}})
+	if err != nil {
+		t.Fatalf("board stroke: %v", err)
+	}
+
+	res, err := ls.Attempts().ClearPracticeData(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.AttemptsDeleted < 1 || res.ProgressRowsCleared < 1 {
+		t.Fatalf("clear result: %+v", res)
+	}
+	list, _ := ls.Attempts().List(ctx, uid, learn.AttemptListFilter{Limit: 20})
+	if len(list.Items) != 0 {
+		t.Fatalf("history remain: %d", len(list.Items))
+	}
+	_, err = ls.Progress().Get(ctx, uid, chars[0].ID)
+	if !errors.Is(err, learn.ErrNotFound) {
+		t.Fatalf("progress after clear: %v", err)
+	}
+	board, _ := store.ListStrokesByUser(uid)
+	if len(board) != 1 {
+		t.Fatalf("board strokes=%d want 1", len(board))
+	}
+}
+
+func TestListAssessedOutcomesForMastery(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "outcomes.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.SQL.Close()
+	uid, _ := store.CreateUser("out@example.com", "hash")
+	ls := NewLearnStore(store)
+	ctx := context.Background()
+	chars, _ := ls.Characters().ListBySet(ctx, recognize.SetIDHiragana5)
+	cid := chars[0].ID
+
+	for _, pass := range []bool{false, true, true} {
+		d, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: cid})
+		_ = ls.Attempts().SubmitStrokes(ctx, uid, d.ID, []learn.StrokeInput{
+			{Width: 2, Color: "#000000", Points: []learn.StrokePoint{{X: 1, Y: 1}}},
+		}, 300, 300)
+		_, _ = ls.Assessments().SaveResult(ctx, uid, learn.SaveAssessment{
+			AttemptID: d.ID, Pass: pass, Score: 0.5, ScoreKind: recognize.ScoreKindMatch,
+			Assessor: learn.AssessorTargetCompare, SetID: recognize.SetIDHiragana5,
+		})
+	}
+	abandoned, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: cid})
+	_ = ls.Attempts().Abandon(ctx, uid, abandoned.ID)
+
+	m, err := ls.Progress().ListAssessedOutcomes(ctx, uid, []string{cid}, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := learn.DeriveMastery(m[cid])
+	if got.State != learn.MasteryStateSteady || got.AssessedCount != 3 {
+		t.Fatalf("mastery=%+v outcomes=%+v", got, m[cid])
+	}
+}

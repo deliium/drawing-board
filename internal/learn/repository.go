@@ -24,6 +24,11 @@ type AttemptRepo interface {
 	ListStrokes(ctx context.Context, userID, attemptID int64) (strokes []StrokeInput, width, height int, err error)
 	MarkAssessed(ctx context.Context, userID, attemptID int64) error
 	Abandon(ctx context.Context, userID, attemptID int64) error
+	// List returns paginated personal attempt history (metadata + assessment summary; no stroke points).
+	List(ctx context.Context, userID int64, filter AttemptListFilter) (AttemptListResult, error)
+	// ClearPracticeData deletes this user's practice attempts (CASCADE strokes/assessments) and progress rows.
+	// Does not delete free-board strokes or the account.
+	ClearPracticeData(ctx context.Context, userID int64) (ClearPracticeDataResult, error)
 }
 
 // AssessmentRepo persists assessment results (with progress) and reads them back.
@@ -37,4 +42,7 @@ type AssessmentRepo interface {
 type ProgressRepo interface {
 	Get(ctx context.Context, userID int64, characterID string) (*Progress, error)
 	ListForUser(ctx context.Context, userID int64) ([]Progress, error)
+	// ListAssessedOutcomes returns recent assessed pass/fail timelines per character (ASC within each id).
+	// limitPerCharacter caps the newest window used for mastery derivation (≤0 → MasteryOutcomeWindow).
+	ListAssessedOutcomes(ctx context.Context, userID int64, characterIDs []string, limitPerCharacter int) (map[string][]AssessedOutcome, error)
 }

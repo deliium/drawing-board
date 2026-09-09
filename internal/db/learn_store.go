@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/deliium/drawing-board/internal/learn"
@@ -654,6 +655,242 @@ func upsertProgressOnAssessTx(tx *sql.Tx, userID int64, characterID string, atte
 	return err
 }
 
+func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter learn.AttemptListFilter) (learn.AttemptListResult, error) {
+	_ = ctx
+	if userID <= 0 {
+		return learn.AttemptListResult{}, learn.ErrInvalidInput
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	statuses := filter.Statuses
+	if len(statuses) == 0 {
+		statuses = []string{learn.AttemptStatusAssessed}
+	}
+	for _, st := range statuses {
+		if st != learn.AttemptStatusAssessed && st != learn.AttemptStatusAbandoned {
+			learnLog("WARN", "[learn.AttemptRepo.List] invalid status=%s userID=%d", st, userID)
+			return learn.AttemptListResult{}, learn.ErrInvalidInput
+		}
+	}
+
+	args := []any{userID}
+	var b strings.Builder
+	b.WriteString(`
+		SELECT a.id, a.character_id, c.glyph, COALESCE(a.lesson_id, ''), a.status, a.started_at, a.assessed_at,
+			ar.pass, ar.score, ar.score_kind, ar.id
+		FROM practice_attempts a
+		JOIN characters c ON c.id = a.character_id
+		LEFT JOIN assessment_results ar ON ar.attempt_id = a.id
+		WHERE a.user_id = ?
+	`)
+	b.WriteString(` AND a.status IN (`)
+	for i, st := range statuses {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('?')
+		args = append(args, st)
+	}
+	b.WriteByte(')')
+	if filter.CharacterID != "" {
+		b.WriteString(` AND a.character_id = ?`)
+		args = append(args, filter.CharacterID)
+	}
+	if filter.LessonID != "" {
+		b.WriteString(` AND a.lesson_id = ?`)
+		args = append(args, filter.LessonID)
+	}
+	if filter.AfterStartedAt != nil && filter.AfterID != nil {
+		b.WriteString(` AND (a.started_at < ? OR (a.started_at = ? AND a.id < ?))`)
+		args = append(args, *filter.AfterStartedAt, *filter.AfterStartedAt, *filter.AfterID)
+	}
+	b.WriteString(` ORDER BY a.started_at DESC, a.id DESC LIMIT ?`)
+	args = append(args, limit+1)
+
+	learnLog("DEBUG", "[learn.AttemptRepo.List] userID=%d lessonId=%s characterId=%s statuses=%v limit=%d hasCursor=%v",
+		userID, filter.LessonID, filter.CharacterID, statuses, limit, filter.AfterID != nil)
+
+	rows, err := ls.s.SQL.Query(b.String(), args...)
+	if err != nil {
+		return learn.AttemptListResult{}, err
+	}
+	defer rows.Close()
+
+	type rowScan struct {
+		item         learn.AttemptHistoryItem
+		assessmentID sql.NullInt64
+		pass         sql.NullInt64
+		score        sql.NullFloat64
+		scoreKind    sql.NullString
+		assessedAt   sql.NullTime
+	}
+	var scanned []rowScan
+	for rows.Next() {
+		var rs rowScan
+		var lessonID string
+		if err := rows.Scan(
+			&rs.item.ID, &rs.item.CharacterID, &rs.item.Glyph, &lessonID, &rs.item.Status, &rs.item.StartedAt, &rs.assessedAt,
+			&rs.pass, &rs.score, &rs.scoreKind, &rs.assessmentID,
+		); err != nil {
+			return learn.AttemptListResult{}, err
+		}
+		rs.item.LessonID = lessonID
+		if rs.assessedAt.Valid {
+			t := rs.assessedAt.Time
+			rs.item.AssessedAt = &t
+		}
+		if rs.item.Status == learn.AttemptStatusAssessed {
+			if rs.pass.Valid {
+				v := rs.pass.Int64 != 0
+				rs.item.Pass = &v
+			}
+			if rs.score.Valid {
+				v := rs.score.Float64
+				rs.item.Score = &v
+			}
+			if rs.scoreKind.Valid {
+				rs.item.ScoreKind = rs.scoreKind.String
+			}
+		}
+		scanned = append(scanned, rs)
+	}
+	if err := rows.Err(); err != nil {
+		return learn.AttemptListResult{}, err
+	}
+
+	hasNext := len(scanned) > limit
+	if hasNext {
+		scanned = scanned[:limit]
+	}
+
+	items := make([]learn.AttemptHistoryItem, 0, len(scanned))
+	for _, rs := range scanned {
+		item := rs.item
+		if rs.assessmentID.Valid && item.Status == learn.AttemptStatusAssessed {
+			frows, err := ls.s.SQL.Query(`
+				SELECT rank, code, message FROM assessment_feedback WHERE assessment_id = ? ORDER BY rank LIMIT 2
+			`, rs.assessmentID.Int64)
+			if err != nil {
+				return learn.AttemptListResult{}, err
+			}
+			for frows.Next() {
+				var fb learn.FeedbackItem
+				if err := frows.Scan(&fb.Rank, &fb.Code, &fb.Message); err != nil {
+					frows.Close()
+					return learn.AttemptListResult{}, err
+				}
+				item.Feedback = append(item.Feedback, fb)
+			}
+			ferr := frows.Err()
+			frows.Close()
+			if ferr != nil {
+				return learn.AttemptListResult{}, ferr
+			}
+		}
+		items = append(items, item)
+	}
+
+	out := learn.AttemptListResult{Items: items, HasNext: hasNext}
+	if hasNext && len(items) > 0 {
+		last := items[len(items)-1]
+		t := last.StartedAt
+		id := last.ID
+		out.NextStartedAt = &t
+		out.NextID = &id
+	}
+	learnLog("DEBUG", "[learn.AttemptRepo.List] userID=%d resultCount=%d hasNext=%v", userID, len(items), hasNext)
+	return out, nil
+}
+
+func (ls *LearnStore) ClearPracticeData(ctx context.Context, userID int64) (learn.ClearPracticeDataResult, error) {
+	_ = ctx
+	if userID <= 0 {
+		return learn.ClearPracticeDataResult{}, learn.ErrInvalidInput
+	}
+	tx, err := ls.s.beginImmediate()
+	if err != nil {
+		learnLog("ERROR", "[learn.PracticeData.Clear] begin userID=%d: %v", userID, err)
+		return learn.ClearPracticeDataResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	progRes, err := tx.Exec(`DELETE FROM user_character_progress WHERE user_id = ?`, userID)
+	if err != nil {
+		learnLog("ERROR", "[learn.PracticeData.Clear] progress userID=%d: %v", userID, err)
+		return learn.ClearPracticeDataResult{}, err
+	}
+	progN, _ := progRes.RowsAffected()
+
+	attRes, err := tx.Exec(`DELETE FROM practice_attempts WHERE user_id = ?`, userID)
+	if err != nil {
+		learnLog("ERROR", "[learn.PracticeData.Clear] attempts userID=%d: %v", userID, err)
+		return learn.ClearPracticeDataResult{}, err
+	}
+	attN, _ := attRes.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		learnLog("ERROR", "[learn.PracticeData.Clear] commit userID=%d: %v", userID, err)
+		return learn.ClearPracticeDataResult{}, err
+	}
+	out := learn.ClearPracticeDataResult{AttemptsDeleted: attN, ProgressRowsCleared: progN}
+	learnLog("INFO", "[learn.PracticeData.Clear] userID=%d attemptsDeleted=%d progressRowsCleared=%d",
+		userID, out.AttemptsDeleted, out.ProgressRowsCleared)
+	return out, nil
+}
+
+func (ls *LearnStore) ListAssessedOutcomes(ctx context.Context, userID int64, characterIDs []string, limitPerCharacter int) (map[string][]learn.AssessedOutcome, error) {
+	_ = ctx
+	out := make(map[string][]learn.AssessedOutcome, len(characterIDs))
+	if userID <= 0 || len(characterIDs) == 0 {
+		return out, nil
+	}
+	limit := limitPerCharacter
+	if limit <= 0 {
+		limit = learn.MasteryOutcomeWindow
+	}
+
+	for _, cid := range characterIDs {
+		rows, err := ls.s.SQL.Query(`
+			SELECT a.id, ar.pass, a.assessed_at
+			FROM practice_attempts a
+			JOIN assessment_results ar ON ar.attempt_id = a.id
+			WHERE a.user_id = ? AND a.character_id = ? AND a.status = ?
+			ORDER BY a.assessed_at DESC, a.id DESC
+			LIMIT ?
+		`, userID, cid, learn.AttemptStatusAssessed, limit)
+		if err != nil {
+			return nil, err
+		}
+		var desc []learn.AssessedOutcome
+		for rows.Next() {
+			var o learn.AssessedOutcome
+			var passInt int
+			if err := rows.Scan(&o.AttemptID, &passInt, &o.AssessedAt); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			o.Pass = passInt != 0
+			desc = append(desc, o)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+		// Reverse to ASC for DeriveMastery.
+		for i, j := 0, len(desc)-1; i < j; i, j = i+1, j-1 {
+			desc[i], desc[j] = desc[j], desc[i]
+		}
+		out[cid] = desc
+	}
+	return out, nil
+}
+
 func (ls *LearnStore) GetByAttempt(ctx context.Context, userID, attemptID int64) (*learn.AssessmentResult, error) {
 	_ = ctx
 	// Ownership: attempt must belong to user.
@@ -780,6 +1017,12 @@ func (r attemptRepo) MarkAssessed(ctx context.Context, userID, attemptID int64) 
 func (r attemptRepo) Abandon(ctx context.Context, userID, attemptID int64) error {
 	return r.LearnStore.Abandon(ctx, userID, attemptID)
 }
+func (r attemptRepo) List(ctx context.Context, userID int64, filter learn.AttemptListFilter) (learn.AttemptListResult, error) {
+	return r.LearnStore.ListAttempts(ctx, userID, filter)
+}
+func (r attemptRepo) ClearPracticeData(ctx context.Context, userID int64) (learn.ClearPracticeDataResult, error) {
+	return r.LearnStore.ClearPracticeData(ctx, userID)
+}
 func (r assessmentRepo) SaveResult(ctx context.Context, userID int64, in learn.SaveAssessment) (learn.AssessmentResult, error) {
 	return r.LearnStore.SaveResult(ctx, userID, in)
 }
@@ -788,6 +1031,9 @@ func (r assessmentRepo) GetByAttempt(ctx context.Context, userID, attemptID int6
 }
 func (r progressRepo) Get(ctx context.Context, userID int64, characterID string) (*learn.Progress, error) {
 	return r.LearnStore.getProgress(ctx, userID, characterID)
+}
+func (r progressRepo) ListAssessedOutcomes(ctx context.Context, userID int64, characterIDs []string, limitPerCharacter int) (map[string][]learn.AssessedOutcome, error) {
+	return r.LearnStore.ListAssessedOutcomes(ctx, userID, characterIDs, limitPerCharacter)
 }
 func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Progress, error) {
 	_ = ctx
