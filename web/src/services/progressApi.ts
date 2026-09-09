@@ -15,6 +15,13 @@ export type MasterySummary = {
   lastAssessedAt?: string
 }
 
+export type ReviewSummary = {
+  box: number
+  dueAt?: string
+  isDue: boolean
+  intervalDays: number
+}
+
 export type ProgressItem = {
   characterId: string
   status: ProgressStatus | string
@@ -24,6 +31,7 @@ export type ProgressItem = {
   lastPassedAt?: string
   updatedAt: string
   mastery?: MasterySummary
+  review?: ReviewSummary
 }
 
 export type ProgressList = {
@@ -41,6 +49,10 @@ export type ProgressNext = {
   glyph?: string | null
   reasonCode: string
   masteryState?: string
+  dueAt?: string | null
+  reviewBox?: number | null
+  nextDueAt?: string | null
+  nextDueCharacterId?: string | null
 }
 
 export type ClearPracticeDataResult = {
@@ -65,7 +77,8 @@ export async function listProgress(query: ListProgressQuery = {}): Promise<Progr
   debug('list', path)
   try {
     const out = await apiFetch<ProgressList>(path)
-    debug('list ok', 'count', out.items?.length ?? 0)
+    const due = (out.items ?? []).filter((i) => i.review?.isDue).length
+    debug('list ok', 'count', out.items?.length ?? 0, 'due', due)
     return out
   } catch (err) {
     debug('list error', err)
@@ -81,7 +94,7 @@ export async function getProgressNext(lessonId?: string): Promise<ProgressNext> 
   debug('next', path)
   try {
     const out = await apiFetch<ProgressNext>(path)
-    debug('next ok', out.characterId, out.reasonCode)
+    debug('next ok', out.characterId, out.reasonCode, out.dueAt, out.nextDueAt)
     return out
   } catch (err) {
     debug('next error', err)

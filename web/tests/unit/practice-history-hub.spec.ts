@@ -71,15 +71,23 @@ describe('practice hub mastery + history', () => {
             failCount: 0,
             consecutivePassesEnding: 2,
           },
+          review: {
+            box: 2,
+            dueAt: '2026-09-01T00:00:00Z',
+            isDue: true,
+            intervalDays: 3,
+          },
         },
       ],
     })
     vi.mocked(getProgressNext).mockResolvedValue({
       lessonId: 'lesson:hiragana5',
-      characterId: 'hira:い',
-      glyph: 'い',
-      reasonCode: 'first_not_started',
-      masteryState: 'not_started',
+      characterId: 'hira:あ',
+      glyph: 'あ',
+      reasonCode: 'due_review',
+      masteryState: 'steady',
+      dueAt: '2026-09-01T00:00:00Z',
+      reviewBox: 2,
     })
   })
 
@@ -112,7 +120,9 @@ describe('practice hub mastery + history', () => {
     await flush()
 
     expect(root.textContent).toContain(t('mastery.steady'))
-    expect(root.textContent).toContain('い')
+    expect(root.textContent).toContain(t('hub.reviewDue'))
+    expect(root.textContent).toContain(t('next.reason.due_review'))
+    expect(root.textContent).toContain('あ')
     expect(root.textContent).toContain(t('hub.historyLink'))
 
     const clearBtn = Array.from(root.querySelectorAll('button')).find((b) =>
@@ -127,6 +137,37 @@ describe('practice hub mastery + history', () => {
 
     app.unmount()
     confirmSpy.mockRestore()
+  })
+
+  it('shows caught-up banner with next due sentence', async () => {
+    vi.mocked(listProgress).mockResolvedValue({ items: [] })
+    vi.mocked(getProgressNext).mockResolvedValue({
+      lessonId: 'lesson:hiragana5',
+      characterId: null,
+      reasonCode: 'all_caught_up',
+      masteryState: 'steady',
+      nextDueAt: '2026-09-14T12:00:00Z',
+      nextDueCharacterId: 'hira:あ',
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/practice', component: PracticeHubPage },
+        { path: '/', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/practice')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp(PracticeHubPage)
+    app.use(router)
+    app.mount(root)
+    await flush()
+    await flush()
+    expect(root.textContent).toContain(t('next.reason.all_caught_up'))
+    expect(root.textContent).toMatch(/Next light review around/i)
+    app.unmount()
   })
 
   it('history empty state and load-more pagination', async () => {
@@ -224,8 +265,11 @@ describe('practice hub mastery + history', () => {
     setLocale('en')
     expect(t('mastery.reason.no_assessed_attempts')).toMatch(/completed attempts/i)
     expect(t('next.reason.all_steady')).toMatch(/steady/i)
+    expect(t('next.reason.due_review')).toMatch(/light review/i)
+    expect(t('next.reason.all_caught_up')).toMatch(/due/i)
     setLocale('ja')
     expect(t('mastery.steady')).toBe('安定')
+    expect(t('hub.reviewDue')).toMatch(/復習/)
     expect(t('history.empty')).toMatch(/まだ/)
   })
 })

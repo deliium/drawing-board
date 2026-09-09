@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/deliium/drawing-board/internal/learn"
 	"github.com/gorilla/mux"
@@ -41,14 +42,22 @@ type lessonResponse struct {
 }
 
 type progressItemResponse struct {
-	CharacterID   string            `json:"characterId"`
-	Status        string            `json:"status"`
-	AttemptCount  int               `json:"attemptCount"`
-	PassCount     int               `json:"passCount"`
-	LastAttemptID *int64            `json:"lastAttemptId,omitempty"`
-	LastPassedAt  *string           `json:"lastPassedAt,omitempty"`
-	UpdatedAt     string            `json:"updatedAt"`
-	Mastery       *masteryResponse  `json:"mastery,omitempty"`
+	CharacterID   string           `json:"characterId"`
+	Status        string           `json:"status"`
+	AttemptCount  int              `json:"attemptCount"`
+	PassCount     int              `json:"passCount"`
+	LastAttemptID *int64           `json:"lastAttemptId,omitempty"`
+	LastPassedAt  *string          `json:"lastPassedAt,omitempty"`
+	UpdatedAt     string           `json:"updatedAt"`
+	Mastery       *masteryResponse `json:"mastery,omitempty"`
+	Review        *reviewResponse  `json:"review,omitempty"`
+}
+
+type reviewResponse struct {
+	Box          int     `json:"box"`
+	DueAt        *string `json:"dueAt,omitempty"`
+	IsDue        bool    `json:"isDue"`
+	IntervalDays int     `json:"intervalDays"`
 }
 
 type progressListResponse struct {
@@ -203,13 +212,14 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]progressItemResponse, 0, len(rows))
 	charIDs := make([]string, 0, len(rows))
+	now := ls.Now()
 	for _, p := range rows {
 		if len(allow) > 0 {
 			if _, ok := allow[p.CharacterID]; !ok {
 				continue
 			}
 		}
-		items = append(items, progressItemFromLearn(p))
+		items = append(items, progressItemFromLearn(p, now))
 		charIDs = append(charIDs, p.CharacterID)
 	}
 
@@ -220,10 +230,14 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dueCount := 0
 	for i := range items {
 		m := learn.DeriveMastery(outcomes[items[i].CharacterID])
 		mr := masteryFromLearn(m)
 		items[i].Mastery = &mr
+		if items[i].Review != nil && items[i].Review.IsDue {
+			dueCount++
+		}
 		apiLog("DEBUG", "[learn.mastery] userID=%d characterID=%s state=%s reasonCode=%s assessedCount=%d",
 			uid, items[i].CharacterID, m.State, m.ReasonCode, m.AssessedCount)
 		if items[i].Status == learn.ProgressStatusPassed && m.AssessedCount == 0 {
@@ -232,12 +246,13 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	apiLog("DEBUG", "[httpapi.Progress.List] userID=%d dueCount=%d", uid, dueCount)
 	apiLog("INFO", "[httpapi.Progress.List] userID=%d progressCount=%d masteryAttached=%d lessonId=%s setId=%s",
 		uid, len(items), len(charIDs), lessonID, setID)
 	writeJSON(w, 200, progressListResponse{Items: items})
 }
 
-func progressItemFromLearn(p learn.Progress) progressItemResponse {
+func progressItemFromLearn(p learn.Progress, now time.Time) progressItemResponse {
 	item := progressItemResponse{
 		CharacterID:   p.CharacterID,
 		Status:        p.Status,
@@ -245,12 +260,26 @@ func progressItemFromLearn(p learn.Progress) progressItemResponse {
 		PassCount:     p.PassCount,
 		LastAttemptID: p.LastAttemptID,
 		UpdatedAt:     rfc3339(p.UpdatedAt),
+		Review:        reviewFromProgress(p, now),
 	}
 	if p.LastPassedAt != nil {
 		s := rfc3339(*p.LastPassedAt)
 		item.LastPassedAt = &s
 	}
 	return item
+}
+
+func reviewFromProgress(p learn.Progress, now time.Time) *reviewResponse {
+	out := &reviewResponse{
+		Box:          p.ReviewBox,
+		IsDue:        learn.IsDue(p.DueAt, now),
+		IntervalDays: learn.IntervalDaysForBox(p.ReviewBox),
+	}
+	if p.DueAt != nil {
+		s := rfc3339(*p.DueAt)
+		out.DueAt = &s
+	}
+	return out
 }
 
 func decodePronunciationJSON(raw string) json.RawMessage {

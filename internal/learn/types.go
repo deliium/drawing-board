@@ -121,16 +121,19 @@ type AssessmentResult struct {
 	CreatedAt  time.Time
 }
 
-// Progress is per-user per-character practice state (no SRS fields).
+// Progress is per-user per-character practice state, including Leitner-style review fields.
 type Progress struct {
-	UserID        int64
-	CharacterID   string
-	Status        string
-	AttemptCount  int
-	PassCount     int
-	LastAttemptID *int64
-	LastPassedAt  *time.Time
-	UpdatedAt     time.Time
+	UserID           int64
+	CharacterID      string
+	Status           string
+	AttemptCount     int
+	PassCount        int
+	LastAttemptID    *int64
+	LastPassedAt     *time.Time
+	ReviewBox        int
+	DueAt            *time.Time
+	LastReviewedAt   *time.Time
+	UpdatedAt        time.Time
 }
 
 // CreateDraft is input for starting a practice attempt.

@@ -63,9 +63,11 @@ export const ja: Record<string, string> = {
   'hub.loadError': 'レッスンを読み込めませんでした。',
   'hub.historyLink': '練習履歴',
   'hub.suggestedNext': '次のおすすめ',
-  'hub.suggestedNone': '5文字とも安定しています — 好きな文字を選んで続けましょう。',
+  'hub.suggestedNone': 'いま期限の復習はありません — 好きな文字を選んで続けましょう。',
+  'hub.suggestedCaughtUpNext': '次の軽い復習はおおよそ {when} ごろです。',
   'hub.masteryHint':
-    '習熟ラベルは完了した練習からの簡単なまとめです。成績や科学的スコアではありません。',
+    '習熟ラベルは完了した練習からの簡単なまとめです。成績や科学的スコアではありません。復習のタイミングはやさしい個人リマインダーで、連続記録ではありません。',
+  'hub.reviewDue': '軽い復習の準備ができています',
   'hub.clearData': '練習履歴を消去',
   'hub.clearConfirm':
     '練習の提出・採点・文字ごとの進捗をすべて削除しますか？フリーボードの線とアカウントは残ります。元に戻せません。',
@@ -91,6 +93,10 @@ export const ja: Record<string, string> = {
   'next.reason.continue_learning': 'まだ学習中の文字を続けましょう。',
   'next.reason.encourage_steady': 'もう一度合格すると安定に近づきます。',
   'next.reason.all_steady': '5文字とも安定しています — 好きな文字を選んで続けましょう。',
+  'next.reason.due_review': '軽い復習の準備ができています。',
+  'next.reason.all_caught_up': 'いま期限のものはありません — 好きなときに文字を選びましょう。',
+
+  'practice.notDueYet': 'まだ期限ではありません — 練習したければそのままどうぞ。',
 
   'history.title': '練習履歴',
   'history.loading': '読み込み中…',

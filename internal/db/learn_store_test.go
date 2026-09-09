@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/deliium/drawing-board/internal/learn"
 	"github.com/deliium/drawing-board/internal/recognize"
@@ -514,5 +515,81 @@ func TestListAssessedOutcomesForMastery(t *testing.T) {
 	got := learn.DeriveMastery(m[cid])
 	if got.State != learn.MasteryStateSteady || got.AssessedCount != 3 {
 		t.Fatalf("mastery=%+v outcomes=%+v", got, m[cid])
+	}
+}
+
+func TestReviewScheduleOnAssessWithClock(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "review-clock.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.SQL.Close()
+	uid, _ := store.CreateUser("review@example.com", "hash")
+	ls := NewLearnStore(store)
+	ctx := context.Background()
+	chars, _ := ls.Characters().ListBySet(ctx, recognize.SetIDHiragana5)
+	cid := chars[0].ID
+
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	ls.SetClock(func() time.Time { return now })
+
+	d, err := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: cid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ls.Attempts().SubmitStrokes(ctx, uid, d.ID, []learn.StrokeInput{
+		{Width: 2, Color: "#000000", Points: []learn.StrokePoint{{X: 1, Y: 1}}},
+	}, 300, 300)
+	_, err = ls.Assessments().SaveResult(ctx, uid, learn.SaveAssessment{
+		AttemptID: d.ID, Pass: true, Score: 0.9, ScoreKind: recognize.ScoreKindMatch,
+		Assessor: learn.AssessorTargetCompare, SetID: recognize.SetIDHiragana5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := ls.Progress().Get(ctx, uid, cid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ReviewBox != 1 || p.DueAt == nil || !p.DueAt.Equal(now.Add(24*time.Hour)) {
+		t.Fatalf("after first pass: box=%d due=%v", p.ReviewBox, p.DueAt)
+	}
+	if p.LastReviewedAt == nil || !p.LastReviewedAt.Equal(now) {
+		t.Fatalf("lastReviewedAt=%v", p.LastReviewedAt)
+	}
+
+	now = now.Add(25 * time.Hour)
+	d2, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: cid})
+	_ = ls.Attempts().SubmitStrokes(ctx, uid, d2.ID, []learn.StrokeInput{
+		{Width: 2, Color: "#000000", Points: []learn.StrokePoint{{X: 1, Y: 1}}},
+	}, 300, 300)
+	_, err = ls.Assessments().SaveResult(ctx, uid, learn.SaveAssessment{
+		AttemptID: d2.ID, Pass: false, Score: 0.2, ScoreKind: recognize.ScoreKindMatch,
+		Assessor: learn.AssessorTargetCompare, SetID: recognize.SetIDHiragana5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ = ls.Progress().Get(ctx, uid, cid)
+	if p.ReviewBox != 0 || p.DueAt == nil || !p.DueAt.Equal(now) {
+		t.Fatalf("after fail demote: box=%d due=%v", p.ReviewBox, p.DueAt)
+	}
+
+	// Abandon must not touch schedule.
+	beforeBox, beforeDue := p.ReviewBox, *p.DueAt
+	abandoned, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: cid})
+	_ = ls.Attempts().Abandon(ctx, uid, abandoned.ID)
+	p, _ = ls.Progress().Get(ctx, uid, cid)
+	if p.ReviewBox != beforeBox || p.DueAt == nil || !p.DueAt.Equal(beforeDue) {
+		t.Fatalf("abandon changed schedule: box=%d due=%v", p.ReviewBox, p.DueAt)
+	}
+
+	res, err := ls.Attempts().ClearPracticeData(ctx, uid)
+	if err != nil || res.ProgressRowsCleared < 1 {
+		t.Fatalf("clear: %+v err=%v", res, err)
+	}
+	_, err = ls.Progress().Get(ctx, uid, cid)
+	if !errors.Is(err, learn.ErrNotFound) {
+		t.Fatalf("progress after clear: %v", err)
 	}
 }

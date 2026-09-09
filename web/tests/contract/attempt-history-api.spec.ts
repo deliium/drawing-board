@@ -31,6 +31,12 @@ describe('attempt history + mastery API contract', () => {
               failCount: 0,
               consecutivePassesEnding: 2,
             },
+            review: {
+              box: 2,
+              dueAt: '2026-09-12T00:00:00Z',
+              isDue: false,
+              intervalDays: 3,
+            },
           },
         ],
       }),
@@ -38,6 +44,8 @@ describe('attempt history + mastery API contract', () => {
     vi.stubGlobal('fetch', fetchMock)
     const out = await listProgress({ lessonId: 'lesson:hiragana5' })
     expect(out.items[0]?.mastery?.state).toBe('steady')
+    expect(out.items[0]?.review?.box).toBe(2)
+    expect(out.items[0]?.review?.intervalDays).toBe(3)
   })
 
   it('getProgressNext and clearPracticeData hit expected paths', async () => {
@@ -47,10 +55,12 @@ describe('attempt history + mastery API contract', () => {
         ok: true,
         json: async () => ({
           lessonId: 'lesson:hiragana5',
-          characterId: 'hira:い',
-          glyph: 'い',
-          reasonCode: 'first_not_started',
-          masteryState: 'not_started',
+          characterId: 'hira:う',
+          glyph: 'う',
+          reasonCode: 'due_review',
+          masteryState: 'steady',
+          dueAt: '2026-09-08T12:00:00Z',
+          reviewBox: 2,
         }),
       })
       .mockResolvedValueOnce({
@@ -60,7 +70,9 @@ describe('attempt history + mastery API contract', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const next = await getProgressNext('lesson:hiragana5')
-    expect(next.characterId).toBe('hira:い')
+    expect(next.characterId).toBe('hira:う')
+    expect(next.reasonCode).toBe('due_review')
+    expect(next.dueAt).toBe('2026-09-08T12:00:00Z')
     expect((fetchMock.mock.calls[0] as [string])[0]).toBe(
       '/api/progress/next?lessonId=lesson%3Ahiragana5',
     )

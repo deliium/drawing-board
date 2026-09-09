@@ -73,6 +73,25 @@ function masteryFor(id: string): { label: string; reason: string } {
   }
 }
 
+function reviewDueHint(id: string): string | null {
+  const r = progressById.value[id]?.review
+  if (!r?.isDue) return null
+  return t('hub.reviewDue')
+}
+
+function formatWhen(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  try {
+    return new Intl.DateTimeFormat(locale.value === 'ja' ? 'ja' : 'en', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(d)
+  } catch {
+    return iso
+  }
+}
+
 function suggestionHref(): string | null {
   const id = suggestion.value?.characterId
   if (!id) return null
@@ -82,7 +101,14 @@ function suggestionHref(): string | null {
 function suggestionText(): string {
   const s = suggestion.value
   if (!s) return ''
-  if (!s.characterId) return t('hub.suggestedNone')
+  if (!s.characterId) {
+    let primary = t(`next.reason.${s.reasonCode}`)
+    if (primary === `next.reason.${s.reasonCode}`) primary = t('hub.suggestedNone')
+    if (s.reasonCode === 'all_caught_up' && s.nextDueAt) {
+      return `${primary} ${t('hub.suggestedCaughtUpNext', { when: formatWhen(s.nextDueAt) })}`
+    }
+    return primary
+  }
   const why = t(`next.reason.${s.reasonCode}`)
   const glyph = s.glyph || ''
   return glyph ? `${glyph} — ${why}` : why
@@ -147,6 +173,7 @@ async function onClearPractice() {
                 {{ t('hub.strokes', { count: ch.strokeCount }) }} · {{ masteryFor(ch.id).label }}
               </span>
               <span class="reason">{{ masteryFor(ch.id).reason }}</span>
+              <span v-if="reviewDueHint(ch.id)" class="review-hint">{{ reviewDueHint(ch.id) }}</span>
             </span>
           </router-link>
         </li>
@@ -286,6 +313,11 @@ h2 {
 }
 
 .reason {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.review-hint {
   color: var(--ink-muted);
   font-size: 0.85rem;
 }

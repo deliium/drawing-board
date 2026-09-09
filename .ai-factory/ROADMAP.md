@@ -20,6 +20,7 @@
 - [x] **Core learner journey UI for one hiragana character (Prompt 13)** — guided intro (glyph/pronunciation/stroke count/example); stroke-order animation; trace + free-write; attempt submit/assess; comparison overlay + ≤2 corrections; retry or completion; progress resume; age-neutral Vue practice routes
 - [x] **Responsive bilingual accessible learner UI (Prompt 14)** — mobile-first practice-notebook visual system; fluid canvases; EN/JA preference + externalized strings; focus/labels/live regions/reduced motion; axe + keyboard/zoom/SR/device smoke criteria; non-canvas textual attempt summary
 - [x] **Attempt history and per-character mastery (Prompt 15)** — paginated personal attempt history; explainable mastery from assessed attempts; humble next-character suggestion; privacy clear / retention docs; no streaks, social comparison, or SRS
+- [x] **Lightweight spaced-review queue (Prompt 16)** — Leitner-style personal review from assessed pass/fail; due dates + next/why; forgiving missed days; no streaks, notifications, or SM-2/FSRS
 
 ## Completed
 
@@ -41,3 +42,4 @@
 | Core learner journey UI for one hiragana character (Prompt 13) | 2026-09-09 |
 | Responsive bilingual accessible learner UI (Prompt 14) | 2026-09-09 |
 | Attempt history and per-character mastery (Prompt 15) | 2026-09-09 |
+| Lightweight spaced-review queue (Prompt 16) | 2026-09-09 |

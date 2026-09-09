@@ -24,11 +24,15 @@ type masteryResponse struct {
 }
 
 type progressNextResponse struct {
-	LessonID     string  `json:"lessonId"`
-	CharacterID  *string `json:"characterId"`
-	Glyph        *string `json:"glyph,omitempty"`
-	ReasonCode   string  `json:"reasonCode"`
-	MasteryState string  `json:"masteryState,omitempty"`
+	LessonID           string  `json:"lessonId"`
+	CharacterID        *string `json:"characterId"`
+	Glyph              *string `json:"glyph,omitempty"`
+	ReasonCode         string  `json:"reasonCode"`
+	MasteryState       string  `json:"masteryState,omitempty"`
+	DueAt              *string `json:"dueAt,omitempty"`
+	ReviewBox          *int    `json:"reviewBox,omitempty"`
+	NextDueAt          *string `json:"nextDueAt,omitempty"`
+	NextDueCharacterID *string `json:"nextDueCharacterId,omitempty"`
 }
 
 type clearPracticeDataResponse struct {
@@ -270,14 +274,63 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 		apiLog("DEBUG", "[learn.mastery] userID=%d characterID=%s state=%s reasonCode=%s assessedCount=%d",
 			uid, id, m.State, m.ReasonCode, m.AssessedCount)
 	}
-	charID, glyph, reason, state := learn.SuggestNextCharacter(placements, masteryBy)
-	resp := progressNextResponse{LessonID: lessonID, ReasonCode: reason, MasteryState: state}
-	if charID != "" {
-		resp.CharacterID = &charID
-		resp.Glyph = &glyph
+
+	progressRows, err := ls.Progress().ListForUser(r.Context(), uid)
+	if err != nil {
+		apiLog("ERROR", "[httpapi.Progress.Next] progress userID=%d: %v", uid, err)
+		writeAPIError(w, 500, "internal_error", "failed to load suggestion")
+		return
 	}
-	apiLog("INFO", "[httpapi.Progress.Next] userID=%d lessonId=%s characterId=%v reasonCode=%s",
-		uid, lessonID, charID, reason)
+	reviewBy := make(map[string]learn.ReviewSnapshot, len(progressRows))
+	for _, p := range progressRows {
+		snap := learn.ReviewSnapshot{Box: p.ReviewBox, DueAt: p.DueAt, LastReviewedAt: p.LastReviewedAt}
+		if p.DueAt != nil {
+			snap.Scheduled = true
+		}
+		reviewBy[p.CharacterID] = snap
+	}
+
+	now := ls.Now()
+	sug := learn.SuggestNextWithReview(placements, masteryBy, reviewBy, now)
+	dueCount := learn.CountDue(reviewBy, now)
+	apiLog("DEBUG", "[learn.review.Suggest] userID=%d lessonId=%s reasonCode=%s characterId=%s dueCount=%d nextDueCharacterId=%s",
+		uid, lessonID, sug.ReasonCode, sug.CharacterID, dueCount, sug.NextDueCharacterID)
+
+	resp := progressNextResponse{
+		LessonID:     lessonID,
+		ReasonCode:   sug.ReasonCode,
+		MasteryState: sug.MasteryState,
+		ReviewBox:    sug.ReviewBox,
+	}
+	if sug.CharacterID != "" {
+		id := sug.CharacterID
+		g := sug.Glyph
+		resp.CharacterID = &id
+		resp.Glyph = &g
+	}
+	if sug.DueAt != nil {
+		s := rfc3339(*sug.DueAt)
+		resp.DueAt = &s
+	}
+	if sug.NextDueAt != nil {
+		s := rfc3339(*sug.NextDueAt)
+		resp.NextDueAt = &s
+	}
+	if sug.NextDueCharacterID != "" {
+		id := sug.NextDueCharacterID
+		resp.NextDueCharacterID = &id
+	}
+
+	charLog := ""
+	if resp.CharacterID != nil {
+		charLog = *resp.CharacterID
+	}
+	dueLog := ""
+	if resp.DueAt != nil {
+		dueLog = *resp.DueAt
+	}
+	apiLog("INFO", "[httpapi.Progress.Next] userID=%d lessonId=%s characterId=%s reasonCode=%s dueAt=%s reviewBox=%v",
+		uid, lessonID, charLog, sug.ReasonCode, dueLog, sug.ReviewBox)
 	writeJSON(w, 200, resp)
 }
 

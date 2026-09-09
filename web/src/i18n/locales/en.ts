@@ -63,9 +63,11 @@ export const en: Record<string, string> = {
   'hub.loadError': 'Could not load the lesson.',
   'hub.historyLink': 'Attempt history',
   'hub.suggestedNext': 'Suggested next',
-  'hub.suggestedNone': 'All five look steady — pick any character to keep practicing.',
+  'hub.suggestedNone': 'Nothing due right now — pick any character to keep practicing.',
+  'hub.suggestedCaughtUpNext': 'Next light review around {when}.',
   'hub.masteryHint':
-    'Mastery labels are a simple practice summary from your completed attempts — not a grade or scientific score.',
+    'Mastery labels are a simple practice summary from your completed attempts — not a grade or scientific score. Review timing is a gentle personal reminder, not a streak.',
+  'hub.reviewDue': 'Ready for a light review',
   'hub.clearData': 'Clear practice history',
   'hub.clearConfirm':
     'Delete all your practice attempts, assessments, and character progress? Free-board strokes and your account stay. This cannot be undone.',
@@ -91,6 +93,10 @@ export const en: Record<string, string> = {
   'next.reason.continue_learning': 'Continue where you are still learning.',
   'next.reason.encourage_steady': 'Another pass here can move toward steady practice.',
   'next.reason.all_steady': 'All five look steady — pick any character to keep practicing.',
+  'next.reason.due_review': 'Ready for a light review.',
+  'next.reason.all_caught_up': 'Nothing is due — pick any character when you like.',
+
+  'practice.notDueYet': 'Not due yet — practice anyway if you want.',
 
   'history.title': 'Attempt history',
   'history.loading': 'Loading…',

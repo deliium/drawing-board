@@ -15,12 +15,34 @@ import (
 
 // LearnStore implements learn repository interfaces against SQLite.
 type LearnStore struct {
-	s *Store
+	s   *Store
+	now func() time.Time
 }
 
 // NewLearnStore wraps a Store for learning-domain repos.
 func NewLearnStore(s *Store) *LearnStore {
-	return &LearnStore{s: s}
+	return &LearnStore{
+		s:   s,
+		now: func() time.Time { return time.Now().UTC() },
+	}
+}
+
+// SetClock replaces the wall clock used for assess timestamps and review due_at.
+// Tests use a frozen/advanceable clock; production keeps the default UTC now.
+func (ls *LearnStore) SetClock(now func() time.Time) {
+	if now == nil {
+		ls.now = func() time.Time { return time.Now().UTC() }
+		return
+	}
+	ls.now = now
+}
+
+// Now returns the store clock instant (UTC).
+func (ls *LearnStore) Now() time.Time {
+	if ls.now == nil {
+		return time.Now().UTC()
+	}
+	return ls.now().UTC()
 }
 
 func learnLog(level, format string, args ...interface{}) {
@@ -575,7 +597,7 @@ func (ls *LearnStore) SaveResult(ctx context.Context, userID int64, in learn.Sav
 		passInt = 1
 	}
 
-	now := time.Now().UTC()
+	now := ls.Now()
 	res, err := tx.Exec(`
 		INSERT INTO assessment_results(attempt_id, pass, score, score_kind, assessor, set_id, reasons_json, created_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
@@ -638,9 +660,28 @@ func upsertProgressOnAssessTx(tx *sql.Tx, userID int64, characterID string, atte
 	if pass {
 		status = learn.ProgressStatusPassed
 	}
-	_, err := tx.Exec(`
-		INSERT INTO user_character_progress(user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at, updated_at)
-		VALUES(?, ?, ?, 0, ?, ?, ?, ?)
+
+	oldBox := 0
+	err := tx.QueryRow(`
+		SELECT review_box FROM user_character_progress WHERE user_id = ? AND character_id = ?
+	`, userID, characterID).Scan(&oldBox)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		oldBox = 0
+	}
+
+	newBox, dueAt := learn.ApplyReviewOutcome(oldBox, pass, now)
+	learnLog("DEBUG", "[learn.review] userID=%d characterID=%s pass=%t box=%d→%d dueAt=%s",
+		userID, characterID, pass, oldBox, newBox, dueAt.UTC().Format(time.RFC3339))
+
+	_, err = tx.Exec(`
+		INSERT INTO user_character_progress(
+			user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at,
+			review_box, due_at, last_reviewed_at, updated_at
+		)
+		VALUES(?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(user_id, character_id) DO UPDATE SET
 			status = CASE
 				WHEN excluded.pass_count > 0 OR user_character_progress.pass_count > 0 THEN 'passed'
@@ -649,10 +690,19 @@ func upsertProgressOnAssessTx(tx *sql.Tx, userID int64, characterID string, atte
 			pass_count = user_character_progress.pass_count + excluded.pass_count,
 			last_attempt_id = excluded.last_attempt_id,
 			last_passed_at = COALESCE(excluded.last_passed_at, user_character_progress.last_passed_at),
+			review_box = excluded.review_box,
+			due_at = excluded.due_at,
+			last_reviewed_at = excluded.last_reviewed_at,
 			updated_at = excluded.updated_at
-	`, userID, characterID, status, passInc, attemptID, lastPassed, now)
+	`, userID, characterID, status, passInc, attemptID, lastPassed, newBox, dueAt, now, now)
 	_ = status // status used in INSERT; CASE handles conflict
-	return err
+	if err != nil {
+		learnLog("ERROR", "[learn.review] upsert failed userID=%d characterID=%s: %v", userID, characterID, err)
+		return err
+	}
+	learnLog("DEBUG", "[learn.AssessmentRepo.SaveResult] schedule userID=%d characterID=%s newBox=%d dueAt=%s",
+		userID, characterID, newBox, dueAt.UTC().Format(time.RFC3339))
+	return nil
 }
 
 func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter learn.AttemptListFilter) (learn.AttemptListResult, error) {
@@ -943,7 +993,8 @@ func (ls *LearnStore) GetByAttempt(ctx context.Context, userID, attemptID int64)
 func (ls *LearnStore) getProgress(ctx context.Context, userID int64, characterID string) (*learn.Progress, error) {
 	_ = ctx
 	row := ls.s.SQL.QueryRow(`
-		SELECT user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at, updated_at
+		SELECT user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at,
+			review_box, due_at, last_reviewed_at, updated_at
 		FROM user_character_progress WHERE user_id = ? AND character_id = ?
 	`, userID, characterID)
 	return scanProgress(row)
@@ -953,7 +1004,12 @@ func scanProgress(row *sql.Row) (*learn.Progress, error) {
 	var p learn.Progress
 	var lastAttempt sql.NullInt64
 	var lastPassed sql.NullTime
-	err := row.Scan(&p.UserID, &p.CharacterID, &p.Status, &p.AttemptCount, &p.PassCount, &lastAttempt, &lastPassed, &p.UpdatedAt)
+	var dueAt sql.NullTime
+	var lastReviewed sql.NullTime
+	err := row.Scan(
+		&p.UserID, &p.CharacterID, &p.Status, &p.AttemptCount, &p.PassCount, &lastAttempt, &lastPassed,
+		&p.ReviewBox, &dueAt, &lastReviewed, &p.UpdatedAt,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, learn.ErrNotFound
@@ -967,6 +1023,14 @@ func scanProgress(row *sql.Row) (*learn.Progress, error) {
 	if lastPassed.Valid {
 		t := lastPassed.Time
 		p.LastPassedAt = &t
+	}
+	if dueAt.Valid {
+		t := dueAt.Time
+		p.DueAt = &t
+	}
+	if lastReviewed.Valid {
+		t := lastReviewed.Time
+		p.LastReviewedAt = &t
 	}
 	return &p, nil
 }
@@ -1038,7 +1102,8 @@ func (r progressRepo) ListAssessedOutcomes(ctx context.Context, userID int64, ch
 func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Progress, error) {
 	_ = ctx
 	rows, err := r.s.SQL.Query(`
-		SELECT user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at, updated_at
+		SELECT user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at,
+			review_box, due_at, last_reviewed_at, updated_at
 		FROM user_character_progress WHERE user_id = ? ORDER BY character_id
 	`, userID)
 	if err != nil {
@@ -1050,7 +1115,12 @@ func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Pr
 		var p learn.Progress
 		var lastAttempt sql.NullInt64
 		var lastPassed sql.NullTime
-		if err := rows.Scan(&p.UserID, &p.CharacterID, &p.Status, &p.AttemptCount, &p.PassCount, &lastAttempt, &lastPassed, &p.UpdatedAt); err != nil {
+		var dueAt sql.NullTime
+		var lastReviewed sql.NullTime
+		if err := rows.Scan(
+			&p.UserID, &p.CharacterID, &p.Status, &p.AttemptCount, &p.PassCount, &lastAttempt, &lastPassed,
+			&p.ReviewBox, &dueAt, &lastReviewed, &p.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		if lastAttempt.Valid {
@@ -1060,6 +1130,14 @@ func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Pr
 		if lastPassed.Valid {
 			t := lastPassed.Time
 			p.LastPassedAt = &t
+		}
+		if dueAt.Valid {
+			t := dueAt.Time
+			p.DueAt = &t
+		}
+		if lastReviewed.Valid {
+			t := lastReviewed.Time
+			p.LastReviewedAt = &t
 		}
 		out = append(out, p)
 	}

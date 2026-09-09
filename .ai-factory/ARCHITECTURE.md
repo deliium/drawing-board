@@ -66,8 +66,9 @@ drawing-board/
 - ❌ Do not put lesson/attempt types into `internal/recognize` (recognize stays pure scoring)
 - ❌ Do not seed or embed `content/hiragana5/drafts/` — AI/WIP only until human review publishes into `vN`
 - ❌ Do not hardcode practice/board canvas CSS to fixed 300×300 — use `--canvas-size` + live logical size on submit
-- ❌ Do not add SRS / due dates / streak or social-comparison features without a dedicated plan
+- ❌ Do not add SM-2/FSRS ease factors, streaks, notifications, or social-comparison features without a dedicated plan
 - ❌ Do not put stroke point arrays in attempt history list payloads
+- ✅ Leitner-style personal review (`review_box` / `due_at`) lives on progress and updates from assessed pass/fail only — schedule helpers stay in `internal/learn`
 
 ## Layer/Module Communication
 
@@ -85,10 +86,11 @@ drawing-board/
 6. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
 7. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
 8. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row; UI should prefer score + feedback over candidates
-9. **Guided journey UI** — `/practice` hub + `/practice/history` + `/practice/:characterId` stage machine; curriculum/progress GETs for pedagogy; compute-on-read mastery + next suggestion; practice-data clear is personal only; trace geometry from client fixtures; no WS for attempt ink
+9. **Guided journey UI** — `/practice` hub + `/practice/history` + `/practice/:characterId` stage machine; curriculum/progress GETs for pedagogy; compute-on-read mastery + schedule-aware next suggestion; practice-data clear is personal only; trace geometry from client fixtures; no WS for attempt ink
 10. **Responsive bilingual accessible SPA** — mobile-first tokens (`--canvas-size`), client EN/JA preference (`web/src/i18n`), correction **display** by code (API EN message persisted), skip link / focus-visible / live regions / textual result summary; axe in Vitest
-11. **Mastery honesty** — mastery labels are a simple practice summary from assessed attempts (not SRS, belts, grades, or calibrated scores); abandoned drafts never count
-12. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+11. **Forgiving personal review** — Leitner-style boxes + UTC wall-clock `due_at`; overdue without shame; next prefers due reviews before new introduction; never market as SM-2/FSRS or streak gamification
+12. **Mastery honesty** — mastery labels are a simple practice summary from assessed attempts (not SM-2 stages, belts, grades, or calibrated scores); abandoned drafts never count
+13. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 

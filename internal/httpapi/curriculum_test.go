@@ -155,6 +155,9 @@ func TestListProgress_EmptyThenAfterPass(t *testing.T) {
 	if item.Mastery == nil || item.Mastery.State != learn.MasteryStatePassedOnce {
 		t.Fatalf("mastery=%+v want passed_once", item.Mastery)
 	}
+	if item.Review == nil || item.Review.Box != 1 || item.Review.DueAt == nil || item.Review.IntervalDays != 1 {
+		t.Fatalf("review=%+v want box=1 intervalDays=1", item.Review)
+	}
 
 	req = attemptSessionReq(t, api, http.MethodGet, "/api/progress?lessonId=lesson:missing", uid, "")
 	rec = httptest.NewRecorder()

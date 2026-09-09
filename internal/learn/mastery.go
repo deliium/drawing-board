@@ -19,12 +19,13 @@ const (
 	MasteryReasonTwoConsecutivePasses = "two_consecutive_passes"
 )
 
-// Next-character suggestion reason codes (humble practice order — no due dates).
+// Next-character suggestion reason codes (mastery-only SuggestNextCharacter).
+// Schedule-aware codes due_review / all_caught_up live in review.go.
 const (
-	NextReasonFirstNotStarted = "first_not_started"
+	NextReasonFirstNotStarted  = "first_not_started"
 	NextReasonContinueLearning = "continue_learning"
-	NextReasonEncourageSteady = "encourage_steady"
-	NextReasonAllSteady       = "all_steady"
+	NextReasonEncourageSteady  = "encourage_steady"
+	NextReasonAllSteady        = "all_steady" // mastery-only; Prefer SuggestNextWithReview → all_caught_up
 )
 
 // MasteryOutcomeWindow caps assessed attempts used for compute-on-read mastery facts.

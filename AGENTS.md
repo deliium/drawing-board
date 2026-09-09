@@ -57,15 +57,16 @@ docker/               # compose / nginx helpers
 | `internal/recognize/normalize.go` | Shared unit-space normalization + short-stroke classification |
 | `internal/recognize/criteria.go` / `corrections.go` | Criterion scorers + ≤2 learner correction catalog |
 | `internal/httpapi/attempts.go` | Practice attempt REST lifecycle |
-| `internal/httpapi/curriculum.go` | Lesson + progress read (+ mastery enrichment) |
-| `internal/httpapi/progress_history.go` | Attempt history, progress next, practice-data clear |
-| `internal/learn/mastery.go` | Explainable mastery derive + next-character suggestion |
+| `internal/httpapi/curriculum.go` | Lesson + progress read (+ mastery + review enrichment) |
+| `internal/httpapi/progress_history.go` | Attempt history, schedule-aware progress next, practice-data clear |
+| `internal/learn/mastery.go` | Explainable mastery derive + mastery-only next helper |
+| `internal/learn/review.go` | Leitner-style boxes, ApplyReviewOutcome, SuggestNextWithReview |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
 | `internal/db/migrate.go` | versioned schema runner + `schema_migrations` |
-| `internal/db/learn_store.go` | SQLite learning repos (attempts/assessments/progress) |
+| `internal/db/learn_store.go` | SQLite learning repos (attempts/assessments/progress + review upsert) |
 | `internal/learn/` | learning-domain types + repository interfaces |
 | `web/src/pages/BoardPage.vue` | Free-board canvas UI (tools/WS/recognize) |
-| `web/src/pages/PracticeHubPage.vue` | Hiragana5 lesson hub + mastery / next / clear |
+| `web/src/pages/PracticeHubPage.vue` | Hiragana5 lesson hub + mastery / due hints / next / clear |
 | `web/src/pages/PracticeHistoryPage.vue` | Paginated personal attempt history |
 | `web/src/pages/PracticeCharacterPage.vue` | Guided single-character journey shell |
 | `web/src/composables/usePracticeJourney.ts` | Stage machine, session resume, attempt orchestration |

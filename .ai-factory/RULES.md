@@ -16,10 +16,11 @@ Hard requirements for this repository. More specific files under `.ai-factory/ru
 - SQLite schema changes use **versioned, fail-closed migrations** (`schema_migrations`); do not reintroduce ad-hoc unversioned DDL on `Open`.
 - Trusted curriculum is versioned under `content/hiragana5/vN` only; AI/WIP drafts stay in `content/hiragana5/drafts/` and must never be seeded or embedded for recognition.
 - Seed and recognize must agree on the `hiragana5` glyph set, stroke counts, and pack `contentVersion` (single pack source of truth).
-- Do **not** add SRS/classroom/cohort tables without a dedicated plan.
-- **Mastery** and **next-character** suggestions are compute-on-read engineering heuristics from **assessed** attempts only — never label them as confidence, grade, belt, due date, or SRS stage; abandoned/submitted-only drafts do not count; UI copy must stay humble (`go test ./internal/docguard` must stay green).
+- Do **not** add classroom/cohort tables or SM-2/FSRS ease factors without a dedicated plan.
+- **Mastery** is a compute-on-read engineering heuristic from **assessed** attempts only — never label it as confidence, grade, belt, or SM-2 stage; abandoned/submitted-only drafts do not count; UI copy must stay humble (`go test ./internal/docguard` must stay green).
+- **Personal review schedule** is Leitner-style fixed boxes (`review_box` / `due_at`) updated automatically from assessed pass/fail only — wall-clock UTC intervals, overdue without penalty; never ship streaks, push/email notifications, daily goals, or SM-2/FSRS marketing; do not invent a parallel SRS service package outside `learn`.
 - Attempt **history list** payloads must never include stroke point arrays (metadata + assessment summary only); ownership is always session `user_id`.
-- `DELETE /api/practice-data` clears **this user’s** practice attempts/progress only — never free-board strokes or the account; default retention is keep-until-clear (or account delete).
+- `DELETE /api/practice-data` clears **this user’s** practice attempts/progress (including review schedule) only — never free-board strokes or the account; default retention is keep-until-clear (or account delete).
 - Do **not** add streaks, social comparison, leaderboards, or teacher dashboards without a dedicated plan.
 - Mutating WebSocket messages require a client `opId` (≤36) and `baseRev` (strict equality with per-user `boardRev`); creates are idempotent on active `(user_id, op_id)`; clear/tombstone yields `op_cancelled` on late creates.
 - Prefer soft reject (`ack` nack / `error` frame) over disconnect for validation failures; log reject codes without stroke coordinates.

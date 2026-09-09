@@ -27,8 +27,13 @@ func TestMigrateFreshOpen(t *testing.T) {
 	if ver != migrations.LatestVersion() {
 		t.Fatalf("version=%d want %d", ver, migrations.LatestVersion())
 	}
-	if ver < 3 {
-		t.Fatalf("expected pedagogy migration version>=3 got %d", ver)
+	if ver < 5 {
+		t.Fatalf("expected review_schedule migration version>=5 got %d", ver)
+	}
+
+	var hasReviewBox int
+	if err := store.SQL.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('user_character_progress') WHERE name='review_box'`).Scan(&hasReviewBox); err != nil || hasReviewBox != 1 {
+		t.Fatalf("review_box column missing: n=%d err=%v", hasReviewBox, err)
 	}
 
 	for _, name := range []string{

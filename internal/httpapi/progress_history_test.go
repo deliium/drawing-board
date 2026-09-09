@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/deliium/drawing-board/internal/db"
 	"github.com/deliium/drawing-board/internal/learn"
@@ -143,5 +144,71 @@ func TestProgressNextAndClear(t *testing.T) {
 	board, _ := store.ListStrokesByUser(uid)
 	if len(board) != 1 {
 		t.Fatalf("board after clear=%d", len(board))
+	}
+}
+
+func TestProgressNext_DueReviewAndCaughtUp(t *testing.T) {
+	t.Setenv("LOG_LEVEL", "debug")
+	api, _, uid := newAttemptTestAPI(t, "next-due")
+	ls := api.learnStore()
+	ctx := context.Background()
+
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	ls.SetClock(func() time.Time { return now })
+
+	// Pass all five once so each has a future due; mastery may be passed_once.
+	chars := []string{"hira:あ", "hira:い", "hira:う", "hira:え", "hira:お"}
+	for _, cid := range chars {
+		d, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: cid, LessonID: "lesson:hiragana5"})
+		_ = ls.Attempts().SubmitStrokes(ctx, uid, d.ID, []learn.StrokeInput{
+			{Width: 2, Color: "#000", Points: []learn.StrokePoint{{X: 1, Y: 1}}},
+		}, 300, 300)
+		_, _ = ls.Assessments().SaveResult(ctx, uid, learn.SaveAssessment{
+			AttemptID: d.ID, Pass: true, Score: 0.9, ScoreKind: recognize.ScoreKindMatch,
+			Assessor: learn.AssessorTargetCompare, SetID: recognize.SetIDHiragana5,
+		})
+	}
+
+	// Before due: encourage_steady (passed_once) rather than all_caught_up.
+	req := attemptSessionReq(t, api, http.MethodGet, "/api/progress/next?lessonId=lesson:hiragana5", uid, "")
+	rec := httptest.NewRecorder()
+	api.GetProgressNext(rec, req)
+	var next progressNextResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &next)
+	if next.ReasonCode != learn.NextReasonEncourageSteady || next.CharacterID == nil {
+		t.Fatalf("before due next=%+v", next)
+	}
+
+	// Second pass on each → steady + box 2, still future due → all_caught_up.
+	now = now.Add(time.Hour) // still before first +24h dues from first pass... wait second pass resets due
+	for _, cid := range chars {
+		d, _ := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: cid, LessonID: "lesson:hiragana5"})
+		_ = ls.Attempts().SubmitStrokes(ctx, uid, d.ID, []learn.StrokeInput{
+			{Width: 2, Color: "#000", Points: []learn.StrokePoint{{X: 1, Y: 1}}},
+		}, 300, 300)
+		_, _ = ls.Assessments().SaveResult(ctx, uid, learn.SaveAssessment{
+			AttemptID: d.ID, Pass: true, Score: 0.9, ScoreKind: recognize.ScoreKindMatch,
+			Assessor: learn.AssessorTargetCompare, SetID: recognize.SetIDHiragana5,
+		})
+	}
+	req = attemptSessionReq(t, api, http.MethodGet, "/api/progress/next", uid, "")
+	rec = httptest.NewRecorder()
+	api.GetProgressNext(rec, req)
+	_ = json.Unmarshal(rec.Body.Bytes(), &next)
+	if next.CharacterID != nil || next.ReasonCode != learn.NextReasonAllCaughtUp || next.NextDueAt == nil {
+		t.Fatalf("caught up next=%+v", next)
+	}
+
+	// Advance past due → due_review
+	now = now.Add(80 * time.Hour)
+	req = attemptSessionReq(t, api, http.MethodGet, "/api/progress/next", uid, "")
+	rec = httptest.NewRecorder()
+	api.GetProgressNext(rec, req)
+	_ = json.Unmarshal(rec.Body.Bytes(), &next)
+	if next.CharacterID == nil || next.ReasonCode != learn.NextReasonDueReview {
+		t.Fatalf("due next=%+v", next)
+	}
+	if next.DueAt == nil || next.ReviewBox == nil {
+		t.Fatalf("due fields missing: %+v", next)
 	}
 }

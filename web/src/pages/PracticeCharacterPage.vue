@@ -106,6 +106,13 @@ const nextCharacterId = computed(() => {
 })
 
 const alreadyPassed = computed(() => progress.value?.status === 'passed')
+
+const notDueYet = computed(() => {
+  const dueAt = progress.value?.review?.dueAt
+  if (!dueAt || progress.value?.review?.isDue) return false
+  const tDue = Date.parse(dueAt)
+  return !Number.isNaN(tDue) && tDue > Date.now()
+})
 </script>
 
 <template>
@@ -130,6 +137,9 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
         v-if="stage === 'intro' || stage === 'animate'"
         :character="character"
       />
+      <p v-if="(stage === 'intro' || stage === 'animate') && notDueYet" class="not-due">
+        {{ t('practice.notDueYet') }}
+      </p>
 
       <StrokeOrderPlayer v-if="stage === 'animate'" :glyph="character.glyph" />
 
@@ -215,6 +225,12 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
 .done {
   text-align: center;
   margin: var(--space-5) 0 var(--space-2);
+}
+
+.not-due {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  margin: 0 0 var(--space-3);
 }
 
 .primary {

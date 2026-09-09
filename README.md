@@ -11,7 +11,7 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Undo functionality**: Ctrl+Z to undo last stroke
 - **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) via guided practice UI + attempt APIs, plus free-board heuristic ranking with match scores (not a trained AI model)
 - **Guided practice journey**: `/#/practice` lesson hub and per-character stages (intro → stroke order → trace → free-write → assess → corrections)
-- **Attempt history & mastery**: `/#/practice/history` for personal assessed attempts; hub shows explainable mastery labels and a humble next-character suggestion (not SRS)
+- **Attempt history, mastery & review**: `/#/practice/history` for personal assessed attempts; hub shows explainable mastery labels, a schedule-aware next suggestion, and quiet due hints (Leitner-style personal review — not SM-2/FSRS or streak gamification)
 - **Responsive bilingual UI**: mobile-first practice-notebook layout, EN/JA locale preference (`localStorage`), shared fluid canvas sizing, and keyboard/SR-oriented result summaries
 - **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
@@ -139,7 +139,7 @@ npm run dev
 5. **Logout** — use Logout on the board to clear the session and return to the auth page.
 
 ### Guided practice journey
-Routes: `/#/practice` (hub), `/#/practice/history` (paginated assessed attempts), and `/#/practice/:characterId` (e.g. `hira:%E3%81%82`). Hub shows mastery labels, a suggested-next banner, history link, and a confirm dialog to clear personal practice data. Stages: loading → intro → animate → trace → freewrite → submitting → result → complete (plus error/empty). Attempt ink is local-only until Submit; refresh resume uses `sessionStorage` (`practice:v1:{characterId}`) plus attempt status. Leaving mid-draft best-effort `abandon`s. Overlay shows Match score and ≤2 corrections — not candidates as primary UI.
+Routes: `/#/practice` (hub), `/#/practice/history` (paginated assessed attempts), and `/#/practice/:characterId` (e.g. `hira:%E3%81%82`). Hub shows mastery labels, due/ready review hints, a suggested-next banner (including calm caught-up + optional next-due text), history link, and a confirm dialog to clear personal practice data. Stages: loading → intro → animate → trace → freewrite → submitting → result → complete (plus error/empty). Attempt ink is local-only until Submit; refresh resume uses `sessionStorage` (`practice:v1:{characterId}`) plus attempt status. Leaving mid-draft best-effort `abandon`s. Overlay shows Match score and ≤2 corrections — not candidates as primary UI.
 
 Registration and login are **not** on the board header; they live only on the public auth routes.
 
@@ -283,7 +283,7 @@ State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned
 | `GET` | `/api/attempts/{id}/assessment` | Persisted result (`scoreKind=match`, `feedback[]`; no live `candidates`) |
 | `POST` | `/api/attempts/{id}/abandon` | Only from `draft` |
 
-History list rows include glyph, terminal status, pass/fail, match score + `scoreKind`, and ≤2 feedback items when assessed. Abandoned drafts never change mastery or progress counters. Only **assessed** attempts feed mastery / next-character suggestion.
+History list rows include glyph, terminal status, pass/fail, match score + `scoreKind`, and ≤2 feedback items when assessed. Abandoned drafts never change mastery, progress counters, or the review schedule. Only **assessed** attempts feed mastery / next-character suggestion / Leitner box updates.
 
 ### Curriculum & Progress Read Endpoints
 
@@ -292,11 +292,15 @@ Authenticated GETs for the practice hub / journey (CSRF not required on GET). Pe
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/lessons/{id}` | Published lesson only (`lesson:hiragana5`); characters include glyph, romanization, strokeCount, pronunciation JSON, `descriptionEn`/`descriptionJa`, example word + `meaningEn`/`meaningJa`, lesson `title`/`titleJa` |
-| `GET` | `/api/progress` | `{ items:[{ characterId, status, attemptCount, passCount, mastery, … }] }`; optional `?lessonId=` / `?setId=` |
-| `GET` | `/api/progress/next` | Humble next-character suggestion for a published `lessonId` (default `lesson:hiragana5`); `{ characterId, glyph, reasonCode, masteryState }` or `characterId: null` + `all_steady` |
-| `DELETE` | `/api/practice-data` | CSRF; deletes **this user’s** practice attempts (CASCADE assessments/strokes) and `user_character_progress` rows; does **not** delete free-board strokes or the account |
+| `GET` | `/api/progress` | `{ items:[{ characterId, status, attemptCount, passCount, mastery, review, … }] }`; optional `?lessonId=` / `?setId=` |
+| `GET` | `/api/progress/next` | Schedule-aware next suggestion for a published `lessonId` (default `lesson:hiragana5`); prefers due reviews, then introduction/learning; `{ characterId, glyph, reasonCode, masteryState, dueAt?, reviewBox? }` or `characterId: null` + `all_caught_up` (+ optional `nextDueAt` / `nextDueCharacterId`) |
+| `DELETE` | `/api/practice-data` | CSRF; deletes **this user’s** practice attempts (CASCADE assessments/strokes) and `user_character_progress` rows (including review box/`due_at`); does **not** delete free-board strokes or the account |
 
-**Mastery** on progress items is a compute-on-read practice summary from assessed attempts only (`not_started` / `learning` / `passed_once` / `steady` + `reasonCode`). It is an engineering heuristic for personal coaching chrome — not a validated proficiency score, belt, grade, or spaced-repetition stage. Operational `status` (`practicing` / sticky `passed`) remains for journey resume; the hub prefers mastery labels for coaching.
+**Mastery** on progress items is a compute-on-read practice summary from assessed attempts only (`not_started` / `learning` / `passed_once` / `steady` + `reasonCode`). It is an engineering heuristic for personal coaching chrome — not a validated proficiency score, belt, grade, or SM-2 stage. Operational `status` (`practicing` / sticky `passed`) remains for journey resume; the hub prefers mastery labels for coaching.
+
+**Review schedule** (`review` on progress items; updated on assess): a lightweight **Leitner-style** personal queue with boxes `0–3` and fixed wall-clock intervals after each assessed pass/fail (`0` / `1 day` / `3 days` / `7 days`). Pass promotes one box; fail demotes one box (forgiving — not a reset to zero). `dueAt` is UTC; overdue means ready when you are (no penalty, no notifications, no streaks). Ratings are automatic from assess pass/fail only — no Again/Hard/Good/Easy UI. Product copy may say “simple review schedule” / “practice reminder timing”; do **not** market it as scientifically optimized SRS, Anki-grade, or SM-2/FSRS.
+
+**Next priority:** due review → first not started → continue learning → encourage steadiness → `all_caught_up` (with optional next future due). Manual practice of a non-due character is always allowed; assess still reschedules from assess `now`.
 
 **Retention:** practice attempt handwriting and assessments are kept until the learner clears them via `DELETE /api/practice-data` or the account is deleted. There is no timed auto-purge and no cross-user export. Free-board strokes are separate.
 
@@ -461,7 +465,8 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 | `[learn.*]` | Attempt/assessment repo DEBUG/INFO (ids/status/counts — no coordinates) |
 | `[httpapi.Lesson.Get]` / `[httpapi.Progress.List]` / `[httpapi.Progress.Next]` | Curriculum/progress/next reads (counts/ids — no stroke geometry) |
 | `[httpapi.Attempts.List]` / `[httpapi.PracticeData.Clear]` | Attempt history list filters/counts; practice-data clear deleted counts |
-| `[learn.mastery]` / `[learn.AttemptRepo.List]` | Mastery derive DEBUG; history list DEBUG |
+| `[learn.mastery]` / `[learn.review]` / `[learn.AttemptRepo.List]` | Mastery derive DEBUG; review box/dueAt DEBUG; history list DEBUG |
+| `[learn.review.Suggest]` | Schedule-aware next DEBUG (reasonCode, dueCount) |
 | `[practiceJourney]` / `[strokeOrder]` / `[compareOverlay]` | Vue DEV-only journey / animation / overlay debug (no coordinates) |
 
 ## Troubleshooting
