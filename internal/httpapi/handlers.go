@@ -22,8 +22,9 @@ import (
 type API struct {
 	Auth             *auth.Service
 	Store            *db.Store
+	Learn            *db.LearnStore
 	Recognizer       recognize.Recognizer
-	Assessor         recognize.Assessor // optional; used when request includes target
+	Assessor         recognize.Assessor // used by attempt assess; board recognize is heuristic-only
 	RecognizeLimiter *limits.Limiter
 }
 
@@ -308,6 +309,10 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 		a.rejectRecognize(w, uid, "bad_json", "boardRev required")
 		return
 	}
+	if strings.TrimSpace(req.Target) != "" {
+		a.rejectRecognize(w, uid, "use_attempt_api", "use POST /api/attempts for single-character practice assessment")
+		return
+	}
 
 	snap, err := a.Store.ListStrokesWithRev(uid)
 	if err != nil {
@@ -359,48 +364,6 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 		rs = append(rs, recognize.Stroke{Points: ps})
 	}
 
-	target := strings.TrimSpace(req.Target)
-	mode := "heuristic"
-	resp := RecognizeResponse{
-		BoardRev:  snap.BoardRev,
-		ScoreKind: recognize.ScoreKindMatch,
-	}
-
-	if target != "" {
-		mode = "target"
-		if a.Assessor == nil {
-			metrics.Add("recognize_requests_total{result=error}", 1)
-			apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=target assessor unavailable", uid)
-			writeAPIError(w, 503, "recognizer_unavailable", "target assessor unavailable")
-			return
-		}
-		assessment, err := a.Assessor.Assess(target, rs, req.Width, req.Height)
-		if err != nil {
-			if errors.Is(err, recognize.ErrUnsupportedTarget) {
-				a.rejectRecognize(w, uid, "unsupported_target", "target not in hiragana5 MVP set")
-				return
-			}
-			if errors.Is(err, limits.ErrInvalidDimensions) || errors.Is(err, limits.ErrInvalidTopN) {
-				a.rejectRecognize(w, uid, limits.ErrorCode(err), limits.SafeMessage(err))
-				return
-			}
-			metrics.Add("recognize_requests_total{result=error}", 1)
-			apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=target assess failed", uid)
-			writeAPIError(w, 500, "internal_error", "recognition failed")
-			return
-		}
-		resp.Candidates = assessment.Candidates
-		if normalizedTopN > 0 && len(resp.Candidates) > normalizedTopN {
-			resp.Candidates = resp.Candidates[:normalizedTopN]
-		}
-		resp.Assessment = &assessment
-		metrics.Add("recognize_requests_total{result=ok}", 1)
-		apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok mode=target target=%s pass=%t boardRev=%d strokes=%d points=%d candidates=%d",
-			uid, target, assessment.Pass, snap.BoardRev, len(strokes), totalPoints, len(resp.Candidates))
-		writeJSON(w, 200, resp)
-		return
-	}
-
 	cands, err := a.Recognizer.Recognize(rs, req.Width, req.Height, normalizedTopN)
 	if err != nil {
 		if errors.Is(err, limits.ErrInvalidDimensions) || errors.Is(err, limits.ErrInvalidTopN) {
@@ -408,15 +371,19 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		metrics.Add("recognize_requests_total{result=error}", 1)
-		apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=%s recognizer failed", uid, mode)
+		apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=heuristic recognizer failed", uid)
 		writeAPIError(w, 500, "internal_error", "recognition failed")
 		return
 	}
-	resp.Candidates = cands
+	resp := RecognizeResponse{
+		BoardRev:   snap.BoardRev,
+		ScoreKind:  recognize.ScoreKindMatch,
+		Candidates: cands,
+	}
 
 	metrics.Add("recognize_requests_total{result=ok}", 1)
-	apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok mode=%s boardRev=%d strokes=%d points=%d candidates=%d",
-		uid, mode, snap.BoardRev, len(strokes), totalPoints, len(cands))
+	apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok mode=heuristic boardRev=%d strokes=%d points=%d candidates=%d",
+		uid, snap.BoardRev, len(strokes), totalPoints, len(cands))
 	writeJSON(w, 200, resp)
 }
 

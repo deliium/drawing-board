@@ -99,9 +99,9 @@ type StrokeInput struct {
 
 // FeedbackItem is one ranked machine-coded note on an assessment.
 type FeedbackItem struct {
-	Rank    int
-	Code    string
-	Message string
+	Rank    int    `json:"rank"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // AssessmentResult is the persisted target-comparison outcome for one attempt.

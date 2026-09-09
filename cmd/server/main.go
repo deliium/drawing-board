@@ -64,7 +64,7 @@ func main() {
 		log.Fatalf("FATAL [main] schema_version: %v", err)
 	}
 	log.Printf("INFO [main] schema_version=%d learn_seed=hiragana5 contentVersion=%s", schemaVer, db.Hiragana5ContentVersion())
-	_ = db.NewLearnStore(store) // constructed for Prompt 11 attempt APIs; unused by HTTP yet
+	learnStore := db.NewLearnStore(store)
 
 	sessionStore := sessions.NewCookieStore([]byte(*cookieKey))
 	sessionStore.Options = &sessions.Options{
@@ -86,6 +86,7 @@ func main() {
 	api := &httpapi.API{
 		Auth:             authSvc,
 		Store:            store,
+		Learn:            learnStore,
 		Recognizer:       recognizer,
 		Assessor:         recognizer,
 		RecognizeLimiter: limits.NewLimiter(limits.RecognizeRatePerMin, limits.RecognizeBurst),
@@ -105,8 +106,16 @@ func main() {
 	r.Handle("/api/strokes", authSvc.RequireAuth(http.HandlerFunc(api.ListStrokes))).Methods(http.MethodGet)
 	r.Handle("/api/strokes/clear", authSvc.RequireAuth(http.HandlerFunc(api.ClearStrokes))).Methods(http.MethodPost)
 	r.Handle("/api/strokes/delete", authSvc.RequireAuth(http.HandlerFunc(api.DeleteStroke))).Methods(http.MethodPost)
-	// Recognize
+	// Recognize (free-board heuristic only)
 	r.Handle("/api/recognize", authSvc.RequireAuth(http.HandlerFunc(api.Recognize))).Methods(http.MethodPost)
+
+	// Practice attempts
+	r.Handle("/api/attempts", authSvc.RequireAuth(http.HandlerFunc(api.CreateAttempt))).Methods(http.MethodPost)
+	r.Handle("/api/attempts/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetAttempt))).Methods(http.MethodGet)
+	r.Handle("/api/attempts/{id}/submit", authSvc.RequireAuth(http.HandlerFunc(api.SubmitAttempt))).Methods(http.MethodPost)
+	r.Handle("/api/attempts/{id}/assess", authSvc.RequireAuth(http.HandlerFunc(api.AssessAttempt))).Methods(http.MethodPost)
+	r.Handle("/api/attempts/{id}/assessment", authSvc.RequireAuth(http.HandlerFunc(api.GetAttemptAssessment))).Methods(http.MethodGet)
+	r.Handle("/api/attempts/{id}/abandon", authSvc.RequireAuth(http.HandlerFunc(api.AbandonAttempt))).Methods(http.MethodPost)
 
 	// WebSocket endpoint (auth required)
 	r.Handle("/ws", authSvc.RequireAuth(http.HandlerFunc(handleWebSocket)))
