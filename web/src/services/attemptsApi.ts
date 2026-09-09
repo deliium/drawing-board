@@ -122,3 +122,51 @@ export function abandonAttempt(id: number): Promise<{ id: number; status: 'aband
     body: '{}',
   })
 }
+
+export type AttemptHistoryItem = {
+  id: number
+  characterId: string
+  glyph: string
+  lessonId?: string
+  status: AttemptStatus
+  startedAt: string
+  assessedAt?: string
+  pass?: boolean
+  score?: number
+  scoreKind?: string
+  feedback?: AssessmentFeedback[]
+}
+
+export type AttemptHistoryList = {
+  items: AttemptHistoryItem[]
+  nextCursor?: string
+  limit: number
+}
+
+export type ListAttemptsQuery = {
+  lessonId?: string
+  characterId?: string
+  status?: string
+  limit?: number
+  cursor?: string
+}
+
+export async function listAttempts(query: ListAttemptsQuery = {}): Promise<AttemptHistoryList> {
+  const params = new URLSearchParams()
+  if (query.lessonId) params.set('lessonId', query.lessonId)
+  if (query.characterId) params.set('characterId', query.characterId)
+  if (query.status) params.set('status', query.status)
+  if (query.limit != null) params.set('limit', String(query.limit))
+  if (query.cursor) params.set('cursor', query.cursor)
+  const qs = params.toString()
+  const path = qs ? `/api/attempts?${qs}` : '/api/attempts'
+  debug('list', path)
+  try {
+    const out = await apiFetch<AttemptHistoryList>(path)
+    debug('list ok', 'count', out.items?.length ?? 0, 'hasNext', Boolean(out.nextCursor))
+    return out
+  } catch (err) {
+    debug('list error', err)
+    throw err
+  }
+}

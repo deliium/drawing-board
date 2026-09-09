@@ -2,6 +2,19 @@ import { apiFetch } from './apiClient'
 
 export type ProgressStatus = 'unseen' | 'seen' | 'practicing' | 'passed'
 
+export type MasteryState = 'not_started' | 'learning' | 'passed_once' | 'steady'
+
+export type MasterySummary = {
+  state: MasteryState | string
+  reasonCode: string
+  assessedCount: number
+  passCount: number
+  failCount: number
+  consecutivePassesEnding: number
+  lastPass?: boolean
+  lastAssessedAt?: string
+}
+
 export type ProgressItem = {
   characterId: string
   status: ProgressStatus | string
@@ -10,6 +23,7 @@ export type ProgressItem = {
   lastAttemptId?: number
   lastPassedAt?: string
   updatedAt: string
+  mastery?: MasterySummary
 }
 
 export type ProgressList = {
@@ -19,6 +33,19 @@ export type ProgressList = {
 export type ListProgressQuery = {
   lessonId?: string
   setId?: string
+}
+
+export type ProgressNext = {
+  lessonId: string
+  characterId: string | null
+  glyph?: string | null
+  reasonCode: string
+  masteryState?: string
+}
+
+export type ClearPracticeDataResult = {
+  attemptsDeleted: number
+  progressRowsCleared: number
 }
 
 const isDev =
@@ -42,6 +69,37 @@ export async function listProgress(query: ListProgressQuery = {}): Promise<Progr
     return out
   } catch (err) {
     debug('list error', err)
+    throw err
+  }
+}
+
+export async function getProgressNext(lessonId?: string): Promise<ProgressNext> {
+  const params = new URLSearchParams()
+  if (lessonId) params.set('lessonId', lessonId)
+  const qs = params.toString()
+  const path = qs ? `/api/progress/next?${qs}` : '/api/progress/next'
+  debug('next', path)
+  try {
+    const out = await apiFetch<ProgressNext>(path)
+    debug('next ok', out.characterId, out.reasonCode)
+    return out
+  } catch (err) {
+    debug('next error', err)
+    throw err
+  }
+}
+
+export async function clearPracticeData(): Promise<ClearPracticeDataResult> {
+  debug('clearPracticeData')
+  try {
+    const out = await apiFetch<ClearPracticeDataResult>('/api/practice-data', {
+      method: 'DELETE',
+      body: '{}',
+    })
+    debug('clear ok', out.attemptsDeleted, out.progressRowsCleared)
+    return out
+  } catch (err) {
+    debug('clear error', err)
     throw err
   }
 }

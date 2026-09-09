@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import BoardPage from '../pages/BoardPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import PracticeCharacterPage from '../pages/PracticeCharacterPage.vue'
+import PracticeHistoryPage from '../pages/PracticeHistoryPage.vue'
 import PracticeHubPage from '../pages/PracticeHubPage.vue'
 import { requireAuth } from './guards'
 
@@ -13,6 +14,12 @@ const router = createRouter({
       path: '/practice',
       name: 'practice-hub',
       component: PracticeHubPage,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/practice/history',
+      name: 'practice-history',
+      component: PracticeHistoryPage,
       meta: { requiresAuth: true },
     },
     {

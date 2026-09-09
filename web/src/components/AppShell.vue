@@ -37,6 +37,10 @@ function onLocaleChange(ev: Event) {
             <span class="full">{{ navPractice }}</span>
             <span class="short">{{ navPracticeShort }}</span>
           </router-link>
+          <router-link to="/practice/history" class="quiet">
+            <span class="full">{{ t('nav.history') }}</span>
+            <span class="short">{{ t('nav.historyShort') }}</span>
+          </router-link>
           <router-link to="/" class="quiet">
             <span class="full">{{ navBoard }}</span>
             <span class="short">{{ navBoardShort }}</span>
