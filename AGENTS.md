@@ -33,15 +33,16 @@ internal/docguard/    # README honesty tests
 web/src/              # Vue SPA
 web/src/pages/        # BoardPage, PracticeHub/Character, LoginPage
 web/src/components/practice/  # intro, stroke-order, canvas, overlay, journey chrome
-web/src/canvas/       # CSS/DPR coords, draw, hit-test helpers
-web/src/composables/  # usePracticeCanvas + usePracticeJourney
+web/src/canvas/       # CSS/DPR coords, layout helpers, draw, hit-test helpers
+web/src/composables/  # usePracticeCanvas + usePracticeJourney + useLocale
+web/src/i18n/         # EN/JA catalogs + correction display map
 web/src/curriculum/   # hiragana5 trace fixtures (geometry only)
 web/src/services/     # apiFetch, attempts/curriculum/progress clients, wsClient
-web/tests/            # Vitest
+web/public/fonts/     # self-hosted OFL font subsets
+web/tests/            # Vitest (+ axe a11y)
 .ai-factory/          # plans, patches, AI context
 docker/               # compose / nginx helpers
 ```
-
 ## Key Entry Points
 
 | File | Purpose |
@@ -66,7 +67,9 @@ docker/               # compose / nginx helpers
 | `web/src/pages/PracticeCharacterPage.vue` | Guided single-character journey shell |
 | `web/src/composables/usePracticeJourney.ts` | Stage machine, session resume, attempt orchestration |
 | `web/src/composables/usePracticeCanvas.ts` | Pointer lifecycle, DPR resize redraw, Escape cancel |
-| `web/src/canvas/*` | CSS-logical coords, stroke paint (incl. dots), hit-test |
+| `web/src/composables/useLocale.ts` | EN/JA preference + reactive `t` |
+| `web/src/canvas/*` | CSS-logical coords, layout helpers, stroke paint (incl. dots), hit-test |
+| `web/src/i18n/*` | Lightweight EN/JA catalogs + correction display by code |
 | `web/src/curriculum/*` | Trace template fixtures for animation/overlay |
 | `web/src/services/wsClient.ts` | WS queue / reconnect / status / baseRev |
 | `web/src/services/strokeSync.ts` | Merge ack/echo/clear into local strokes |

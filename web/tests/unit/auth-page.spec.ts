@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginPage from '../../src/pages/LoginPage.vue'
+import { initLocale, setLocale } from '../../src/i18n'
 import { setAuthenticatedUser } from '../../src/services/sessionContext'
 
 const apiFetch = vi.fn()
@@ -59,6 +60,8 @@ describe('AuthPage behavior', () => {
     apiFetch.mockReset()
     setAuthenticatedUser(null)
     document.body.innerHTML = ''
+    initLocale()
+    setLocale('en')
   })
 
   it('shows client validation for empty submit', async () => {
@@ -68,7 +71,7 @@ describe('AuthPage behavior', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flush()
     const alert = root.querySelector('[role="alert"]')
-    expect(alert?.textContent).toContain('Enter email and password')
+    expect(alert?.textContent).toMatch(/email and password|メールとパスワード/i)
     expect(apiFetch).not.toHaveBeenCalled()
   })
 

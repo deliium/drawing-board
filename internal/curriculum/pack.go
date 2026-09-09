@@ -42,6 +42,7 @@ type Pronunciation struct {
 // Description holds learner-facing copy by locale.
 type Description struct {
 	En string `json:"en"`
+	Ja string `json:"ja"`
 }
 
 // Example is one short vocabulary gloss.
@@ -49,6 +50,7 @@ type Example struct {
 	Word         string `json:"word"`
 	Romanization string `json:"romanization"`
 	MeaningEn    string `json:"meaningEn"`
+	MeaningJa    string `json:"meaningJa"`
 }
 
 // Character is one curriculum glyph record.
@@ -66,9 +68,10 @@ type Character struct {
 
 // LessonMeta is seeded lesson identity/title.
 type LessonMeta struct {
-	ID    string `json:"id"`
-	Code  string `json:"code"`
-	Title string `json:"title"`
+	ID      string `json:"id"`
+	Code    string `json:"code"`
+	Title   string `json:"title"`
+	TitleJa string `json:"titleJa"`
 }
 
 // Manifest is pack-level metadata.
@@ -317,6 +320,9 @@ func Validate(p Pack) error {
 	if m.Lesson.ID == "" || m.Lesson.Code == "" || m.Lesson.Title == "" {
 		return fmt.Errorf("manifest.lesson: missing id/code/title")
 	}
+	if m.Lesson.TitleJa == "" {
+		return fmt.Errorf("manifest.lesson: missing titleJa")
+	}
 
 	if len(p.Chars) != ExpectedCharCount {
 		return fmt.Errorf("characters: want %d got %d", ExpectedCharCount, len(p.Chars))
@@ -359,8 +365,14 @@ func Validate(p Pack) error {
 		if c.Description.En == "" {
 			return fmt.Errorf("%s.description.en: empty", prefix)
 		}
+		if c.Description.Ja == "" {
+			return fmt.Errorf("%s.description.ja: empty", prefix)
+		}
 		if c.Example.Word == "" || c.Example.Romanization == "" || c.Example.MeaningEn == "" {
 			return fmt.Errorf("%s.example: incomplete", prefix)
+		}
+		if c.Example.MeaningJa == "" {
+			return fmt.Errorf("%s.example.meaningJa: empty", prefix)
 		}
 
 		strokes, ok := p.Strokes[c.Glyph]

@@ -14,24 +14,27 @@ type lessonExampleResponse struct {
 	Word         string `json:"word"`
 	Romanization string `json:"romanization"`
 	MeaningEn    string `json:"meaningEn"`
+	MeaningJa    string `json:"meaningJa,omitempty"`
 }
 
 type lessonCharacterResponse struct {
-	ID            string                 `json:"id"`
-	Glyph         string                 `json:"glyph"`
-	Romanization  string                 `json:"romanization"`
-	StrokeCount   int                    `json:"strokeCount"`
-	Pronunciation json.RawMessage        `json:"pronunciation"`
-	DescriptionEn string                 `json:"descriptionEn"`
-	Example       lessonExampleResponse  `json:"example"`
-	SortKey       int                    `json:"sortKey"`
-	Position      int                    `json:"position"`
+	ID            string                `json:"id"`
+	Glyph         string                `json:"glyph"`
+	Romanization  string                `json:"romanization"`
+	StrokeCount   int                   `json:"strokeCount"`
+	Pronunciation json.RawMessage       `json:"pronunciation"`
+	DescriptionEn string                `json:"descriptionEn"`
+	DescriptionJa string                `json:"descriptionJa,omitempty"`
+	Example       lessonExampleResponse `json:"example"`
+	SortKey       int                   `json:"sortKey"`
+	Position      int                   `json:"position"`
 }
 
 type lessonResponse struct {
 	ID             string                    `json:"id"`
 	Code           string                    `json:"code"`
 	Title          string                    `json:"title"`
+	TitleJa        string                    `json:"titleJa,omitempty"`
 	SetID          string                    `json:"setId"`
 	ContentVersion string                    `json:"contentVersion"`
 	Characters     []lessonCharacterResponse `json:"characters"`
@@ -115,10 +118,12 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 			StrokeCount:   ch.StrokeCount,
 			Pronunciation: pron,
 			DescriptionEn: ch.DescriptionEn,
+			DescriptionJa: ch.DescriptionJa,
 			Example: lessonExampleResponse{
 				Word:         ch.ExampleWord,
 				Romanization: ch.ExampleRomanization,
 				MeaningEn:    ch.ExampleMeaningEn,
+				MeaningJa:    ch.ExampleMeaningJa,
 			},
 			SortKey:  ch.SortKey,
 			Position: lc.Position,
@@ -132,6 +137,7 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 		ID:             lesson.ID,
 		Code:           lesson.Code,
 		Title:          lesson.Title,
+		TitleJa:        lesson.TitleJa,
 		SetID:          lesson.SetID,
 		ContentVersion: contentVersion,
 		Characters:     chars,

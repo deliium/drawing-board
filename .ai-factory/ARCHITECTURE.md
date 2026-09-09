@@ -22,7 +22,7 @@ drawing-board/
 │   ├── auth/                   # register/login/logout/me, password hashing, sessions
 │   ├── curriculum/             # load/validate hiragana5 content packs
 │   ├── db/                     # SQLite store, versioned migrations, board + learning repos
-│   │   └── migrations/         # numbered Up steps (baseline, learning, pedagogy)
+│   │   └── migrations/         # numbered Up steps (baseline, learning, pedagogy, JA pedagogy)
 │   ├── learn/                  # learning-domain types + repository interfaces
 │   ├── httpapi/                # REST handlers (strokes, recognize, practice attempts)
 │   ├── ws/                     # WebSocket hub, CheckOrigin, ingest, ack/echo
@@ -32,15 +32,18 @@ drawing-board/
 │   ├── metrics/                # process-local counters
 │   └── docguard/               # README honesty regression tests
 ├── web/
+│   ├── public/fonts/           # Self-hosted OFL subsets (IBM Plex Sans, Noto Sans JP)
+│   ├── src/styles/             # Design tokens, focus, reduced-motion, font-face
+│   ├── src/i18n/               # Lightweight EN/JA catalogs + correction display map
 │   ├── src/pages/              # AuthPage, BoardPage, PracticeHub/Character
 │   ├── src/components/practice/# Journey chrome (intro, stroke-order, overlay, …)
-│   ├── src/canvas/             # CSS/DPR coords, drawStrokes, hitTest
+│   ├── src/canvas/             # CSS/DPR coords, layout helpers, drawStrokes, hitTest
 │   ├── src/curriculum/         # hiragana5 trace fixtures (geometry for UI)
-│   ├── src/composables/        # usePracticeCanvas, usePracticeJourney
+│   ├── src/composables/        # usePracticeCanvas, usePracticeJourney, useLocale
 │   ├── src/services/           # apiFetch, attempts/curriculum/progress, wsClient, strokeSync
 │   ├── src/stores/             # client state (free-board oriented)
 │   ├── src/router/             # auth/guest guards + practice routes
-│   └── tests/                  # Vitest unit/contract/integration
+│   └── tests/                  # Vitest unit/contract/integration (+ axe a11y)
 ├── docker/                     # Nginx examples, compose assets
 └── .ai-factory/                # AI Factory plans, patches, context
 ```
@@ -56,12 +59,13 @@ drawing-board/
 - ✅ Schema evolves only via versioned migrations in `internal/db/migrations` (fail-closed on `Open`)
 - ✅ Trusted curriculum lives under `content/hiragana5/vN`; `internal/curriculum` loads/validates; seed + recognize both consume the pack (no dual-maintained stroke JSON)
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
-- ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; pages compose UI + call services
+- ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; `i18n/` owns learner chrome strings; pages compose UI + call services
 - ❌ Do not add a global WS broadcast path — delivery is `sendToUser(userID, …)` only
 - ❌ Do not put recognition rasterization / large allocations before `limits.CheckCanvas` / validators
 - ❌ Frontend must not treat unmatched inbound stroke creates as authoritative canvas state
 - ❌ Do not put lesson/attempt types into `internal/recognize` (recognize stays pure scoring)
 - ❌ Do not seed or embed `content/hiragana5/drafts/` — AI/WIP only until human review publishes into `vN`
+- ❌ Do not hardcode practice/board canvas CSS to fixed 300×300 — use `--canvas-size` + live logical size on submit
 
 ## Layer/Module Communication
 
@@ -80,7 +84,8 @@ drawing-board/
 7. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
 8. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row; UI should prefer score + feedback over candidates
 9. **Guided journey UI** — `/practice` hub + `/practice/:characterId` stage machine; curriculum/progress GETs for pedagogy; trace geometry from client fixtures; no WS for attempt ink
-10. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+10. **Responsive bilingual accessible SPA** — mobile-first tokens (`--canvas-size`), client EN/JA preference (`web/src/i18n`), correction **display** by code (API EN message persisted), skip link / focus-visible / live regions / textual result summary; axe in Vitest
+11. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 

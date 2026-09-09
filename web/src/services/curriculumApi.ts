@@ -12,6 +12,7 @@ export type LessonExample = {
   word: string
   romanization: string
   meaningEn: string
+  meaningJa?: string
 }
 
 export type LessonCharacter = {
@@ -21,6 +22,7 @@ export type LessonCharacter = {
   strokeCount: number
   pronunciation: Pronunciation
   descriptionEn: string
+  descriptionJa?: string
   example: LessonExample
   sortKey: number
   position: number
@@ -30,6 +32,7 @@ export type Lesson = {
   id: string
   code: string
   title: string
+  titleJa?: string
   setId: string
   contentVersion: string
   characters: LessonCharacter[]

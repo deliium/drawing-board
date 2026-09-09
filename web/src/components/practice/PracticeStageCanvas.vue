@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { readLogicalCanvasSize } from '../../canvas/layout'
 import { drawTraceTemplates, hiragana5Traces } from '../../curriculum/hiragana5'
+import { useLocale } from '../../composables/useLocale'
 import { usePracticeCanvas } from '../../composables/usePracticeCanvas'
 import type { Point, Stroke } from '../../services/strokeSync'
 
@@ -15,8 +17,11 @@ const emit = defineEmits<{
   'update:strokes': [Stroke[]]
 }>()
 
+const { t } = useLocale()
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const guideRef = ref<HTMLCanvasElement | null>(null)
+const frameRef = ref<HTMLElement | null>(null)
 const tool = ref<'pencil' | 'eraser'>('pencil')
 const color = ref('#111827')
 const width = ref(3)
@@ -35,6 +40,12 @@ const inputEnabled = computed(
   () => props.enabled !== false && (props.mode === 'trace' || props.mode === 'free'),
 )
 
+const canvasLabel = computed(() => {
+  if (props.mode === 'trace') return t('canvas.trace')
+  if (props.mode === 'free') return t('canvas.free')
+  return t('canvas.result')
+})
+
 function newClientId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -42,7 +53,7 @@ function newClientId(): string {
   return `local-${Date.now()}`
 }
 
-usePracticeCanvas({
+const practice = usePracticeCanvas({
   canvasRef,
   enabled: inputEnabled,
   strokes: strokesRef,
@@ -74,8 +85,11 @@ function paintGuides() {
   if (!guide) return
   const ctx = guide.getContext('2d')
   if (!ctx) return
-  const cssW = 300
-  const cssH = 300
+  const logical =
+    readLogicalCanvasSize(guide) ??
+    readLogicalCanvasSize(canvasRef.value) ?? { width: 300, height: 300 }
+  const cssW = logical.width
+  const cssH = logical.height
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
   guide.width = Math.round(cssW * dpr)
   guide.height = Math.round(cssH * dpr)
@@ -85,6 +99,23 @@ function paintGuides() {
     drawTraceTemplates(ctx, hiragana5Traces, props.glyph, cssW, cssH)
   }
 }
+
+let ro: ResizeObserver | null = null
+
+onMounted(() => {
+  paintGuides()
+  if (typeof ResizeObserver !== 'undefined' && frameRef.value) {
+    ro = new ResizeObserver(() => {
+      paintGuides()
+      practice.resync()
+    })
+    ro.observe(frameRef.value)
+  }
+})
+
+onUnmounted(() => {
+  ro?.disconnect()
+})
 
 watch(
   [() => props.mode, () => props.glyph, guideRef],
@@ -105,36 +136,23 @@ function undo() {
   emit('update:strokes', next)
 }
 
-defineExpose({ clear, undo, canvasRef })
+defineExpose({
+  clear,
+  undo,
+  canvasRef,
+  getLogicalSize: () => practice.getLogicalSize(),
+})
 </script>
 
 <template>
   <div class="stage">
-    <div class="frame">
-      <canvas
-        ref="guideRef"
-        class="guide"
-        width="300"
-        height="300"
-        aria-hidden="true"
-      />
-      <canvas
-        ref="canvasRef"
-        class="ink"
-        width="300"
-        height="300"
-        :aria-label="
-          mode === 'trace'
-            ? 'Trace practice canvas'
-            : mode === 'free'
-              ? 'Free-write canvas'
-              : 'Result canvas'
-        "
-      />
+    <div ref="frameRef" class="frame">
+      <canvas ref="guideRef" class="guide" aria-hidden="true" />
+      <canvas ref="canvasRef" class="ink" :aria-label="canvasLabel" />
     </div>
     <div v-if="inputEnabled" class="tools">
-      <button type="button" @click="undo">Undo</button>
-      <button type="button" @click="clear">Clear</button>
+      <button type="button" @click="undo">{{ t('action.undo') }}</button>
+      <button type="button" @click="clear">{{ t('action.clear') }}</button>
     </div>
   </div>
 </template>
@@ -144,40 +162,49 @@ defineExpose({ clear, undo, canvasRef })
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
+
 .frame {
   position: relative;
-  width: 300px;
-  height: 300px;
+  width: var(--canvas-size);
+  height: var(--canvas-size);
 }
+
 .guide,
 .ink {
   position: absolute;
   inset: 0;
-  width: 300px;
-  height: 300px;
-  border-radius: 6px;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm);
 }
+
 .guide {
-  border: 2px solid #334155;
-  background: #fff;
+  border: 2px solid var(--ink);
+  background: var(--paper-raised);
   pointer-events: none;
 }
+
 .ink {
   background: transparent;
   touch-action: none;
   border: 2px solid transparent;
 }
+
 .tools {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
+
 .tools button {
-  padding: 6px 12px;
-  border: 1px solid #cbd5e1;
-  background: #f8fafc;
-  border-radius: 4px;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  font: inherit;
+  color: var(--ink);
 }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLocale } from '../../composables/useLocale'
 import type { JourneyBanner, JourneyStage } from '../../composables/usePracticeJourney'
 
 defineProps<{
@@ -6,13 +7,21 @@ defineProps<{
   banner?: JourneyBanner
   softWarn?: string | null
 }>()
+
+const { t } = useLocale()
 </script>
 
 <template>
-  <div class="banner-wrap" role="status">
-    <p v-if="stage === 'loading'" class="banner info">Loading…</p>
-    <p v-else-if="stage === 'empty'" class="banner error">This character is not in the lesson.</p>
-    <p v-else-if="stage === 'submitting'" class="banner info">Checking…</p>
+  <div
+    class="banner-wrap"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    :aria-label="t('banner.status')"
+  >
+    <p v-if="stage === 'loading'" class="banner info">{{ t('practice.loading') }}</p>
+    <p v-else-if="stage === 'empty'" class="banner error">{{ t('practice.emptyCharacter') }}</p>
+    <p v-else-if="stage === 'submitting'" class="banner info">{{ t('practice.checking') }}</p>
     <p v-if="banner" class="banner" :class="banner.kind">{{ banner.message }}</p>
     <p v-if="softWarn" class="banner notice">{{ softWarn }}</p>
   </div>
@@ -22,19 +31,23 @@ defineProps<{
 .banner-wrap {
   min-height: 1.5rem;
   text-align: center;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
 }
+
 .banner {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
   font-size: 0.95rem;
 }
+
 .info {
-  opacity: 0.8;
+  color: var(--ink-muted);
 }
+
 .notice {
   color: #92400e;
 }
+
 .error {
-  color: #9f1239;
+  color: var(--danger);
 }
 </style>

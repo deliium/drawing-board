@@ -1,4 +1,6 @@
 import { computed, ref, type Ref } from 'vue'
+import { resolveSubmitLogicalSize } from '../canvas/layout'
+import { t } from '../i18n'
 import type { ApiError } from '../services/apiClient'
 import {
   abandonAttempt,
@@ -120,6 +122,9 @@ function clearSession(characterId: string): void {
 
 export type UsePracticeJourneyOptions = {
   characterId: Ref<string>
+  /** Live CSS-logical canvas size at submit time (from PracticeStageCanvas). */
+  getLogicalSize?: () => { width: number; height: number } | null
+  getCanvasElement?: () => HTMLCanvasElement | null
 }
 
 export function usePracticeJourney(options: UsePracticeJourneyOptions) {
@@ -199,7 +204,7 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
         setStage('intro')
         banner.value = {
           kind: 'info',
-          message: 'You already completed this character. Practice again or mark done.',
+          message: t('practice.alreadyDone'),
         }
         return
       }
@@ -207,7 +212,7 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
       setStage('intro')
     } catch (err) {
       journeyWarn('load failed', err)
-      banner.value = { kind: 'error', message: errMessage(err, 'Could not load the lesson.') }
+      banner.value = { kind: 'error', message: errMessage(err, t('practice.loadError')) }
       setStage('error')
     }
   }
@@ -226,7 +231,7 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
           strokes.value = []
           banner.value = {
             kind: 'notice',
-            message: 'Drawing was not saved — continue or restart.',
+            message: t('practice.drawingLost'),
           }
         }
         const restored =
@@ -261,7 +266,7 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
     } catch (err) {
       journeyWarn('resume failed', err)
       clearSession(options.characterId.value)
-      banner.value = { kind: 'error', message: errMessage(err, 'Could not resume practice.') }
+      banner.value = { kind: 'error', message: errMessage(err, t('practice.resumeError')) }
       setStage('error')
     }
   }
@@ -283,7 +288,7 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
       return true
     } catch (err) {
       journeyWarn('create draft failed', err)
-      banner.value = { kind: 'error', message: errMessage(err, 'Could not start practice.') }
+      banner.value = { kind: 'error', message: errMessage(err, t('practice.startError')) }
       return false
     }
   }
@@ -305,12 +310,15 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
   function nextFromTrace(): void {
     const need = character.value?.strokeCount ?? 0
     if (strokes.value.length < need) {
-      softWarn.value = `Expected ${need} strokes; you have ${strokes.value.length}. You can still continue.`
+      softWarn.value = t('practice.strokeCountSoft', {
+        need,
+        got: strokes.value.length,
+      })
     } else {
       softWarn.value = null
     }
     if (strokes.value.length < 1) {
-      softWarn.value = 'Draw at least one stroke before continuing.'
+      softWarn.value = t('practice.drawBeforeContinue')
       return
     }
     setStage('freewrite')
@@ -325,11 +333,11 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
 
   async function submit(): Promise<void> {
     if (!attempt.value || attempt.value.status !== 'draft') {
-      banner.value = { kind: 'error', message: 'No draft attempt to submit.' }
+      banner.value = { kind: 'error', message: t('practice.noDraft') }
       return
     }
     if (strokes.value.length < 1) {
-      softWarn.value = 'Draw the character before submitting.'
+      softWarn.value = t('practice.drawBeforeSubmit')
       return
     }
     softWarn.value = null
@@ -337,8 +345,13 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
     setStage('submitting')
     persistSession({ stage: 'submitting' })
 
-    const width = 300
-    const height = 300
+    const logical = resolveSubmitLogicalSize({
+      fromComposable: options.getLogicalSize?.() ?? null,
+      canvas: options.getCanvasElement?.() ?? null,
+      reason: 'submit',
+    })
+    const width = logical.width
+    const height = logical.height
     try {
       const submitted = await submitAttempt(attempt.value.id, {
         width,
@@ -355,13 +368,14 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
         pass: assessed.pass,
         score: assessed.score,
         feedbackCodes: assessed.feedback?.map((f) => f.code),
+        canvas: { width, height },
       })
       setStage('result')
     } catch (err) {
       journeyWarn('submit/assess failed', err)
       banner.value = {
         kind: 'error',
-        message: errMessage(err, 'Could not check your writing. Try again.'),
+        message: errMessage(err, t('practice.submitError')),
       }
       const status = attempt.value?.status
       if (status === 'submitted') {
@@ -387,7 +401,7 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
       journeyWarn('retry assess failed', err)
       banner.value = {
         kind: 'error',
-        message: errMessage(err, 'Could not check your writing. Try again.'),
+        message: errMessage(err, t('practice.submitError')),
       }
     }
   }
@@ -437,7 +451,7 @@ export function usePracticeJourney(options: UsePracticeJourneyOptions) {
 
   const feedback = computed(() => {
     const items = assessment.value?.feedback ?? []
-    return items.slice(0, 2).filter((f) => f.message && f.message.trim())
+    return items.slice(0, 2).filter((f) => f.code || (f.message && f.message.trim()))
   })
 
   return {

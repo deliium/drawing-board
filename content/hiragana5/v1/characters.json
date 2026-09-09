@@ -14,12 +14,14 @@
         "pitch": "unknown"
       },
       "description": {
-        "en": "Open vowel “ah”, as in father (shorter). First chart vowel."
+        "en": "Open vowel “ah”, as in father (shorter). First chart vowel.",
+        "ja": "口を開けた母音「あ」。五十音の最初の母音。"
       },
       "example": {
         "word": "あさ",
         "romanization": "asa",
-        "meaningEn": "morning"
+        "meaningEn": "morning",
+        "meaningJa": "朝"
       }
     },
     {
@@ -36,12 +38,14 @@
         "pitch": "unknown"
       },
       "description": {
-        "en": "Close front vowel “ee”, as in see (shorter)."
+        "en": "Close front vowel “ee”, as in see (shorter).",
+        "ja": "前寄りの狭い母音「い」。英語の see より短め。"
       },
       "example": {
         "word": "いぬ",
         "romanization": "inu",
-        "meaningEn": "dog"
+        "meaningEn": "dog",
+        "meaningJa": "犬"
       }
     },
     {
@@ -58,12 +62,14 @@
         "pitch": "unknown"
       },
       "description": {
-        "en": "Close back vowel; lips unrounded vs English “oo”."
+        "en": "Close back vowel; lips unrounded vs English “oo”.",
+        "ja": "後ろ寄りの狭い母音「う」。英語の oo より唇を丸めない。"
       },
       "example": {
         "word": "うみ",
         "romanization": "umi",
-        "meaningEn": "sea"
+        "meaningEn": "sea",
+        "meaningJa": "海"
       }
     },
     {
@@ -80,12 +86,14 @@
         "pitch": "unknown"
       },
       "description": {
-        "en": "Mid front vowel “eh”, as in get."
+        "en": "Mid front vowel “eh”, as in get.",
+        "ja": "前寄りの中段母音「え」。get の e に近い。"
       },
       "example": {
         "word": "えき",
         "romanization": "eki",
-        "meaningEn": "station"
+        "meaningEn": "station",
+        "meaningJa": "駅"
       }
     },
     {
@@ -102,12 +110,14 @@
         "pitch": "unknown"
       },
       "description": {
-        "en": "Mid back vowel “oh”, pure (not a diphthong)."
+        "en": "Mid back vowel “oh”, pure (not a diphthong).",
+        "ja": "後ろ寄りの中段母音「お」。二重母音にしない。"
       },
       "example": {
         "word": "おと",
         "romanization": "oto",
-        "meaningEn": "sound"
+        "meaningEn": "sound",
+        "meaningJa": "音"
       }
     }
   ]

@@ -30,8 +30,9 @@ func (ls *LearnStore) ListBySet(ctx context.Context, setID string) ([]learn.Char
 	_ = ctx
 	rows, err := ls.s.SQL.Query(`
 		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status,
-			COALESCE(description_en, ''), COALESCE(pronunciation_json, '{}'),
+			COALESCE(description_en, ''), COALESCE(description_ja, ''), COALESCE(pronunciation_json, '{}'),
 			COALESCE(example_word, ''), COALESCE(example_romanization, ''), COALESCE(example_meaning_en, ''),
+			COALESCE(example_meaning_ja, ''),
 			COALESCE(content_version, ''), COALESCE(trace_ref, ''),
 			created_at, updated_at
 		FROM characters WHERE set_id = ? ORDER BY sort_key
@@ -55,8 +56,9 @@ func (ls *LearnStore) getCharacter(ctx context.Context, id string) (*learn.Chara
 	_ = ctx
 	row := ls.s.SQL.QueryRow(`
 		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status,
-			COALESCE(description_en, ''), COALESCE(pronunciation_json, '{}'),
+			COALESCE(description_en, ''), COALESCE(description_ja, ''), COALESCE(pronunciation_json, '{}'),
 			COALESCE(example_word, ''), COALESCE(example_romanization, ''), COALESCE(example_meaning_en, ''),
+			COALESCE(example_meaning_ja, ''),
 			COALESCE(content_version, ''), COALESCE(trace_ref, ''),
 			created_at, updated_at
 		FROM characters WHERE id = ?
@@ -79,8 +81,8 @@ type characterScanner interface {
 func scanCharacter(row characterScanner, c *learn.Character) error {
 	return row.Scan(
 		&c.ID, &c.SetID, &c.Glyph, &c.Romanization, &c.StrokeCount, &c.SortKey, &c.Status,
-		&c.DescriptionEn, &c.PronunciationJSON,
-		&c.ExampleWord, &c.ExampleRomanization, &c.ExampleMeaningEn,
+		&c.DescriptionEn, &c.DescriptionJa, &c.PronunciationJSON,
+		&c.ExampleWord, &c.ExampleRomanization, &c.ExampleMeaningEn, &c.ExampleMeaningJa,
 		&c.ContentVersion, &c.TraceRef,
 		&c.CreatedAt, &c.UpdatedAt,
 	)
@@ -89,11 +91,11 @@ func scanCharacter(row characterScanner, c *learn.Character) error {
 func (ls *LearnStore) GetPublished(ctx context.Context, id string) (*learn.Lesson, error) {
 	_ = ctx
 	row := ls.s.SQL.QueryRow(`
-		SELECT id, code, title, set_id, sort_order, status, created_at, updated_at
+		SELECT id, code, title, COALESCE(title_ja, ''), set_id, sort_order, status, created_at, updated_at
 		FROM lessons WHERE id = ? AND status = ?
 	`, id, learn.LessonStatusPublished)
 	var l learn.Lesson
-	if err := row.Scan(&l.ID, &l.Code, &l.Title, &l.SetID, &l.SortOrder, &l.Status, &l.CreatedAt, &l.UpdatedAt); err != nil {
+	if err := row.Scan(&l.ID, &l.Code, &l.Title, &l.TitleJa, &l.SetID, &l.SortOrder, &l.Status, &l.CreatedAt, &l.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, learn.ErrNotFound
 		}

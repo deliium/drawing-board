@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { readLogicalCanvasSize } from '../../canvas/layout'
+import { useLocale } from '../../composables/useLocale'
 import { hiragana5Traces, type TracePoint } from '../../curriculum/hiragana5'
 
 const props = defineProps<{
@@ -10,6 +12,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   done: []
 }>()
+
+const { t } = useLocale()
 
 const isDev =
   typeof import.meta !== 'undefined' &&
@@ -22,16 +26,23 @@ function orderDebug(...args: unknown[]) {
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const strokeIndex = ref(0)
 const reducedMotion = ref(false)
-const cssSize = 280
 
 const entry = computed(() => hiragana5Traces.characters.find((c) => c.glyph === props.glyph))
+const ariaLabel = computed(() => t('canvas.strokeOrder', { glyph: props.glyph }))
 
 let raf = 0
 let cancelled = false
+let media: MediaQueryList | null = null
 
 function prefersReduced(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function cssSize(): number {
+  const logical = readLogicalCanvasSize(canvasRef.value)
+  if (logical) return Math.min(logical.width, logical.height)
+  return 300
 }
 
 function paint(upTo: number, progressWithin = 1) {
@@ -40,13 +51,14 @@ function paint(upTo: number, progressWithin = 1) {
   if (!canvas || !strokes) return
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+  const size = cssSize()
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
-  canvas.width = Math.round(cssSize * dpr)
-  canvas.height = Math.round(cssSize * dpr)
+  canvas.width = Math.round(size * dpr)
+  canvas.height = Math.round(size * dpr)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.clearRect(0, 0, cssSize, cssSize)
+  ctx.clearRect(0, 0, size, size)
 
-  ctx.strokeStyle = 'rgba(51, 65, 85, 0.95)'
+  ctx.strokeStyle = 'rgba(30, 41, 59, 0.95)'
   ctx.lineWidth = 3
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
@@ -59,17 +71,17 @@ function paint(upTo: number, progressWithin = 1) {
     const pts = complete ? stroke : sliceStroke(stroke, progressWithin)
     if (!pts.length) continue
     ctx.beginPath()
-    ctx.moveTo(pts[0].x * cssSize, pts[0].y * cssSize)
+    ctx.moveTo(pts[0].x * size, pts[0].y * size)
     for (let j = 1; j < pts.length; j++) {
-      ctx.lineTo(pts[j].x * cssSize, pts[j].y * cssSize)
+      ctx.lineTo(pts[j].x * size, pts[j].y * size)
     }
     ctx.stroke()
   }
 }
 
-function sliceStroke(stroke: TracePoint[], t: number): TracePoint[] {
+function sliceStroke(stroke: TracePoint[], tFrac: number): TracePoint[] {
   if (stroke.length <= 1) return stroke
-  const target = Math.max(1, Math.ceil(stroke.length * Math.min(1, Math.max(0, t))))
+  const target = Math.max(1, Math.ceil(stroke.length * Math.min(1, Math.max(0, tFrac))))
   return stroke.slice(0, target)
 }
 
@@ -118,8 +130,22 @@ function skip() {
   emit('done')
 }
 
+function onMotionChange() {
+  reducedMotion.value = prefersReduced()
+  if (reducedMotion.value) {
+    cancelled = true
+    paintFinal()
+    emit('done')
+  }
+}
+
 onMounted(() => {
   reducedMotion.value = prefersReduced()
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    media.addEventListener?.('change', onMotionChange)
+    media.addListener?.(onMotionChange)
+  }
   void runAnimation()
 })
 
@@ -134,22 +160,20 @@ watch(
 onUnmounted(() => {
   cancelled = true
   if (raf) cancelAnimationFrame(raf)
+  if (media) {
+    media.removeEventListener?.('change', onMotionChange)
+    media.removeListener?.(onMotionChange)
+  }
 })
 
-defineExpose({ skip, paintFinal })
+defineExpose({ skip, paintFinal, reducedMotion })
 </script>
 
 <template>
   <div class="player">
-    <canvas
-      ref="canvasRef"
-      class="canvas"
-      :width="cssSize"
-      :height="cssSize"
-      :aria-label="`Stroke order for ${glyph}`"
-    />
-    <p v-if="reducedMotion" class="hint">Motion reduced — showing final strokes. You can continue.</p>
-    <button type="button" class="linkish" @click="skip">Skip</button>
+    <canvas ref="canvasRef" class="canvas" :aria-label="ariaLabel" />
+    <p v-if="reducedMotion" class="hint">{{ t('strokeOrder.reduced') }}</p>
+    <button type="button" class="linkish" @click="skip">{{ t('strokeOrder.skip') }}</button>
   </div>
 </template>
 
@@ -158,26 +182,31 @@ defineExpose({ skip, paintFinal })
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
+
 .canvas {
-  width: 280px;
-  height: 280px;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
+  width: var(--canvas-size);
+  height: var(--canvas-size);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
 }
+
 .hint {
   margin: 0;
   font-size: 0.9rem;
-  opacity: 0.75;
+  color: var(--ink-muted);
 }
+
 .linkish {
   background: none;
   border: none;
-  color: #334155;
+  color: var(--ink-muted);
   text-decoration: underline;
   cursor: pointer;
-  padding: 4px;
+  min-height: var(--touch-min);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
 }
 </style>

@@ -66,13 +66,15 @@ describe('auth routes', () => {
 
 describe('auth page source', () => {
   it('exposes sign-in and create-account modes with accessible labels', () => {
-    expect(loginPageSource).toContain('Create account')
-    expect(loginPageSource).toContain('Sign in')
+    expect(loginPageSource).toContain("t('auth.tab.register')")
+    expect(loginPageSource).toContain("t('auth.tab.login')")
     expect(loginPageSource).toContain('for="auth-email"')
     expect(loginPageSource).toContain('autocomplete="email"')
     expect(loginPageSource).toContain('current-password')
     expect(loginPageSource).toContain('new-password')
     expect(loginPageSource).toContain('role="alert"')
+    expect(loginPageSource).toContain('aria-controls="auth-panel"')
+    expect(loginPageSource).toContain('role="tablist"')
   })
 })
 

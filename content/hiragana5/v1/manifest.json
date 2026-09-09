@@ -5,13 +5,14 @@
   "characterCount": 5,
   "schemaVersion": 1,
   "reviewStatus": "published",
-  "contentHash": "e3700b109ab84943d91c56af1aba1e9961fde28f72bfc7d4d5630a839f7203b1",
+  "contentHash": "9a08f545aeee4765dc636f32e2e2b8910a9962f4be981f7aa8ad1dbf5d738d57",
   "licenses": [
     "LICENSES.md"
   ],
   "lesson": {
     "id": "lesson:hiragana5",
     "code": "hiragana5",
-    "title": "Hiragana vowels (あいうえお)"
+    "title": "Hiragana vowels (あいうえお)",
+    "titleJa": "ひらがな母音（あいうえお）"
   }
 }

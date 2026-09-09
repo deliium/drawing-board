@@ -35,10 +35,12 @@ type Character struct {
 	SortKey             int
 	Status              string
 	DescriptionEn       string
+	DescriptionJa       string
 	PronunciationJSON   string
 	ExampleWord         string
 	ExampleRomanization string
 	ExampleMeaningEn    string
+	ExampleMeaningJa    string
 	ContentVersion      string
 	TraceRef            string
 	CreatedAt           time.Time
@@ -50,6 +52,7 @@ type Lesson struct {
 	ID        string
 	Code      string
 	Title     string
+	TitleJa   string
 	SetID     string
 	SortOrder int
 	Status    string

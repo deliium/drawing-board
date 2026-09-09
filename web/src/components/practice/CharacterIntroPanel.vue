@@ -1,28 +1,57 @@
 <script setup lang="ts">
-import type { LessonCharacter } from '../services/curriculumApi'
+import { computed } from 'vue'
+import { useLocale } from '../../composables/useLocale'
+import type { LessonCharacter } from '../../services/curriculumApi'
 
-defineProps<{
+const props = defineProps<{
   character: LessonCharacter
 }>()
+
+const { t, locale } = useLocale()
+
+const description = computed(() => {
+  void locale.value
+  if (locale.value === 'ja' && props.character.descriptionJa) {
+    return props.character.descriptionJa
+  }
+  return props.character.descriptionEn
+})
+
+const meaning = computed(() => {
+  void locale.value
+  if (locale.value === 'ja' && props.character.example.meaningJa) {
+    return props.character.example.meaningJa
+  }
+  return props.character.example.meaningEn
+})
+
+const strokesLabel = computed(() => t('intro.strokes', { count: props.character.strokeCount }))
 </script>
 
 <template>
-  <section class="intro" aria-label="Character introduction">
+  <section class="intro" :aria-label="t('intro.aria')">
     <p class="glyph" lang="ja">{{ character.glyph }}</p>
     <p class="meta">
-      <span>{{ character.romanization }}</span>
-      <span v-if="character.pronunciation?.ipa" class="muted">
+      <span :lang="locale === 'ja' ? 'en' : undefined">{{ character.romanization }}</span>
+      <span v-if="character.pronunciation?.ipa" class="muted" lang="en">
         {{ character.pronunciation.ipa }}
       </span>
       <span v-if="character.pronunciation?.jaHint" class="muted" lang="ja">
         {{ character.pronunciation.jaHint }}
       </span>
     </p>
-    <p class="meta">{{ character.strokeCount }} strokes</p>
-    <p v-if="character.descriptionEn" class="desc">{{ character.descriptionEn }}</p>
-    <p class="example" lang="ja">
-      Example: {{ character.example.word }}
-      <span class="muted">({{ character.example.romanization }} — {{ character.example.meaningEn }})</span>
+    <p class="meta">{{ strokesLabel }}</p>
+    <p v-if="description" class="desc" :lang="locale === 'ja' && character.descriptionJa ? 'ja' : 'en'">
+      {{ description }}
+    </p>
+    <p class="example">
+      <span>{{ t('intro.example') }}</span>
+      <span lang="ja"> {{ character.example.word }}</span>
+      <span class="muted">
+        (<span :lang="locale === 'ja' ? 'en' : undefined">{{ character.example.romanization }}</span>
+        —
+        <span :lang="locale === 'ja' && character.example.meaningJa ? 'ja' : 'en'">{{ meaning }}</span>)
+      </span>
     </p>
   </section>
 </template>
@@ -30,30 +59,35 @@ defineProps<{
 <style scoped>
 .intro {
   text-align: center;
-  padding: 12px 8px;
+  padding: var(--space-3) var(--space-2);
 }
+
 .glyph {
-  font-size: 4.5rem;
+  font-size: clamp(3rem, 18vw, 4.5rem);
   line-height: 1.1;
-  margin: 0 0 8px;
-  font-family: "Noto Sans JP", "Source Han Sans JP", sans-serif;
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-ja);
 }
+
 .meta {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
   display: flex;
-  gap: 10px;
+  gap: var(--space-3);
   justify-content: center;
   flex-wrap: wrap;
 }
+
 .desc {
   max-width: 36rem;
-  margin: 10px auto;
-  opacity: 0.9;
+  margin: var(--space-3) auto;
+  color: var(--ink);
 }
+
 .example {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
 }
+
 .muted {
-  opacity: 0.7;
+  color: var(--ink-muted);
 }
 </style>

@@ -7,6 +7,7 @@ import JourneyActions from '../components/practice/JourneyActions.vue'
 import JourneyStatusBanner from '../components/practice/JourneyStatusBanner.vue'
 import PracticeStageCanvas from '../components/practice/PracticeStageCanvas.vue'
 import StrokeOrderPlayer from '../components/practice/StrokeOrderPlayer.vue'
+import { useLocale } from '../composables/useLocale'
 import { usePracticeJourney } from '../composables/usePracticeJourney'
 import type { Stroke } from '../services/strokeSync'
 
@@ -15,6 +16,7 @@ const isDev =
   Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
 
 const route = useRoute()
+const { t } = useLocale()
 
 const characterId = computed(() => {
   const raw = route.params.characterId
@@ -31,6 +33,20 @@ const characterIdRef = ref(characterId.value)
 watch(characterId, (id) => {
   characterIdRef.value = id
 })
+
+const stageCanvasRef = ref<{
+  canvasRef?: HTMLCanvasElement | { value: HTMLCanvasElement | null } | null
+  getLogicalSize?: () => { width: number; height: number } | null
+} | null>(null)
+
+function readStageCanvasEl(): HTMLCanvasElement | null {
+  const exposed = stageCanvasRef.value
+  if (!exposed?.canvasRef) return null
+  const c = exposed.canvasRef
+  if (c instanceof HTMLCanvasElement) return c
+  if (typeof c === 'object' && c && 'value' in c) return c.value
+  return null
+}
 
 const {
   stage,
@@ -54,7 +70,11 @@ const {
   complete,
   cancelPractice,
   onStrokesChanged,
-} = usePracticeJourney({ characterId: characterIdRef })
+} = usePracticeJourney({
+  characterId: characterIdRef,
+  getLogicalSize: () => stageCanvasRef.value?.getLogicalSize?.() ?? null,
+  getCanvasElement: () => readStageCanvasEl(),
+})
 
 onMounted(() => {
   if (isDev) console.debug('[PracticeCharacterPage] mount', characterId.value)
@@ -91,8 +111,8 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
 <template>
   <div class="page">
     <header class="top">
-      <router-link to="/practice" class="quiet">← Lesson</router-link>
-      <router-link to="/" class="quiet">Free board</router-link>
+      <router-link to="/practice" class="quiet">{{ t('practice.backLesson') }}</router-link>
+      <router-link to="/" class="quiet">{{ t('nav.board') }}</router-link>
     </header>
 
     <JourneyStatusBanner :stage="stage" :banner="banner" :soft-warn="softWarn" />
@@ -100,7 +120,7 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
     <template v-if="stage === 'error'">
       <JourneyActions stage="error">
         <template #error-actions>
-          <button type="button" class="primary" @click="load()">Retry load</button>
+          <button type="button" class="primary" @click="load()">{{ t('practice.retryLoad') }}</button>
         </template>
       </JourneyActions>
     </template>
@@ -115,6 +135,7 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
 
       <PracticeStageCanvas
         v-if="showCanvas"
+        ref="stageCanvasRef"
         :mode="canvasMode"
         :glyph="character.glyph"
         :strokes="strokes"
@@ -130,7 +151,7 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
         :feedback="feedback"
       />
 
-      <p v-if="stage === 'complete'" class="done">Completed.</p>
+      <p v-if="stage === 'complete'" class="done">{{ t('practice.completed') }}</p>
 
       <JourneyActions
         :stage="stage"
@@ -153,9 +174,9 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
             class="primary-link"
             :to="`/practice/${encodeURIComponent(nextCharacterId)}`"
           >
-            Next character
+            {{ t('practice.nextCharacter') }}
           </router-link>
-          <router-link to="/practice" class="quiet">Back to lesson</router-link>
+          <router-link to="/practice" class="quiet">{{ t('practice.backToLesson') }}</router-link>
         </template>
       </JourneyActions>
     </template>
@@ -164,41 +185,58 @@ const alreadyPassed = computed(() => progress.value?.status === 'passed')
 
 <style scoped>
 .page {
-  max-width: 40rem;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 12px 16px 32px;
+  padding: var(--space-3) 0 var(--space-5);
 }
+
 .top {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
+
 .quiet {
-  color: #475569;
+  color: var(--ink-muted);
   text-decoration: none;
   font-size: 0.95rem;
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
 }
+
 .quiet:hover {
   text-decoration: underline;
+  color: var(--ink);
 }
+
 .done {
   text-align: center;
-  margin: 24px 0 8px;
+  margin: var(--space-5) 0 var(--space-2);
 }
+
 .primary {
-  padding: 8px 14px;
-  border: 1px solid #1e293b;
-  background: #1e293b;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--accent);
+  background: var(--accent);
   color: #f8fafc;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  font: inherit;
 }
+
 .primary-link {
-  display: inline-block;
-  padding: 8px 14px;
-  background: #1e293b;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  background: var(--accent);
   color: #f8fafc;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   text-decoration: none;
+  font-weight: 600;
 }
 </style>

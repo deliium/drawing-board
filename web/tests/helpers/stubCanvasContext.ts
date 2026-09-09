@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 
 /** Minimal 2d context so jsdom overlay/canvas mounts do not emit not-implemented noise. */
-export function stubCanvasContext(): ReturnType<typeof vi.spyOn> {
+export function stubCanvasContext(): { mockRestore: () => void } {
   const ctx = {
     clearRect: vi.fn(),
     beginPath: vi.fn(),

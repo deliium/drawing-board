@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useLocale } from '../composables/useLocale'
 import { apiFetch, type ApiError } from '../services/apiClient'
 import { setAuthenticatedUser } from '../services/sessionContext'
 
@@ -11,6 +12,7 @@ const props = withDefaults(
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useLocale()
 
 const isDev =
   typeof import.meta !== 'undefined' &&
@@ -29,8 +31,12 @@ const fieldErrors = ref<{ email?: string; password?: string }>({})
 const formError = ref('')
 const submitting = ref(false)
 
-const heading = computed(() => (mode.value === 'login' ? 'Sign in' : 'Create account'))
-const submitLabel = computed(() => (mode.value === 'login' ? 'Sign in' : 'Create account'))
+const heading = computed(() =>
+  mode.value === 'login' ? t('auth.heading.login') : t('auth.heading.register'),
+)
+const submitLabel = computed(() =>
+  mode.value === 'login' ? t('auth.submit.login') : t('auth.submit.register'),
+)
 const passwordAutocomplete = computed(() =>
   mode.value === 'login' ? 'current-password' : 'new-password',
 )
@@ -53,15 +59,10 @@ watch(
   },
 )
 
-const ERROR_COPY: Record<string, string> = {
-  bad_json: 'Something went wrong. Try again.',
-  missing_fields: 'Enter email and password.',
-  invalid_email: 'Enter a valid email address.',
-  password_too_short: 'Password must be at least 8 characters.',
-  password_too_long: 'Password must be at most 72 bytes.',
-  registration_failed: 'Unable to create account. If you already have one, sign in.',
-  invalid_credentials: 'Email or password is incorrect.',
-  csrf_rejected: 'Security check failed. Refresh the page and try again.',
+function errorCopy(code: string): string {
+  const key = `auth.error.${code}`
+  const translated = t(key)
+  return translated === key ? t('auth.error.server') : translated
 }
 
 const maxPasswordBytes = 72
@@ -87,27 +88,27 @@ function validateClient(): boolean {
   const next: { email?: string; password?: string } = {}
   const trimmed = email.value.trim()
   if (!trimmed || !password.value) {
-    formError.value = ERROR_COPY.missing_fields
-    if (!trimmed) next.email = ERROR_COPY.missing_fields
-    if (!password.value) next.password = ERROR_COPY.missing_fields
+    formError.value = errorCopy('missing_fields')
+    if (!trimmed) next.email = errorCopy('missing_fields')
+    if (!password.value) next.password = errorCopy('missing_fields')
     fieldErrors.value = next
     return false
   }
   if (!validEmail(trimmed.toLowerCase())) {
-    next.email = ERROR_COPY.invalid_email
-    formError.value = ERROR_COPY.invalid_email
+    next.email = errorCopy('invalid_email')
+    formError.value = errorCopy('invalid_email')
     fieldErrors.value = next
     return false
   }
   if (password.value.length < 8) {
-    next.password = ERROR_COPY.password_too_short
-    formError.value = ERROR_COPY.password_too_short
+    next.password = errorCopy('password_too_short')
+    formError.value = errorCopy('password_too_short')
     fieldErrors.value = next
     return false
   }
   if (passwordByteLength(password.value) > maxPasswordBytes) {
-    next.password = ERROR_COPY.password_too_long
-    formError.value = ERROR_COPY.password_too_long
+    next.password = errorCopy('password_too_long')
+    formError.value = errorCopy('password_too_long')
     fieldErrors.value = next
     return false
   }
@@ -126,18 +127,38 @@ function setMode(next: AuthMode) {
   }
 }
 
+function onTabKeydown(e: KeyboardEvent, current: AuthMode) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') {
+    return
+  }
+  e.preventDefault()
+  if (e.key === 'Home') {
+    setMode('login')
+    return
+  }
+  if (e.key === 'End') {
+    setMode('register')
+    return
+  }
+  setMode(current === 'login' ? 'register' : 'login')
+}
+
 function mapApiError(err: unknown): string {
   const apiErr = err as ApiError
-  if (apiErr?.code && ERROR_COPY[apiErr.code]) {
-    return ERROR_COPY[apiErr.code]
+  if (apiErr?.code) {
+    const mapped = errorCopy(apiErr.code)
+    if (mapped !== t('auth.error.server') || apiErr.code === 'server') {
+      const key = `auth.error.${apiErr.code}`
+      if (t(key) !== key) return mapped
+    }
   }
   if (apiErr?.status && apiErr.status >= 500) {
-    return 'Unable to reach the server. Try again.'
+    return t('auth.error.server')
   }
   if (typeof apiErr?.message === 'string' && apiErr.message && !apiErr.message.startsWith('Request failed:')) {
     return apiErr.message
   }
-  return 'Unable to reach the server. Try again.'
+  return t('auth.error.server')
 }
 
 async function submit() {
@@ -174,35 +195,50 @@ async function submit() {
 
 <template>
   <div class="auth-page">
-    <form class="auth-form" @submit.prevent="submit" :aria-busy="submitting">
+    <form
+      id="auth-panel"
+      class="auth-form"
+      role="tabpanel"
+      :aria-labelledby="mode === 'login' ? 'auth-tab-login' : 'auth-tab-register'"
+      @submit.prevent="submit"
+      :aria-busy="submitting"
+    >
       <h1 class="auth-heading">{{ heading }}</h1>
-      <p class="auth-lede">Private Japanese handwriting practice for your account.</p>
+      <p class="auth-lede">{{ t('auth.lede') }}</p>
 
-      <div class="auth-modes" role="tablist" aria-label="Authentication mode">
+      <div class="auth-modes" role="tablist" :aria-label="t('auth.tablist')">
         <button
+          id="auth-tab-login"
           type="button"
           role="tab"
           class="auth-mode"
           :aria-selected="mode === 'login'"
+          aria-controls="auth-panel"
+          :tabindex="mode === 'login' ? 0 : -1"
           :class="{ active: mode === 'login' }"
           @click="setMode('login')"
+          @keydown="onTabKeydown($event, 'login')"
         >
-          Sign in
+          {{ t('auth.tab.login') }}
         </button>
         <button
+          id="auth-tab-register"
           type="button"
           role="tab"
           class="auth-mode"
           :aria-selected="mode === 'register'"
+          aria-controls="auth-panel"
+          :tabindex="mode === 'register' ? 0 : -1"
           :class="{ active: mode === 'register' }"
           @click="setMode('register')"
+          @keydown="onTabKeydown($event, 'register')"
         >
-          Create account
+          {{ t('auth.tab.register') }}
         </button>
       </div>
 
       <div class="auth-field">
-        <label for="auth-email">Email</label>
+        <label for="auth-email">{{ t('auth.email') }}</label>
         <input
           id="auth-email"
           v-model="email"
@@ -221,7 +257,7 @@ async function submit() {
       </div>
 
       <div class="auth-field">
-        <label for="auth-password">Password</label>
+        <label for="auth-password">{{ t('auth.password') }}</label>
         <input
           id="auth-password"
           v-model="password"
@@ -242,11 +278,16 @@ async function submit() {
       <p v-if="formError" class="auth-alert" role="alert">{{ formError }}</p>
 
       <button class="auth-submit" type="submit" :disabled="submitting">
-        {{ submitting ? 'Please wait…' : submitLabel }}
+        {{ submitting ? t('auth.submitting') : submitLabel }}
       </button>
 
-      <p v-if="mode === 'register' && formError.includes('already have one')" class="auth-switch-hint">
-        <button type="button" class="auth-link" @click="setMode('login')">Switch to Sign in</button>
+      <p
+        v-if="mode === 'register' && (formError.includes('already have one') || formError.includes('既にある'))"
+        class="auth-switch-hint"
+      >
+        <button type="button" class="auth-link" @click="setMode('login')">
+          {{ t('auth.switchLogin') }}
+        </button>
       </p>
     </form>
   </div>
@@ -254,35 +295,34 @@ async function submit() {
 
 <style scoped>
 .auth-page {
-  min-height: calc(100vh - 48px);
+  min-height: calc(100dvh - 5rem);
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 24px 16px 48px;
-  background: linear-gradient(160deg, #f0f4f8 0%, #e2e8f0 48%, #dbe4ee 100%);
+  padding: var(--space-5) var(--space-4) var(--space-5);
 }
 
 .auth-form {
   width: min(100%, 420px);
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 28px 22px;
-  border: 1px solid #c5d0db;
-  background: rgba(255, 255, 255, 0.88);
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--paper-raised) 92%, transparent);
 }
 
 .auth-heading {
   margin: 0;
-  font-family: "IBM Plex Serif", "Source Serif 4", "Noto Serif JP", Georgia, serif;
   font-size: 1.75rem;
   font-weight: 600;
-  color: #1a2332;
+  color: var(--ink);
 }
 
 .auth-lede {
   margin: 0;
-  color: #4a5568;
+  color: var(--ink-muted);
   font-size: 0.95rem;
   line-height: 1.4;
 }
@@ -290,62 +330,65 @@ async function submit() {
 .auth-modes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .auth-mode {
-  min-height: 44px;
-  border: 1px solid #9aa8b8;
+  min-height: var(--touch-min);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #1a2332;
+  color: var(--ink);
   font: inherit;
   cursor: pointer;
 }
 
 .auth-mode.active {
-  background: #1a2332;
-  color: #f5f8fb;
-  border-color: #1a2332;
+  background: var(--ink);
+  color: var(--paper-raised);
+  border-color: var(--ink);
 }
 
 .auth-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .auth-field label {
   font-size: 0.9rem;
-  color: #1a2332;
+  color: var(--ink);
 }
 
 .auth-field input {
-  min-height: 44px;
+  min-height: var(--touch-min);
   padding: 10px 12px;
-  border: 1px solid #9aa8b8;
-  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
   font: inherit;
   width: 100%;
-  box-sizing: border-box;
+  color: var(--ink);
 }
 
 .auth-field-error {
   margin: 0;
-  color: #9b1c1c;
+  color: var(--danger);
   font-size: 0.85rem;
 }
 
 .auth-alert {
   margin: 0;
-  color: #9b1c1c;
+  color: var(--danger);
   font-size: 0.95rem;
 }
 
 .auth-submit {
   min-height: 48px;
   border: none;
-  background: #1f6f8b;
-  color: #f5f8fb;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #f8fafc;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -364,10 +407,10 @@ async function submit() {
 .auth-link {
   background: none;
   border: none;
-  color: #1f6f8b;
+  color: var(--accent);
   text-decoration: underline;
   font: inherit;
   cursor: pointer;
-  min-height: 44px;
+  min-height: var(--touch-min);
 }
 </style>

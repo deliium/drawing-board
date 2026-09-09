@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { logicalSizeForRecognize } from '../canvas/coords'
+import { resolveSubmitLogicalSize } from '../canvas/layout'
 import { hitTest } from '../canvas/hitTest'
+import { useLocale } from '../composables/useLocale'
 import { usePracticeCanvas } from '../composables/usePracticeCanvas'
 import { apiFetch } from '../services/apiClient'
 import { trackMetric } from '../services/migrationHealth'
@@ -26,6 +27,7 @@ type Assessment = {
 type StrokesListResponse = { boardRev: number; strokes: Stroke[] }
 
 const router = useRouter()
+const { t } = useLocale()
 
 const wsDebug =
   typeof import.meta !== 'undefined' &&
@@ -42,14 +44,6 @@ function newOpId(): string {
   return `op-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-const statusLabels: Record<SyncStatus, string> = {
-  connecting: 'Connecting…',
-  saving: 'Saving…',
-  saved: 'Saved',
-  offline: 'Offline — retrying…',
-  error: 'Sync error',
-}
-
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const color = ref('#1d4ed8')
 const width = ref(4)
@@ -64,7 +58,20 @@ const recognizeAttempt = ref(0)
 const user = computed(() => sessionContext.user)
 const canvasEnabled = computed(() => Boolean(user.value))
 const clientId = Math.random().toString(36).slice(2)
-const statusLabel = computed(() => statusLabels[syncStatus.value])
+
+const statusLabel = computed(() => {
+  const key = `board.sync.${syncStatus.value}` as const
+  return t(key)
+})
+
+const assessmentLabel = computed(() => {
+  const a = assessment.value
+  if (!a) return ''
+  const score = a.score.toFixed(2)
+  return a.pass
+    ? t('board.targetPass', { target: a.target, score })
+    : t('board.targetFail', { target: a.target, score })
+})
 
 const ws = createWsClient({
   onMessage: (msg: InboundAppMessage) => {
@@ -246,8 +253,11 @@ const practiceCanvas = usePracticeCanvas({
 async function recognize() {
   const canvas = canvasRef.value
   if (!canvas || !recognizeEnabled.value) return
-  const logical =
-    practiceCanvas.getLogicalSize() ?? logicalSizeForRecognize(canvas)
+  const logical = resolveSubmitLogicalSize({
+    fromComposable: practiceCanvas.getLogicalSize(),
+    canvas,
+    reason: 'recognize',
+  })
   const requestedRev = ws.getBoardRev()
   const attempt = ++recognizeAttempt.value
   recognizeInFlight.value = true
@@ -331,69 +341,234 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
 })
+
 </script>
 
 <template>
-  <div style="height: 100vh; display: grid; grid-template-rows: auto auto 1fr">
-    <header style="padding: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
-      <b>Japanese Handwriting Practice</b>
-      <router-link to="/practice" style="color: #475569; text-decoration: none; font-size: 0.95rem"
-        >Practice hiragana</router-link
+  <div class="board-page">
+    <div class="toolbar">
+      <label class="field">
+        <span>{{ t('board.color') }}</span>
+        <input v-model="color" type="color" :disabled="tool !== 'pencil'" :aria-label="t('board.color')" />
+      </label>
+      <label class="field">
+        <span>{{ t('board.width') }}</span>
+        <input
+          v-model.number="width"
+          type="range"
+          min="1"
+          max="20"
+          :aria-label="t('board.width')"
+        />
+      </label>
+      <div class="tools" role="radiogroup" :aria-label="t('board.tools')">
+        <button
+          type="button"
+          role="radio"
+          class="tool"
+          :aria-checked="tool === 'pencil'"
+          :class="{ active: tool === 'pencil' }"
+          @click="tool = 'pencil'"
+        >
+          {{ t('board.pencil') }}
+        </button>
+        <button
+          type="button"
+          role="radio"
+          class="tool"
+          :aria-checked="tool === 'eraser'"
+          :class="{ active: tool === 'eraser' }"
+          @click="tool = 'eraser'"
+        >
+          {{ t('board.eraser') }}
+        </button>
+      </div>
+      <button type="button" class="action" :disabled="strokes.length === 0" @click="doUndo">
+        {{ t('board.undo') }}
+      </button>
+      <span
+        class="sync"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        :data-sync-status="syncStatus"
       >
-      <label>
-        Color
-        <input v-model="color" type="color" :disabled="tool !== 'pencil'" />
-      </label>
-      <label>
-        Width
-        <input v-model="width" type="range" min="1" max="20" />
-      </label>
-      <button :disabled="tool === 'pencil'" @click="tool = 'pencil'">Pencil</button>
-      <button :disabled="tool === 'eraser'" @click="tool = 'eraser'">Eraser</button>
-      <button :disabled="strokes.length === 0" @click="doUndo">Undo</button>
-      <span style="margin-left: auto; opacity: 0.7" :data-sync-status="syncStatus">
         {{ statusLabel }}
       </span>
-      <button :disabled="clearInFlight || syncStatus === 'error'" @click="doClear">Clear</button>
-      <button @click="doLogout">Logout</button>
-    </header>
-
-    <div style="padding: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
-      <button :disabled="!recognizeEnabled" @click="recognize">
-        {{ recognizeInFlight ? 'Recognizing…' : 'Recognize' }}
+      <button
+        type="button"
+        class="action"
+        :disabled="clearInFlight || syncStatus === 'error'"
+        @click="doClear"
+      >
+        {{ t('board.clear') }}
       </button>
-      <span style="opacity: 0.7; font-size: 0.9em">Match scores (heuristic ranking, not confidence)</span>
-      <div v-if="assessment" style="opacity: 0.85; font-size: 0.9em">
-        Target {{ assessment.target }}:
-        {{ assessment.pass ? 'pass' : 'no pass' }}
-        (match score {{ assessment.score.toFixed(2) }})
+      <button type="button" class="action" @click="doLogout">{{ t('board.logout') }}</button>
+    </div>
+
+    <div class="recognize-row">
+      <button type="button" class="primary" :disabled="!recognizeEnabled" @click="recognize">
+        {{ recognizeInFlight ? t('board.recognizing') : t('board.recognize') }}
+      </button>
+      <span class="hint">{{ t('board.matchHint') }}</span>
+      <div v-if="assessment" class="assessment" role="status" aria-live="polite">
+        {{ assessmentLabel }}
       </div>
-      <div v-if="candidates && candidates.length > 0" style="display: flex; gap: 8px; flex-wrap: wrap">
+      <div v-if="candidates && candidates.length > 0" class="candidates">
         <span
           v-for="(c, i) in candidates"
           :key="i"
+          class="chip"
           :title="`match score ${c.score}`"
-          style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px"
+          lang="ja"
         >
           {{ c.text }}
         </span>
       </div>
-      <span v-else-if="candidates && candidates.length === 0">No candidates</span>
+      <span v-else-if="candidates && candidates.length === 0">{{ t('board.noCandidates') }}</span>
     </div>
 
-    <div style="position: relative; display: flex; justify-content: center; align-items: center; padding: 20px">
+    <div class="stage">
       <canvas
         ref="canvasRef"
-        style="
-          width: 300px;
-          height: 300px;
-          touch-action: none;
-          background: #fff;
-          border: 2px solid #333;
-          border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        "
+        class="board-canvas"
+        :aria-label="t('board.canvasLabel')"
       />
     </div>
   </div>
 </template>
+
+<style scoped>
+.board-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: calc(100dvh - 5rem);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-min);
+  font-size: 0.95rem;
+}
+
+.field input[type='color'] {
+  width: var(--touch-min);
+  height: var(--touch-min);
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  cursor: pointer;
+}
+
+.field input[type='range'] {
+  width: 7rem;
+  min-height: var(--touch-min);
+}
+
+.tools {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.tool,
+.action,
+.primary {
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tool.active {
+  background: var(--ink);
+  color: var(--paper-raised);
+  border-color: var(--ink);
+}
+
+.primary {
+  background: var(--accent);
+  color: #f8fafc;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.primary:disabled,
+.action:disabled,
+.tool:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sync {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+.recognize-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.hint {
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.assessment {
+  font-size: 0.9rem;
+}
+
+.candidates {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.chip {
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  font-family: var(--font-ja);
+}
+
+.stage {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-4) 0;
+}
+
+.board-canvas {
+  width: var(--canvas-size);
+  height: var(--canvas-size);
+  touch-action: none;
+  background: var(--paper-raised);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+}
+</style>

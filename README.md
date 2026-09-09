@@ -11,6 +11,7 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 - **Undo functionality**: Ctrl+Z to undo last stroke
 - **Handwriting recognition**: deterministic target comparison for five hiragana (`あいうえお`) via guided practice UI + attempt APIs, plus free-board heuristic ranking with match scores (not a trained AI model)
 - **Guided practice journey**: `/#/practice` lesson hub and per-character stages (intro → stroke order → trace → free-write → assess → corrections)
+- **Responsive bilingual UI**: mobile-first practice-notebook layout, EN/JA locale preference (`localStorage`), shared fluid canvas sizing, and keyboard/SR-oriented result summaries
 - **Private stroke persistence**: drawings are scoped per user and restored only for that account
 
 ## Features
@@ -159,7 +160,21 @@ Registration and login are **not** on the board header; they live only on the pu
 - **Escape**: Cancel an in-progress pencil stroke (does not enqueue a create); same abort as `pointercancel`
 
 ### Practice canvas coordinates
-Stroke points are stored in **CSS logical pixels** relative to the canvas layout box. The backing store uses `devicePixelRatio` (`backing = round(css × dpr)`) with a matching 2d transform so drawing stays sharp on high-DPI displays without rewriting historical coordinates. Recognize POST `width`/`height` are the **logical CSS** size (matching stroke space), not backing-store pixels. One-point taps are persisted and rendered as dots and can be erased.
+Stroke points are stored in **CSS logical pixels** relative to the canvas layout box. The backing store uses `devicePixelRatio` (`backing = round(css × dpr)`) with a matching 2d transform so drawing stays sharp on high-DPI displays without rewriting historical coordinates. Practice and free-board canvases share CSS token `--canvas-size` (`min(92vw, min(70dvh, 420px))`); submit/recognize `width`/`height` are the **live logical CSS** size from the layout box (never a stale 300 constant). One-point taps are persisted and rendered as dots and can be erased.
+
+### Locale (EN/JA)
+The SPA keeps a client-only preference in `localStorage` key `locale:v1` (`en` | `ja`; default EN, or JA when `navigator.language` starts with `ja`). Toggle lives in the app shell. `document.documentElement.lang` tracks the preference. Japanese glyphs/examples keep `lang="ja"`; assessment API `feedback[].message` stays English for persistence — the UI displays corrections via a client map on `feedback[].code` (+ glyph context) with fallback to the API message. Curriculum pedagogy includes `descriptionJa` / `meaningJa` / `titleJa` from the reviewed pack.
+
+### Accessibility & responsive smoke
+Automated: `web/tests/integration/accessibility-parity.spec.ts` runs axe-core on Login, Practice hub, and result summary (zero serious/critical). Manual checklist (run on ≥1 real phone):
+
+| Check | Pass bar |
+|-------|----------|
+| Keyboard | Tab through shell → practice → submit; visible focus; Escape cancels in-progress stroke |
+| Zoom 200% | Auth + practice actions usable; no clipped primary buttons |
+| Screen reader | Stage banner and textual result summary announced; board tool radio state spoken |
+| Real device | Draw/trace works; login virtual keyboard does not permanently hide errors; canvas stays square |
+| Locale | Toggle EN↔JA; chrome + corrections + hub status switch; glyphs remain `lang=ja` |
 
 ## Advanced Setup
 
@@ -272,7 +287,7 @@ Authenticated GETs for the practice hub / journey (CSRF not required). Pedagogy 
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/lessons/{id}` | Published lesson only (`lesson:hiragana5`); characters include glyph, romanization, strokeCount, pronunciation JSON, example word |
+| `GET` | `/api/lessons/{id}` | Published lesson only (`lesson:hiragana5`); characters include glyph, romanization, strokeCount, pronunciation JSON, `descriptionEn`/`descriptionJa`, example word + `meaningEn`/`meaningJa`, lesson `title`/`titleJa` |
 | `GET` | `/api/progress` | `{ items:[{ characterId, status, attemptCount, passCount, … }] }`; optional `?lessonId=` / `?setId=` |
 
 `clientAttemptId` (optional, ≤36, same rules as WS `opId`): same user + same character/lesson → return existing attempt; mismatched reuse → `409 conflict`. Progress counters update on submit/assess as in the learning store.
@@ -584,4 +599,4 @@ ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in product
 Production `docker-compose.yml` sets `APP_ENV=production`, `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.
 
 ## License
-CC0 1.0 Universal — see `LICENSE` at the repository root. Curriculum stroke/trace data and short pedagogy glosses are also under CC0; see `content/hiragana5/LICENSES.md`. Display fonts (e.g. Noto) are **not** bundled.
+CC0 1.0 Universal — see `LICENSE` at the repository root. Curriculum stroke/trace data and short pedagogy glosses are also under CC0; see `content/hiragana5/LICENSES.md`. UI fonts under `web/public/fonts/` are **SIL Open Font License** subsets: IBM Plex Sans and Noto Sans JP (vendored from Fontsource builds for self-hosting; `font-display: swap`).

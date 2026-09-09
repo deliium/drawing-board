@@ -3,6 +3,7 @@ import { createApp, nextTick } from 'vue'
 import ComparisonOverlay from '../../src/components/practice/ComparisonOverlay.vue'
 import JourneyStatusBanner from '../../src/components/practice/JourneyStatusBanner.vue'
 import CharacterIntroPanel from '../../src/components/practice/CharacterIntroPanel.vue'
+import { initLocale, setLocale } from '../../src/i18n'
 import { stubCanvasContext } from '../helpers/stubCanvasContext'
 
 async function mount(Comp: object, props: Record<string, unknown>) {
@@ -26,6 +27,8 @@ describe('ComparisonOverlay', () => {
 
   beforeEach(() => {
     canvasSpy = stubCanvasContext()
+    initLocale()
+    setLocale('en')
   })
   afterEach(() => {
     canvasSpy.mockRestore()
@@ -83,7 +86,7 @@ describe('CharacterIntroPanel', () => {
       },
     })
     expect(m.text()).toContain('あ')
-    expect(m.text()).toContain('3 strokes')
+    expect(m.text()).toMatch(/3 strokes|3画/)
     expect(m.text()).toContain('あさ')
     expect(m.text()).toContain('morning')
     m.unmount()
