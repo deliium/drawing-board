@@ -335,8 +335,11 @@ onMounted(() => {
 
 <template>
   <div style="height: 100vh; display: grid; grid-template-rows: auto auto 1fr">
-    <header style="padding: 12px; display: flex; gap: 12px; align-items: center">
+    <header style="padding: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
       <b>Japanese Handwriting Practice</b>
+      <router-link to="/practice" style="color: #475569; text-decoration: none; font-size: 0.95rem"
+        >Practice hiragana</router-link
+      >
       <label>
         Color
         <input v-model="color" type="color" :disabled="tool !== 'pencil'" />
