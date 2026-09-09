@@ -13,6 +13,7 @@ import (
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/features"
 	"github.com/deliium/drawing-board/internal/httpapi"
 	"github.com/deliium/drawing-board/internal/limits"
 	"github.com/deliium/drawing-board/internal/recognize"
@@ -66,6 +67,12 @@ func main() {
 	log.Printf("INFO [main] schema_version=%d learn_seed=hiragana5 contentVersion=%s", schemaVer, db.Hiragana5ContentVersion())
 	learnStore := db.NewLearnStore(store)
 
+	feat, err := features.ParseFromEnv()
+	if err != nil {
+		log.Fatalf("FATAL [main] feature flags: %v", err)
+	}
+	features.LogStartup(feat, schemaVer)
+
 	sessionStore := sessions.NewCookieStore([]byte(*cookieKey))
 	sessionStore.Options = &sessions.Options{
 		Path:     "/",
@@ -90,6 +97,7 @@ func main() {
 		Recognizer:       recognizer,
 		Assessor:         recognizer,
 		RecognizeLimiter: limits.NewLimiter(limits.RecognizeRatePerMin, limits.RecognizeBurst),
+		Features:         &feat,
 	}
 	ws.Init(store, authSvc, allowedOrigins)
 
@@ -101,6 +109,7 @@ func main() {
 	r.HandleFunc("/api/logout", authSvc.Logout).Methods(http.MethodPost)
 	r.HandleFunc("/api/me", authSvc.Me).Methods(http.MethodGet)
 	r.HandleFunc("/api/csrf", security.IssueCSRFHandler(secureCookies)).Methods(http.MethodGet)
+	r.Handle("/api/features", authSvc.RequireAuth(http.HandlerFunc(api.GetFeatures))).Methods(http.MethodGet)
 
 	// Strokes endpoints
 	r.Handle("/api/strokes", authSvc.RequireAuth(http.HandlerFunc(api.ListStrokes))).Methods(http.MethodGet)
@@ -109,20 +118,20 @@ func main() {
 	// Recognize (free-board heuristic only)
 	r.Handle("/api/recognize", authSvc.RequireAuth(http.HandlerFunc(api.Recognize))).Methods(http.MethodPost)
 
-	// Curriculum + progress reads (practice UI)
-	r.Handle("/api/lessons/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetLesson))).Methods(http.MethodGet)
-	r.Handle("/api/progress", authSvc.RequireAuth(http.HandlerFunc(api.ListProgress))).Methods(http.MethodGet)
-	r.Handle("/api/progress/next", authSvc.RequireAuth(http.HandlerFunc(api.GetProgressNext))).Methods(http.MethodGet)
-	r.Handle("/api/practice-data", authSvc.RequireAuth(http.HandlerFunc(api.ClearPracticeData))).Methods(http.MethodDelete)
+	// Curriculum + progress reads (practice UI) — FEATURE_PRACTICE
+	r.Handle("/api/lessons/{id}", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.GetLesson))).Methods(http.MethodGet)
+	r.Handle("/api/progress", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.ListProgress))).Methods(http.MethodGet)
+	r.Handle("/api/progress/next", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.GetProgressNext))).Methods(http.MethodGet)
+	r.Handle("/api/practice-data", authSvc.RequireAuth(api.RequireFeature(feat.Progress, "progress", api.ClearPracticeData))).Methods(http.MethodDelete)
 
-	// Practice attempts
-	r.Handle("/api/attempts", authSvc.RequireAuth(http.HandlerFunc(api.ListAttempts))).Methods(http.MethodGet)
-	r.Handle("/api/attempts", authSvc.RequireAuth(http.HandlerFunc(api.CreateAttempt))).Methods(http.MethodPost)
-	r.Handle("/api/attempts/{id}", authSvc.RequireAuth(http.HandlerFunc(api.GetAttempt))).Methods(http.MethodGet)
-	r.Handle("/api/attempts/{id}/submit", authSvc.RequireAuth(http.HandlerFunc(api.SubmitAttempt))).Methods(http.MethodPost)
-	r.Handle("/api/attempts/{id}/assess", authSvc.RequireAuth(http.HandlerFunc(api.AssessAttempt))).Methods(http.MethodPost)
-	r.Handle("/api/attempts/{id}/assessment", authSvc.RequireAuth(http.HandlerFunc(api.GetAttemptAssessment))).Methods(http.MethodGet)
-	r.Handle("/api/attempts/{id}/abandon", authSvc.RequireAuth(http.HandlerFunc(api.AbandonAttempt))).Methods(http.MethodPost)
+	// Practice attempts — create/submit/assess need FEATURE_PRACTICE; history list needs FEATURE_PROGRESS
+	r.Handle("/api/attempts", authSvc.RequireAuth(api.RequireFeature(feat.Progress, "progress", api.ListAttempts))).Methods(http.MethodGet)
+	r.Handle("/api/attempts", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.CreateAttempt))).Methods(http.MethodPost)
+	r.Handle("/api/attempts/{id}", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.GetAttempt))).Methods(http.MethodGet)
+	r.Handle("/api/attempts/{id}/submit", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.SubmitAttempt))).Methods(http.MethodPost)
+	r.Handle("/api/attempts/{id}/assess", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.AssessAttempt))).Methods(http.MethodPost)
+	r.Handle("/api/attempts/{id}/assessment", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.GetAttemptAssessment))).Methods(http.MethodGet)
+	r.Handle("/api/attempts/{id}/abandon", authSvc.RequireAuth(api.RequireFeature(feat.Practice, "practice", api.AbandonAttempt))).Methods(http.MethodPost)
 
 	// WebSocket endpoint (auth required)
 	r.Handle("/ws", authSvc.RequireAuth(http.HandlerFunc(handleWebSocket)))

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useLocale } from '../composables/useLocale'
 import { useRomanizationPreference } from '../composables/useRomanizationPreference'
+import { useFeatureFlags } from '../composables/useFeatureFlags'
 import { getLesson, HIRAGANA5_LESSON_ID, type Lesson } from '../services/curriculumApi'
 import {
   clearPracticeData,
@@ -18,6 +19,7 @@ const isDev =
 
 const { t, locale } = useLocale()
 const { romanizationVisible } = useRomanizationPreference()
+const { features } = useFeatureFlags()
 
 const lesson = ref<Lesson | null>(null)
 const progressById = ref<Record<string, ProgressItem>>({})
@@ -66,6 +68,9 @@ const title = computed(() => {
 })
 
 function masteryFor(id: string): { label: string; reason: string } {
+  if (!features.value.progress) {
+    return { label: '', reason: '' }
+  }
   const m = progressById.value[id]?.mastery
   const state = m?.state || 'not_started'
   const reasonCode = m?.reasonCode || 'no_assessed_attempts'
@@ -76,6 +81,7 @@ function masteryFor(id: string): { label: string; reason: string } {
 }
 
 function reviewDueHint(id: string): string | null {
+  if (!features.value.review) return null
   const r = progressById.value[id]?.review
   if (!r?.isDue) return null
   return t('hub.reviewDue')
@@ -141,7 +147,7 @@ async function onClearPractice() {
       <h1>{{ title }}</h1>
     </header>
 
-    <p class="hint">{{ t('hub.masteryHint') }}</p>
+    <p v-if="features.progress" class="hint">{{ t('hub.masteryHint') }}</p>
 
     <p v-if="loading" class="status">{{ t('hub.loading') }}</p>
     <div v-else-if="error" class="status error">
@@ -171,16 +177,21 @@ async function onClearPractice() {
                 :lang="locale === 'ja' ? 'en' : undefined"
               >{{ ch.romanization }}</strong>
               <span class="muted">
-                {{ t('hub.strokes', { count: ch.strokeCount }) }} · {{ masteryFor(ch.id).label }}
+                {{ t('hub.strokes', { count: ch.strokeCount }) }}
+                <template v-if="features.progress && masteryFor(ch.id).label">
+                  · {{ masteryFor(ch.id).label }}
+                </template>
               </span>
-              <span class="reason">{{ masteryFor(ch.id).reason }}</span>
+              <span v-if="features.progress && masteryFor(ch.id).reason" class="reason">{{
+                masteryFor(ch.id).reason
+              }}</span>
               <span v-if="reviewDueHint(ch.id)" class="review-hint">{{ reviewDueHint(ch.id) }}</span>
             </span>
           </router-link>
         </li>
       </ul>
 
-      <div class="privacy">
+      <div v-if="features.progress" class="privacy">
         <button type="button" class="dangerish" :disabled="clearBusy" @click="onClearPractice">
           {{ clearBusy ? t('hub.clearing') : t('hub.clearData') }}
         </button>

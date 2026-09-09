@@ -534,6 +534,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		attemptMetric("assess", "ok")
+		metrics.Add(metricAssessTotal, 1)
 		apiLog("INFO", "[httpapi.Attempt.Assess] idempotent replay userID=%d attemptID=%d pass=%t", uid, id, ar.Pass)
 		writeJSON(w, 200, assessmentResponse{
 			AttemptID:   id,
@@ -610,9 +611,10 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	attemptMetric("assess", "ok")
+	metrics.Add(metricAssessTotal, 1)
 	apiLog("INFO", "[httpapi.Attempt.Assess] userID=%d attemptID=%d pass=%t score=%.3f scoreKind=%s feedbackCount=%d",
 		uid, id, ar.Pass, ar.Score, ar.ScoreKind, len(ar.Feedback))
-	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%d status=assessed pass=%t score=%.3f", id, ar.Pass, ar.Score)
+	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%d status=assessed pass=%t score=%.3f metric=%s", id, ar.Pass, ar.Score, metricAssessTotal)
 	writeJSON(w, 200, assessmentResponse{
 		AttemptID:   id,
 		CharacterID: at.CharacterID,

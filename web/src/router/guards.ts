@@ -1,5 +1,6 @@
 import type { NavigationGuardNext, RouteLocationNormalized } from 'vue-router'
 import { sessionContext } from '../services/sessionContext'
+import { getFeatureFlags } from '../services/featuresApi'
 
 const isDev =
   typeof import.meta !== 'undefined' &&
@@ -24,5 +25,23 @@ export function requireAuth(
     next({ name: 'board' })
     return
   }
+
+  const flags = getFeatureFlags()
+  const name = typeof to.name === 'string' ? to.name : ''
+  if (name === 'practice-hub' || name === 'practice-character') {
+    if (!flags.practice) {
+      routerDebug('redirect reason=feature_practice_off to=board')
+      next({ name: 'board' })
+      return
+    }
+  }
+  if (name === 'practice-history') {
+    if (!flags.practice || !flags.progress) {
+      routerDebug('redirect reason=feature_progress_off to=board')
+      next({ name: 'board' })
+      return
+    }
+  }
+
   next()
 }

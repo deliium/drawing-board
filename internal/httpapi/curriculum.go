@@ -126,7 +126,7 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(ch.GuidanceEn) == "" && strings.TrimSpace(ch.GuidanceJa) == "" {
 			missingGuidance++
 		}
-		pron := decodePronunciationJSON(ch.PronunciationJSON)
+		pron := a.stripAudioRef(decodePronunciationJSON(ch.PronunciationJSON))
 		chars = append(chars, lessonCharacterResponse{
 			ID:            ch.ID,
 			Glyph:         ch.Glyph,
@@ -241,14 +241,21 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	flags := a.featureFlags()
 	dueCount := 0
 	for i := range items {
+		if !flags.Review {
+			items[i].Review = nil
+		} else if items[i].Review != nil && items[i].Review.IsDue {
+			dueCount++
+		}
+		if !flags.Progress {
+			items[i].Mastery = nil
+			continue
+		}
 		m := learn.DeriveMastery(outcomes[items[i].CharacterID])
 		mr := masteryFromLearn(m)
 		items[i].Mastery = &mr
-		if items[i].Review != nil && items[i].Review.IsDue {
-			dueCount++
-		}
 		apiLog("DEBUG", "[learn.mastery] userID=%d characterID=%s state=%s reasonCode=%s assessedCount=%d",
 			uid, items[i].CharacterID, m.State, m.ReasonCode, m.AssessedCount)
 		if items[i].Status == learn.ProgressStatusPassed && m.AssessedCount == 0 {

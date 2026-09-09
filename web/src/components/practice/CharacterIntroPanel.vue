@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useLocale } from '../../composables/useLocale'
 import { useRomanizationPreference } from '../../composables/useRomanizationPreference'
+import { useFeatureFlags } from '../../composables/useFeatureFlags'
 import type { LessonCharacter } from '../../services/curriculumApi'
 import PronunciationAudioButton from './PronunciationAudioButton.vue'
 
@@ -11,6 +12,7 @@ const props = defineProps<{
 
 const { t, locale } = useLocale()
 const { romanizationVisible } = useRomanizationPreference()
+const { features } = useFeatureFlags()
 
 const description = computed(() => {
   void locale.value
@@ -39,6 +41,7 @@ const meaning = computed(() => {
 const strokesLabel = computed(() => t('intro.strokes', { count: props.character.strokeCount }))
 
 const audioSrc = computed(() => {
+  if (!features.value.audio) return null
   const ref = props.character.pronunciation?.audioRef
   if (!ref || typeof ref !== 'string' || !ref.trim()) return null
   return ref.trim()

@@ -3,6 +3,7 @@ import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useLocale } from '../composables/useLocale'
 import { useRomanizationPreference } from '../composables/useRomanizationPreference'
+import { useFeatureFlags } from '../composables/useFeatureFlags'
 import type { Locale } from '../i18n'
 
 const isDev =
@@ -12,9 +13,14 @@ const isDev =
 const route = useRoute()
 const { locale, setLocale, t } = useLocale()
 const { romanizationVisible, setRomanizationVisible } = useRomanizationPreference()
+const { features } = useFeatureFlags()
 
 const guestShell = computed(() => Boolean(route.meta.guestShell))
 const layoutMode = computed(() => (guestShell.value ? 'guest' : 'authed'))
+const showPracticeNav = computed(() => !guestShell.value && features.value.practice)
+const showHistoryNav = computed(
+  () => !guestShell.value && features.value.practice && features.value.progress,
+)
 
 const brand = computed(() => t('brand.name'))
 const navPractice = computed(() => t('nav.practice'))
@@ -57,11 +63,11 @@ function onRomanizationToggle() {
       <strong class="brand">{{ brand }}</strong>
       <div class="header-end">
         <nav v-if="!guestShell" class="nav" :aria-label="brand">
-          <router-link to="/practice" class="quiet">
+          <router-link v-if="showPracticeNav" to="/practice" class="quiet">
             <span class="full">{{ navPractice }}</span>
             <span class="short">{{ navPracticeShort }}</span>
           </router-link>
-          <router-link to="/practice/history" class="quiet">
+          <router-link v-if="showHistoryNav" to="/practice/history" class="quiet">
             <span class="full">{{ t('nav.history') }}</span>
             <span class="short">{{ t('nav.historyShort') }}</span>
           </router-link>

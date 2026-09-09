@@ -7,6 +7,7 @@ import { probeCriticalFonts } from './fonts'
 import { initLocale } from './i18n'
 import { apiFetch } from './services/apiClient'
 import { setAuthenticatedUser } from './services/sessionContext'
+import { loadFeatureFlags } from './services/featuresApi'
 
 async function bootstrap() {
   initLocale()
@@ -14,6 +15,7 @@ async function bootstrap() {
   try {
     const me = await apiFetch<{ id: number; email: string }>('/api/me')
     setAuthenticatedUser(me)
+    await loadFeatureFlags()
   } catch {
     setAuthenticatedUser(null)
   }

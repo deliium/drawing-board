@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/deliium/drawing-board/internal/learn"
+	"github.com/deliium/drawing-board/internal/metrics"
 )
 
 type masteryResponse struct {
@@ -291,34 +292,51 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := ls.Now()
-	sug := learn.SuggestNextWithReview(placements, masteryBy, reviewBy, now)
-	dueCount := learn.CountDue(reviewBy, now)
-	apiLog("DEBUG", "[learn.review.Suggest] userID=%d lessonId=%s reasonCode=%s characterId=%s dueCount=%d nextDueCharacterId=%s",
-		uid, lessonID, sug.ReasonCode, sug.CharacterID, dueCount, sug.NextDueCharacterID)
+	flags := a.featureFlags()
+	resp := progressNextResponse{LessonID: lessonID}
 
-	resp := progressNextResponse{
-		LessonID:     lessonID,
-		ReasonCode:   sug.ReasonCode,
-		MasteryState: sug.MasteryState,
-		ReviewBox:    sug.ReviewBox,
-	}
-	if sug.CharacterID != "" {
-		id := sug.CharacterID
-		g := sug.Glyph
-		resp.CharacterID = &id
-		resp.Glyph = &g
-	}
-	if sug.DueAt != nil {
-		s := rfc3339(*sug.DueAt)
-		resp.DueAt = &s
-	}
-	if sug.NextDueAt != nil {
-		s := rfc3339(*sug.NextDueAt)
-		resp.NextDueAt = &s
-	}
-	if sug.NextDueCharacterID != "" {
-		id := sug.NextDueCharacterID
-		resp.NextDueCharacterID = &id
+	if flags.Review {
+		sug := learn.SuggestNextWithReview(placements, masteryBy, reviewBy, now)
+		dueCount := learn.CountDue(reviewBy, now)
+		apiLog("DEBUG", "[learn.review.Suggest] userID=%d lessonId=%s reasonCode=%s characterId=%s dueCount=%d nextDueCharacterId=%s",
+			uid, lessonID, sug.ReasonCode, sug.CharacterID, dueCount, sug.NextDueCharacterID)
+		resp.ReasonCode = sug.ReasonCode
+		if flags.Progress {
+			resp.MasteryState = sug.MasteryState
+		}
+		resp.ReviewBox = sug.ReviewBox
+		if sug.CharacterID != "" {
+			id := sug.CharacterID
+			g := sug.Glyph
+			resp.CharacterID = &id
+			resp.Glyph = &g
+		}
+		if sug.DueAt != nil {
+			s := rfc3339(*sug.DueAt)
+			resp.DueAt = &s
+		}
+		if sug.NextDueAt != nil {
+			s := rfc3339(*sug.NextDueAt)
+			resp.NextDueAt = &s
+		}
+		if sug.NextDueCharacterID != "" {
+			id := sug.NextDueCharacterID
+			resp.NextDueCharacterID = &id
+		}
+	} else {
+		cid, glyph, reason, state := learn.SuggestNextCharacter(placements, masteryBy)
+		apiLog("DEBUG", "[learn.mastery.Suggest] userID=%d lessonId=%s reasonCode=%s characterId=%s",
+			uid, lessonID, reason, cid)
+		resp.ReasonCode = reason
+		if flags.Progress {
+			resp.MasteryState = state
+		}
+		if cid != "" {
+			id := cid
+			g := glyph
+			resp.CharacterID = &id
+			resp.Glyph = &g
+		}
 	}
 
 	charLog := ""
@@ -330,7 +348,7 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 		dueLog = *resp.DueAt
 	}
 	apiLog("INFO", "[httpapi.Progress.Next] userID=%d lessonId=%s characterId=%s reasonCode=%s dueAt=%s reviewBox=%v",
-		uid, lessonID, charLog, sug.ReasonCode, dueLog, sug.ReviewBox)
+		uid, lessonID, charLog, resp.ReasonCode, dueLog, resp.ReviewBox)
 	writeJSON(w, 200, resp)
 }
 
@@ -353,8 +371,10 @@ func (a *API) ClearPracticeData(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, 500, "internal_error", "failed to clear practice data")
 		return
 	}
+	metrics.Add(metricClearTotal, 1)
 	apiLog("INFO", "[httpapi.PracticeData.Clear] userID=%d attemptsDeleted=%d progressRowsCleared=%d",
 		uid, res.AttemptsDeleted, res.ProgressRowsCleared)
+	apiLog("DEBUG", "[httpapi.PracticeData.Clear] metric=%s +1", metricClearTotal)
 	writeJSON(w, 200, clearPracticeDataResponse{
 		AttemptsDeleted:     res.AttemptsDeleted,
 		ProgressRowsCleared: res.ProgressRowsCleared,

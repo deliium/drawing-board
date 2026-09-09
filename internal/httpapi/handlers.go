@@ -14,6 +14,7 @@ import (
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/features"
 	"github.com/deliium/drawing-board/internal/limits"
 	"github.com/deliium/drawing-board/internal/metrics"
 	"github.com/deliium/drawing-board/internal/recognize"
@@ -26,6 +27,7 @@ type API struct {
 	Recognizer       recognize.Recognizer
 	Assessor         recognize.Assessor // used by attempt assess; board recognize is heuristic-only
 	RecognizeLimiter *limits.Limiter
+	Features         *features.Flags // nil → all learning surfaces on (tests)
 }
 
 type StrokePoint struct {
