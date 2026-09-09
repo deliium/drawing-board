@@ -41,12 +41,30 @@ type Candidate struct {
 	ScoreKind string  `json:"scoreKind,omitempty"`
 }
 
+// Diagnostics holds engineer-facing criterion breakdown (not learner copy).
+type Diagnostics struct {
+	StrokeCount       float64 `json:"strokeCount"`
+	StrokeOrder       float64 `json:"strokeOrder"`
+	StartEndDirection float64 `json:"startEndDirection"`
+	RelativePlacement float64 `json:"relativePlacement"`
+	Proportions       float64 `json:"proportions"`
+	Shape             float64 `json:"shape"`
+	Overall           float64 `json:"overall"`
+	HardFail          bool    `json:"hardFail"`
+	HardFailCode      string  `json:"hardFailCode,omitempty"`
+	ShortStrokeCount  int     `json:"shortStrokeCount"`
+	NormalStrokeCount int     `json:"normalStrokeCount"`
+	DroppedEmpty      int     `json:"droppedEmpty"`
+}
+
 // Assessment is the result of comparing strokes to a known target character.
 type Assessment struct {
-	Target     string      `json:"target"`
-	Pass       bool        `json:"pass"`
-	Score      float64     `json:"score"`
-	ScoreKind  string      `json:"scoreKind"`
-	Reasons    []string    `json:"reasons"`
-	Candidates []Candidate `json:"candidates,omitempty"`
+	Target      string         `json:"target"`
+	Pass        bool           `json:"pass"`
+	Score       float64        `json:"score"`
+	ScoreKind   string         `json:"scoreKind"`
+	Reasons     []string       `json:"reasons"`
+	Feedback    []FeedbackItem `json:"feedback,omitempty"`
+	Diagnostics *Diagnostics   `json:"diagnostics,omitempty"`
+	Candidates  []Candidate    `json:"candidates,omitempty"`
 }

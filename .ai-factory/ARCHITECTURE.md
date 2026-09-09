@@ -27,7 +27,7 @@ drawing-board/
 │   ├── httpapi/                # REST handlers (strokes, recognize, practice attempts)
 │   ├── ws/                     # WebSocket hub, CheckOrigin, ingest, ack/echo
 │   ├── limits/                 # shared validation bounds (stroke, recognize, opId)
-│   ├── recognize/              # hiragana5 target comparison (paths from content pack)
+│   ├── recognize/              # hiragana5 multi-criterion assess + heuristic free-board rank; correction catalog
 │   ├── security/               # CORS / CSRF / origin policy helpers
 │   ├── metrics/                # process-local counters
 │   └── docguard/               # README honesty regression tests
@@ -72,11 +72,12 @@ drawing-board/
 1. **Per-user isolation** — strokes and live echoes stay within `user_id`
 2. **Validate at the edge** — shared `limits` for recognize body params and WS stroke meta/points/`opId`
 3. **Ack before trust** — client queue retries until ack/nack/budget; reload trusts REST
-4. **Honest recognition** — MVP assessment is deterministic target comparison for five hiragana; free-board heuristic scores are match-score ranking aids, not calibrated confidence or ONNX/ML
-5. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
-6. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
-7. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row
-8. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+4. **Honest recognition** — MVP assessment is deterministic multi-criterion target comparison for five hiragana; free-board heuristic scores are match-score ranking aids, not calibrated confidence or ONNX/ML
+5. **Assessor owns scoring + corrections** — `recognize` normalizes strokes, scores criteria, selects ≤2 learner feedback messages; `httpapi` persists engine `feedback` (does not invent a parallel correction map)
+6. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
+7. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
+8. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row; UI should prefer score + feedback over candidates
+9. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 

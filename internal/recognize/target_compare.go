@@ -11,12 +11,6 @@ import (
 	"github.com/deliium/drawing-board/internal/curriculum"
 )
 
-const (
-	weightStrokeCount = 0.35
-	weightGeometry    = 0.65
-	resamplePoints    = 16
-)
-
 // TargetCompareRecognizer scores learner strokes against hiragana5 templates.
 // Free-board Recognize delegates to SimpleRecognizer (heuristic match scores).
 type TargetCompareRecognizer struct {
@@ -102,13 +96,13 @@ func (r *TargetCompareRecognizer) Recognize(strokes []Stroke, width, height int,
 	return cands, nil
 }
 
-// Assess compares strokes to a known MVP target. Empty strokes → non-pass, empty candidates.
+// Assess compares strokes to a known MVP target using multi-criterion match scoring.
 func (r *TargetCompareRecognizer) Assess(target string, strokes []Stroke, width, height int) (Assessment, error) {
 	if err := validateCanvasOnly(width, height); err != nil {
 		return Assessment{}, err
 	}
 	target = strings.TrimSpace(target)
-	tmpl, ok := r.templates[target]
+	tmplRaw, ok := r.templates[target]
 	if !ok {
 		logf("WARN", "[recognize.Assess] unsupported_target=%q", target)
 		return Assessment{}, fmt.Errorf("%w: %s", ErrUnsupportedTarget, target)
@@ -118,67 +112,127 @@ func (r *TargetCompareRecognizer) Assess(target string, strokes []Stroke, width,
 	logf("DEBUG", "[recognize.Assess] target=%s strokes=%d points=%d width=%d height=%d",
 		target, len(strokes), pointCount, width, height)
 
-	if len(strokes) == 0 {
+	learnerNorm := normalizeInk(strokes)
+	tmplNorm := normalizeInk(tmplRaw)
+	want := len(tmplNorm.Strokes)
+
+	if learnerNorm.Empty {
+		fb := selectFeedback(target, false, 0, want, true, false, CriterionScores{}, nil, nil)
 		out := Assessment{
 			Target:    target,
 			Pass:      false,
 			Score:     0,
 			ScoreKind: ScoreKindMatch,
-			Reasons:   []string{"empty_strokes"},
+			Reasons:   []string{CodeEmptyStrokes},
+			Feedback:  fb,
+			Diagnostics: &Diagnostics{
+				DroppedEmpty: learnerNorm.DroppedEmpty,
+				HardFail:     false,
+			},
 		}
-		logf("DEBUG", "[recognize.Assess] target=%s pass=false score=0 reasons=empty_strokes", target)
+		logf("DEBUG", "[recognize.Assess] target=%s pass=false score=0 reasons=empty_strokes feedback=%d", target, len(fb))
 		return out, nil
 	}
 
-	ranked := r.rankAll(strokes)
-	var targetScore float64
-	var reasons []string
-	for _, c := range ranked {
-		if c.Text == target {
-			targetScore = c.Score
-			break
-		}
+	cs := scoreCriteria(learnerNorm, tmplNorm)
+	overall := weightedOverall(cs, DefaultWeights)
+	got := len(learnerNorm.Strokes)
+	hardFail := strokeHardFail(got, want)
+	hardCode := ""
+	if hardFail {
+		hardCode = CodeStrokeCountMismatch
 	}
-	countScore := strokeCountScore(len(strokes), len(tmpl))
-	geoScore := geometryScore(normalizeStrokes(strokes), normalizeStrokes(tmpl))
-	reasons = append(reasons,
-		fmt.Sprintf("stroke_count=%.3f", countScore),
-		fmt.Sprintf("geometry=%.3f", geoScore),
-		fmt.Sprintf("combined=%.3f", targetScore),
-	)
-	if len(strokes) != len(tmpl) {
-		reasons = append(reasons, "stroke_count_mismatch")
+	ranked := r.rankAll(strokes)
+	topMatch := len(ranked) > 0 && ranked[0].Text == target
+	// Pass requires T_pass, no stroke-count hard-fail, and target top-ranked in the MVP set
+	// (similar wrong-glyph templates can otherwise clear T_pass alone).
+	pass := overall >= PassThreshold && !hardFail && topMatch
+
+	diag := &Diagnostics{
+		StrokeCount:       cs.StrokeCount,
+		StrokeOrder:       cs.StrokeOrder,
+		StartEndDirection: cs.StartEndDirection,
+		RelativePlacement: cs.RelativePlacement,
+		Proportions:       cs.Proportions,
+		Shape:             cs.Shape,
+		Overall:           overall,
+		HardFail:          hardFail,
+		HardFailCode:      hardCode,
+		ShortStrokeCount:  learnerNorm.ShortStrokeCount,
+		NormalStrokeCount: learnerNorm.NormalStrokeCount,
+		DroppedEmpty:      learnerNorm.DroppedEmpty,
 	}
 
-	pass := targetScore >= PassThreshold && ranked[0].Text == target
-	if !pass && targetScore >= PassThreshold && ranked[0].Text != target {
-		reasons = append(reasons, "outranked_by_other")
+	feedback := selectFeedback(target, pass, got, want, false, hardFail, cs, learnerNorm.Strokes, tmplNorm.Strokes)
+	// Prefer shape coaching when another MVP glyph outranks the target (D7).
+	if !pass && !hardFail && !topMatch {
+		feedback = ensureFeedbackCode(feedback, CodeShape, target, want, got)
 	}
-	if pass {
-		reasons = append(reasons, "top_match")
+	reasons := buildReasons(cs, hardFail, pass, got, want)
+	if !pass && overall >= PassThreshold && !hardFail && !topMatch {
+		reasons = append(reasons, "outranked_by_other")
 	}
 
 	out := Assessment{
-		Target:     target,
-		Pass:       pass,
-		Score:      targetScore,
-		ScoreKind:  ScoreKindMatch,
-		Reasons:    reasons,
-		Candidates: ranked,
+		Target:      target,
+		Pass:        pass,
+		Score:       overall,
+		ScoreKind:   ScoreKindMatch,
+		Reasons:     reasons,
+		Feedback:    feedback,
+		Diagnostics: diag,
+		Candidates:  ranked,
 	}
-	logf("DEBUG", "[recognize.Assess] target=%s pass=%t score=%.3f reasons=%v", target, pass, targetScore, reasons)
+	if hardFail && len(feedback) == 0 {
+		logf("WARN", "[recognize.Assess] hard_fail_without_feedback target=%s", target)
+	}
+	codes := make([]string, len(feedback))
+	for i, f := range feedback {
+		codes[i] = f.Code
+	}
+	logf("DEBUG", "[recognize.Assess] target=%s pass=%t score=%.3f criteria={count=%.3f order=%.3f dir=%.3f place=%.3f prop=%.3f shape=%.3f} hardFail=%t short=%d normal=%d feedback=%v",
+		target, pass, overall, cs.StrokeCount, cs.StrokeOrder, cs.StartEndDirection, cs.RelativePlacement, cs.Proportions, cs.Shape,
+		hardFail, learnerNorm.ShortStrokeCount, learnerNorm.NormalStrokeCount, codes)
 	return out, nil
 }
 
+func buildReasons(cs CriterionScores, hardFail, pass bool, got, want int) []string {
+	reasons := make([]string, 0, 8)
+	if got != want {
+		reasons = append(reasons, CodeStrokeCountMismatch)
+	}
+	if hardFail {
+		reasons = append(reasons, "hard_fail_stroke_count")
+	}
+	if cs.StrokeOrder < SoftCriterionThreshold {
+		reasons = append(reasons, CodeStrokeOrder)
+	}
+	if cs.StartEndDirection < SoftCriterionThreshold {
+		reasons = append(reasons, CodeStartDirection)
+	}
+	if cs.RelativePlacement < SoftCriterionThreshold {
+		reasons = append(reasons, CodeRelativePlacement)
+	}
+	if cs.Proportions < SoftCriterionThreshold {
+		reasons = append(reasons, CodeProportions)
+	}
+	if cs.Shape < SoftCriterionThreshold {
+		reasons = append(reasons, CodeShape)
+	}
+	if pass {
+		reasons = append(reasons, "pass")
+	}
+	return reasons
+}
+
 func (r *TargetCompareRecognizer) rankAll(strokes []Stroke) []Candidate {
-	learner := normalizeStrokes(strokes)
+	learner := normalizeInk(strokes)
 	cands := make([]Candidate, 0, len(r.order))
 	for _, glyph := range r.order {
-		tmpl := normalizeStrokes(r.templates[glyph])
-		count := strokeCountScore(len(strokes), len(r.templates[glyph]))
-		geo := geometryScore(learner, tmpl)
-		score := weightStrokeCount*count + weightGeometry*geo
-		cands = append(cands, Candidate{Text: glyph, Score: clamp01(score), ScoreKind: ScoreKindMatch})
+		tmpl := normalizeInk(r.templates[glyph])
+		cs := scoreCriteria(learner, tmpl)
+		score := weightedOverall(cs, DefaultWeights)
+		cands = append(cands, Candidate{Text: glyph, Score: score, ScoreKind: ScoreKindMatch})
 	}
 	sort.SliceStable(cands, func(i, j int) bool {
 		if cands[i].Score == cands[j].Score {
@@ -213,62 +267,6 @@ func strokeCountScore(got, want int) float64 {
 	return clamp01(1 - diff/float64(want))
 }
 
-// normalizeStrokes maps strokes into a unit box with aspect ratio preserved (letterbox).
-func normalizeStrokes(strokes []Stroke) []Stroke {
-	minX, minY := math.Inf(1), math.Inf(1)
-	maxX, maxY := math.Inf(-1), math.Inf(-1)
-	any := false
-	for _, s := range strokes {
-		for _, p := range s.Points {
-			any = true
-			if p.X < minX {
-				minX = p.X
-			}
-			if p.Y < minY {
-				minY = p.Y
-			}
-			if p.X > maxX {
-				maxX = p.X
-			}
-			if p.Y > maxY {
-				maxY = p.Y
-			}
-		}
-	}
-	if !any {
-		return cloneStrokes(strokes)
-	}
-	w := maxX - minX
-	h := maxY - minY
-	if w < 1e-9 {
-		w = 1
-	}
-	if h < 1e-9 {
-		h = 1
-	}
-	scale := 1 / math.Max(w, h)
-	out := make([]Stroke, len(strokes))
-	for i, s := range strokes {
-		pts := make([]Point, len(s.Points))
-		for j, p := range s.Points {
-			pts[j] = Point{
-				X: (p.X - minX) * scale,
-				Y: (p.Y - minY) * scale,
-			}
-		}
-		out[i] = Stroke{Points: pts}
-	}
-	return out
-}
-
-func cloneStrokes(strokes []Stroke) []Stroke {
-	out := make([]Stroke, len(strokes))
-	for i, s := range strokes {
-		out[i] = Stroke{Points: append([]Point(nil), s.Points...)}
-	}
-	return out
-}
-
 func geometryScore(learner, template []Stroke) float64 {
 	n := len(template)
 	if n == 0 {
@@ -285,16 +283,15 @@ func geometryScore(learner, template []Stroke) float64 {
 	for i := 0; i < pairs; i++ {
 		sum += strokeSimilarity(learner[i], template[i])
 	}
-	// Penalize extra/missing strokes beyond paired ones.
 	extra := math.Abs(float64(len(learner) - len(template)))
 	penalty := clamp01(extra / float64(n))
-	avg := sum / float64(n) // missing pairs contribute 0
+	avg := sum / float64(n)
 	return clamp01(avg * (1 - 0.5*penalty))
 }
 
 func strokeSimilarity(a, b Stroke) float64 {
-	ra := resampleStroke(a, resamplePoints)
-	rb := resampleStroke(b, resamplePoints)
+	ra := resampleStroke(a, ResampleCount)
+	rb := resampleStroke(b, ResampleCount)
 	if len(ra) == 0 || len(rb) == 0 {
 		if len(ra) == 0 && len(rb) == 0 {
 			return 1
@@ -302,13 +299,12 @@ func strokeSimilarity(a, b Stroke) float64 {
 		return 0
 	}
 	dist := 0.0
-	for i := 0; i < resamplePoints; i++ {
+	for i := 0; i < ResampleCount; i++ {
 		dx := ra[i].X - rb[i].X
 		dy := ra[i].Y - rb[i].Y
 		dist += math.Sqrt(dx*dx + dy*dy)
 	}
-	avg := dist / float64(resamplePoints)
-	// avg distance 0 → 1; ~0.5 unit → ~0
+	avg := dist / float64(ResampleCount)
 	return clamp01(1 - avg/0.5)
 }
 
@@ -326,7 +322,6 @@ func resampleStroke(s Stroke, n int) []Point {
 		}
 		return out
 	}
-	// Cumulative length.
 	dists := make([]float64, len(s.Points))
 	total := 0.0
 	for i := 1; i < len(s.Points); i++ {
@@ -335,7 +330,7 @@ func resampleStroke(s Stroke, n int) []Point {
 		total += math.Sqrt(dx*dx + dy*dy)
 		dists[i] = total
 	}
-	if total < 1e-9 {
+	if total < EpsilonBounds {
 		out := make([]Point, n)
 		for i := range out {
 			out[i] = s.Points[0]
@@ -345,7 +340,6 @@ func resampleStroke(s Stroke, n int) []Point {
 	out := make([]Point, n)
 	for i := 0; i < n; i++ {
 		target := total * float64(i) / float64(n-1)
-		// Find segment.
 		j := 1
 		for j < len(dists) && dists[j] < target {
 			j++
@@ -357,7 +351,7 @@ func resampleStroke(s Stroke, n int) []Point {
 		prev := dists[j-1]
 		seg := dists[j] - prev
 		t := 0.0
-		if seg > 1e-9 {
+		if seg > EpsilonBounds {
 			t = (target - prev) / seg
 		}
 		p0 := s.Points[j-1]

@@ -88,18 +88,21 @@ func TestTargetCompare_NearMissStrokeCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assess: %v", err)
 	}
-	if a.Pass && a.Score >= 0.95 {
-		t.Fatalf("near-miss should not look perfect: pass=%t score=%.3f", a.Pass, a.Score)
+	if a.Pass {
+		t.Fatalf("near-miss should not pass: pass=%t score=%.3f diag=%+v", a.Pass, a.Score, a.Diagnostics)
 	}
 	found := false
 	for _, reason := range a.Reasons {
-		if reason == "stroke_count_mismatch" {
+		if reason == CodeStrokeCountMismatch {
 			found = true
 			break
 		}
 	}
 	if !found {
 		t.Fatalf("expected stroke_count_mismatch in reasons: %v", a.Reasons)
+	}
+	if len(a.Feedback) == 0 || a.Feedback[0].Code != CodeStrokeCountMismatch || a.Feedback[0].Message == "" {
+		t.Fatalf("expected count mismatch feedback: %#v", a.Feedback)
 	}
 }
 
@@ -111,6 +114,9 @@ func TestTargetCompare_EmptyStrokes(t *testing.T) {
 	}
 	if a.Pass || a.Score != 0 {
 		t.Fatalf("empty: pass=%t score=%f", a.Pass, a.Score)
+	}
+	if len(a.Feedback) != 1 || a.Feedback[0].Code != CodeEmptyStrokes || a.Feedback[0].Message == "" {
+		t.Fatalf("feedback=%#v", a.Feedback)
 	}
 }
 

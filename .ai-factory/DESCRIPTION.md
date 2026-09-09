@@ -24,17 +24,17 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - Pencil / eraser / undo / clear on canvas
 - WebSocket stroke persist + echo with `opId` ack, `boardRev`/`baseRev` ordering, and idempotent SQLite creates
 - REST list strokes (`boardRev` envelope); recognize revision-gated; clear available via WS (primary) or REST helper
-- Recognition: deterministic target comparison for five hiragana (`hiragana5`); optional free-board heuristic ranking with match scores (not ML/ONNX)
+- Recognition: multi-criterion deterministic target assessment for five hiragana (`hiragana5`) with ≤2 actionable corrections; optional free-board heuristic ranking with match scores (not ML/ONNX)
 - Durable learning schema (characters/lessons/attempts/assessments/progress) via versioned SQLite migrations, separate from free-board strokes
 - Reviewed five-vowel starter curriculum pack (`content/hiragana5/`) with pedagogy fields, stroke/trace templates, and deterministic seed
-- Attempt-scoped practice assessment REST (`/api/attempts`) — submit strokes for one character, assess via target comparison, persist results without reading the free-board
+- Attempt-scoped practice assessment REST (`/api/attempts`) — submit strokes for one character, assess via target comparison + correction catalog, persist engine feedback without reading the free-board
 - Perimeter: origin allowlist, CSRF on `POST /api/*`, production-secure cookies
 
 ## Non-Functional Requirements
 
 - **Privacy:** per-user WS delivery (`sendToUser`); no cross-user stroke visibility
 - **Security:** bcrypt, session rotation, CSRF, CORS/WS origin allowlist, input bounds + rate limits
-- **Honesty:** MVP is target comparison for five hiragana; never market scores as calibrated AI confidence or claim an ONNX upgrade; keep `internal/docguard` green
+- **Honesty:** MVP is multi-criterion match vs pack templates; never market scores as calibrated AI confidence or claim an ONNX upgrade; correctness limited to fixture-tested criteria; keep `internal/docguard` green
 - **Reliability:** bounded in-memory WS queue (32), reconnect/backoff; reload uses REST as source of truth (no durable offline vault yet)
 
 ## Constraints

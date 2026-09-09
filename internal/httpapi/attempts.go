@@ -135,19 +135,17 @@ func parseAttemptID(r *http.Request) (int64, error) {
 	return id, nil
 }
 
-func feedbackFromReasons(reasons []string) []learn.FeedbackItem {
-	stable := map[string]struct{}{
-		"empty_strokes":         {},
-		"stroke_count_mismatch": {},
-		"outranked_by_other":    {},
-		"top_match":             {},
+func feedbackFromAssessment(items []recognize.FeedbackItem) []learn.FeedbackItem {
+	if len(items) == 0 {
+		return []learn.FeedbackItem{}
 	}
-	out := make([]learn.FeedbackItem, 0, 2)
-	for _, reason := range reasons {
-		if _, ok := stable[reason]; !ok {
-			continue
-		}
-		out = append(out, learn.FeedbackItem{Rank: len(out) + 1, Code: reason, Message: ""})
+	out := make([]learn.FeedbackItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, learn.FeedbackItem{
+			Rank:    item.Rank,
+			Code:    item.Code,
+			Message: item.Message,
+		})
 		if len(out) == 2 {
 			break
 		}
@@ -588,7 +586,12 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	feedback := feedbackFromReasons(assessment.Reasons)
+	feedback := feedbackFromAssessment(assessment.Feedback)
+	codes := make([]string, len(feedback))
+	for i, f := range feedback {
+		codes[i] = f.Code
+	}
+	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%d pass=%t score=%.3f feedbackCodes=%v", id, assessment.Pass, assessment.Score, codes)
 	ar, err := ls.Assessments().SaveResult(r.Context(), uid, learn.SaveAssessment{
 		AttemptID: id,
 		Pass:      assessment.Pass,
@@ -607,8 +610,8 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	attemptMetric("assess", "ok")
-	apiLog("INFO", "[httpapi.Attempt.Assess] userID=%d attemptID=%d pass=%t score=%.3f scoreKind=%s",
-		uid, id, ar.Pass, ar.Score, ar.ScoreKind)
+	apiLog("INFO", "[httpapi.Attempt.Assess] userID=%d attemptID=%d pass=%t score=%.3f scoreKind=%s feedbackCount=%d",
+		uid, id, ar.Pass, ar.Score, ar.ScoreKind, len(ar.Feedback))
 	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%d status=assessed pass=%t score=%.3f", id, ar.Pass, ar.Score)
 	writeJSON(w, 200, assessmentResponse{
 		AttemptID:   id,
