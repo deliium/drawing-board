@@ -21,6 +21,7 @@
 - [x] **Responsive bilingual accessible learner UI (Prompt 14)** — mobile-first practice-notebook visual system; fluid canvases; EN/JA preference + externalized strings; focus/labels/live regions/reduced motion; axe + keyboard/zoom/SR/device smoke criteria; non-canvas textual attempt summary
 - [x] **Attempt history and per-character mastery (Prompt 15)** — paginated personal attempt history; explainable mastery from assessed attempts; humble next-character suggestion; privacy clear / retention docs; no streaks, social comparison, or SRS
 - [x] **Lightweight spaced-review queue (Prompt 16)** — Leitner-style personal review from assessed pass/fail; due dates + next/why; forgiving missed days; no streaks, notifications, or SM-2/FSRS
+- [x] **Handwriting practice with basic language learning (Prompt 17)** — per-character pronunciation audio, example vocabulary, hideable romanization, concise learner guidance; kanji-ready content extension points without implementing kanji
 
 ## Completed
 
@@ -43,3 +44,4 @@
 | Responsive bilingual accessible learner UI (Prompt 14) | 2026-09-09 |
 | Attempt history and per-character mastery (Prompt 15) | 2026-09-09 |
 | Lightweight spaced-review queue (Prompt 16) | 2026-09-09 |
+| Handwriting practice with basic language learning (Prompt 17) | 2026-09-09 |

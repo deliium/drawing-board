@@ -1,7 +1,7 @@
 {
   "reviewer": "deliium",
-  "reviewedAt": "2026-09-08",
-  "notes": "Standard あ行 pedagogy: Hepburn romanization, school stroke counts/order, common elementary example words. Stroke/trace polylines are project-authored normalized paths aligned to stroke order (engineering templates promoted after checklist).",
+  "reviewedAt": "2026-09-09",
+  "notes": "Standard あ行 pedagogy: Hepburn romanization, school stroke counts/order, common elementary example words. Stroke/trace polylines are project-authored normalized paths. Prompt 17: concise guidance added; mora audio from Wikimedia Commons public-domain clips by Hakatanoshio117117 (trimmed/loudness-normalized; human listen pass for phone, clarity, age-neutral teaching use).",
   "checklist": {
     "fiveCharactersARow": true,
     "hepburnRomanization": true,
@@ -10,7 +10,12 @@
     "tracesAlignStrokeOrder": true,
     "exampleWordsOk": true,
     "descriptionsOk": true,
+    "guidanceOk": true,
+    "audioRefsPresent": true,
+    "audioHumanListenPass": true,
+    "audioLicenseRecorded": true,
     "noUnreviewedAIInV1": true,
-    "licensesAccurate": true
+    "licensesAccurate": true,
+    "kanjiExtensionsEmpty": true
   }
 }

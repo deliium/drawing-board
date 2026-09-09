@@ -53,7 +53,9 @@ func (ls *LearnStore) ListBySet(ctx context.Context, setID string) ([]learn.Char
 	_ = ctx
 	rows, err := ls.s.SQL.Query(`
 		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status,
-			COALESCE(description_en, ''), COALESCE(description_ja, ''), COALESCE(pronunciation_json, '{}'),
+			COALESCE(description_en, ''), COALESCE(description_ja, ''),
+			COALESCE(guidance_en, ''), COALESCE(guidance_ja, ''),
+			COALESCE(pronunciation_json, '{}'),
 			COALESCE(example_word, ''), COALESCE(example_romanization, ''), COALESCE(example_meaning_en, ''),
 			COALESCE(example_meaning_ja, ''),
 			COALESCE(content_version, ''), COALESCE(trace_ref, ''),
@@ -79,7 +81,9 @@ func (ls *LearnStore) getCharacter(ctx context.Context, id string) (*learn.Chara
 	_ = ctx
 	row := ls.s.SQL.QueryRow(`
 		SELECT id, set_id, glyph, COALESCE(romanization, ''), stroke_count, sort_key, status,
-			COALESCE(description_en, ''), COALESCE(description_ja, ''), COALESCE(pronunciation_json, '{}'),
+			COALESCE(description_en, ''), COALESCE(description_ja, ''),
+			COALESCE(guidance_en, ''), COALESCE(guidance_ja, ''),
+			COALESCE(pronunciation_json, '{}'),
 			COALESCE(example_word, ''), COALESCE(example_romanization, ''), COALESCE(example_meaning_en, ''),
 			COALESCE(example_meaning_ja, ''),
 			COALESCE(content_version, ''), COALESCE(trace_ref, ''),
@@ -104,7 +108,7 @@ type characterScanner interface {
 func scanCharacter(row characterScanner, c *learn.Character) error {
 	return row.Scan(
 		&c.ID, &c.SetID, &c.Glyph, &c.Romanization, &c.StrokeCount, &c.SortKey, &c.Status,
-		&c.DescriptionEn, &c.DescriptionJa, &c.PronunciationJSON,
+		&c.DescriptionEn, &c.DescriptionJa, &c.GuidanceEn, &c.GuidanceJa, &c.PronunciationJSON,
 		&c.ExampleWord, &c.ExampleRomanization, &c.ExampleMeaningEn, &c.ExampleMeaningJa,
 		&c.ContentVersion, &c.TraceRef,
 		&c.CreatedAt, &c.UpdatedAt,

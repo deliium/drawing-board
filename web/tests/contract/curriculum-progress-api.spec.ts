@@ -16,7 +16,7 @@ describe('curriculum + progress API contract', () => {
         code: 'hiragana5',
         title: 'Hiragana vowels (あいうえお)',
         setId: 'hiragana5',
-        contentVersion: 'hiragana5-content-v1',
+        contentVersion: 'hiragana5-content-v2',
         characters: [
           {
             id: 'hira:あ',

@@ -163,8 +163,15 @@ Registration and login are **not** on the board header; they live only on the pu
 ### Practice canvas coordinates
 Stroke points are stored in **CSS logical pixels** relative to the canvas layout box. The backing store uses `devicePixelRatio` (`backing = round(css × dpr)`) with a matching 2d transform so drawing stays sharp on high-DPI displays without rewriting historical coordinates. Practice and free-board canvases share CSS token `--canvas-size` (`min(92vw, min(70dvh, 420px))`); submit/recognize `width`/`height` are the **live logical CSS** size from the layout box (never a stale 300 constant). One-point taps are persisted and rendered as dots and can be erased.
 
-### Locale (EN/JA)
-The SPA keeps a client-only preference in `localStorage` key `locale:v1` (`en` | `ja`; default EN, or JA when `navigator.language` starts with `ja`). Toggle lives in the app shell. `document.documentElement.lang` tracks the preference. Japanese glyphs/examples keep `lang="ja"`; assessment API `feedback[].message` stays English for persistence — the UI displays corrections via a client map on `feedback[].code` (+ glyph context) with fallback to the API message. Curriculum pedagogy includes `descriptionJa` / `meaningJa` / `titleJa` from the reviewed pack.
+### Locale (EN/JA) and romanization
+The SPA keeps a client-only preference in `localStorage` key `locale:v1` (`en` | `ja`; default EN, or JA when `navigator.language` starts with `ja`). Toggle lives in the app shell. `document.documentElement.lang` tracks the preference. Japanese glyphs/examples keep `lang="ja"`; assessment API `feedback[].message` stays English for persistence — the UI displays corrections via a client map on `feedback[].code` (+ glyph context) with fallback to the API message. Curriculum pedagogy includes `descriptionJa` / `guidanceJa` / `meaningJa` / `titleJa` from the reviewed pack.
+
+Romanization visibility is a separate client preference (`localStorage` key `romanizationVisible:v1`, default `true`). The shell toggle hides Hepburn romanization on the practice hub and character intro (glyph, IPA/`jaHint`, audio, and meanings stay). When hidden, romanization is omitted from the accessibility tree as well.
+
+### Pronunciation audio
+Each hiragana5 character has a reviewed `pronunciation.audioRef` pointing at a short MP3 under `/audio/hiragana5/` (pack canonical: `content/hiragana5/v1/audio/`; SPA mirror: `web/public/audio/hiragana5/`; sync with `make sync-audio`). Intro play is on-demand only (no autoplay). Missing/`null` refs omit the control; load/decode errors soft-fail with a polite live-region message and leave text pedagogy intact. Nginx caches audio with a short `max-age` (not `immutable` — filenames are stable). Licensing and provenance: `content/hiragana5/LICENSES.md`. Do **not** market clips as “AI pronunciation” or “perfect native TTS.”
+
+Pack JSON may include optional `kanjiExtensions` (readings/meanings/radicals/exampleSentences) as a future schema hook; hiragana5 leaves them empty and the validator rejects non-empty payloads on `hira:*` ids.
 
 ### Accessibility & responsive smoke
 Automated: `web/tests/integration/accessibility-parity.spec.ts` runs axe-core on Login, Practice hub, and result summary (zero serious/critical). Manual checklist (run on ≥1 real phone):
@@ -291,7 +298,7 @@ Authenticated GETs for the practice hub / journey (CSRF not required on GET). Pe
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/lessons/{id}` | Published lesson only (`lesson:hiragana5`); characters include glyph, romanization, strokeCount, pronunciation JSON, `descriptionEn`/`descriptionJa`, example word + `meaningEn`/`meaningJa`, lesson `title`/`titleJa` |
+| `GET` | `/api/lessons/{id}` | Published lesson only (`lesson:hiragana5`); characters include glyph, romanization, strokeCount, pronunciation JSON (`audioRef`), `descriptionEn`/`descriptionJa`, `guidanceEn`/`guidanceJa`, example word + `meaningEn`/`meaningJa`, lesson `title`/`titleJa` |
 | `GET` | `/api/progress` | `{ items:[{ characterId, status, attemptCount, passCount, mastery, review, … }] }`; optional `?lessonId=` / `?setId=` |
 | `GET` | `/api/progress/next` | Schedule-aware next suggestion for a published `lessonId` (default `lesson:hiragana5`); prefers due reviews, then introduction/learning; `{ characterId, glyph, reasonCode, masteryState, dueAt?, reviewBox? }` or `characterId: null` + `all_caught_up` (+ optional `nextDueAt` / `nextDueCharacterId`) |
 | `DELETE` | `/api/practice-data` | CSRF; deletes **this user’s** practice attempts (CASCADE assessments/strokes) and `user_character_progress` rows (including review box/`due_at`); does **not** delete free-board strokes or the account |
@@ -426,6 +433,9 @@ SQLite schema changes are **versioned** and applied fail-closed on `db.Open`. Ap
 | 1 | `baseline_board` | Free-board tables (`users`, `strokes`, `stroke_points`, `boardRev` / tombstones / `board_ops`) |
 | 2 | `learning_domain` | Curriculum + attempts (`characters`, `lessons`, `practice_attempts`, `attempt_strokes`, assessments, progress) |
 | 3 | `curriculum_pedagogy` | Pedagogy columns on `characters` (description, pronunciation JSON, examples, `content_version`, `trace_ref`) |
+| 4 | `curriculum_ja_pedagogy` | `description_ja`, `example_meaning_ja`, lesson `title_ja` |
+| 5 | `review_schedule` | Leitner-style `review_box` / `due_at` / `last_reviewed_at` on progress |
+| 6 | `curriculum_guidance` | `guidance_en` / `guidance_ja` on `characters` |
 
 **Free-board vs attempts:** Board strokes (`strokes` / `stroke_points`) are a scratchpad with `boardRev` / `opId`. Practice attempts use separate `attempt_strokes` tables — board clear/undo/erase does **not** delete attempt history. Match scores stored on assessments remain `score_kind=match` (not calibrated confidence).
 
@@ -435,14 +445,15 @@ Trusted curriculum lives under `content/hiragana5/v1/` (あ行 vowels). The vowe
 
 | File | Role |
 |------|------|
-| `manifest.json` | `contentVersion`, `reviewStatus=published`, `contentHash`, lesson title |
-| `characters.json` | Glyph, romanization, pronunciation metadata, description, example word |
+| `manifest.json` | `contentVersion` (e.g. `hiragana5-content-v2`), `schemaVersion` (≥2), `reviewStatus=published`, `contentHash`, lesson title |
+| `characters.json` | Glyph, romanization, pronunciation (`audioRef`), description, concise guidance, example word; optional empty `kanjiExtensions` |
+| `audio/*.mp3` | Reviewed mora clips; `audioRef` = `/audio/hiragana5/<romaji>.mp3` |
 | `strokes.json` | Canonical assessment polylines (normalized 0–1) |
 | `traces.json` | UI trace templates (v1 matches strokes) |
-| `review.json` | Pedagogy pack human-review checklist |
+| `review.json` | Pedagogy pack human-review checklist (includes audio + guidance) |
 | `assessment_review.json` | Scoring tolerances + correction-copy review (Prompt 12) |
 
-Validate with `make validate-content` (runs `go test ./internal/curriculum` and `go run ./cmd/contentvalidate`). Authoring/review checklist: `content/hiragana5/README.md`. Licensing notes: `content/hiragana5/LICENSES.md`.
+Validate with `make validate-content` (syncs/mirrors audio, runs `go test ./internal/curriculum` and `go run ./cmd/contentvalidate`). Authoring/review checklist: `content/hiragana5/README.md`. Licensing notes: `content/hiragana5/LICENSES.md`.
 
 **Seed:** Every Open upserts five characters + published lesson `lesson:hiragana5` from the pack (deterministic; fails closed if pack is not `published` or hash mismatches).
 
@@ -460,7 +471,7 @@ Migrations are **forward-only** in production (no automatic `Down` on startup).
 |--------|---------|
 | `[db.migrate]` | Apply / up-to-date / failed version |
 | `[db.seed]` | Idempotent hiragana5 seed (`contentVersion`, `contentHash`) |
-| `[curriculum.load]` / `[curriculum.validate]` | Pack load + invariant checks (no coordinates) |
+| `[curriculum.load]` / `[curriculum.validate]` | Pack load + invariant checks (audioRef path/bytes; no coordinates; no audio payloads) |
 | `INFO [main] schema_version=` | Final version + `learn_seed=hiragana5` + `contentVersion=` |
 | `[learn.*]` | Attempt/assessment repo DEBUG/INFO (ids/status/counts — no coordinates) |
 | `[httpapi.Lesson.Get]` / `[httpapi.Progress.List]` / `[httpapi.Progress.Next]` | Curriculum/progress/next reads (counts/ids — no stroke geometry) |
@@ -616,4 +627,4 @@ ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in product
 Production `docker-compose.yml` sets `APP_ENV=production`, `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works. Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.
 
 ## License
-CC0 1.0 Universal — see `LICENSE` at the repository root. Curriculum stroke/trace data and short pedagogy glosses are also under CC0; see `content/hiragana5/LICENSES.md`. UI fonts under `web/public/fonts/` are **SIL Open Font License** subsets: IBM Plex Sans and Noto Sans JP (vendored from Fontsource builds for self-hosting; `font-display: swap`).
+CC0 1.0 Universal — see `LICENSE` at the repository root. Curriculum stroke/trace data and short pedagogy glosses are also under CC0; pronunciation audio provenance/licenses are listed in `content/hiragana5/LICENSES.md`. UI fonts under `web/public/fonts/` are **SIL Open Font License** subsets: IBM Plex Sans and Noto Sans JP (vendored from Fontsource builds for self-hosting; `font-display: swap`).

@@ -1,11 +1,11 @@
 {
   "packId": "hiragana5",
-  "contentVersion": "hiragana5-content-v1",
+  "contentVersion": "hiragana5-content-v2",
   "setId": "hiragana5",
   "characterCount": 5,
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "reviewStatus": "published",
-  "contentHash": "9a08f545aeee4765dc636f32e2e2b8910a9962f4be981f7aa8ad1dbf5d738d57",
+  "contentHash": "fec0489e00c9a085f86fbe634d3f2dd515bbbd7dc8dc902ded470929f949b384",
   "licenses": [
     "LICENSES.md"
   ],

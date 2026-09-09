@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useLocale } from '../composables/useLocale'
+import { useRomanizationPreference } from '../composables/useRomanizationPreference'
 import type { Locale } from '../i18n'
 
 const isDev =
@@ -8,6 +9,7 @@ const isDev =
   Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
 
 const { locale, setLocale, t } = useLocale()
+const { romanizationVisible, setRomanizationVisible } = useRomanizationPreference()
 
 const brand = computed(() => t('brand.name'))
 const navPractice = computed(() => t('nav.practice'))
@@ -16,6 +18,9 @@ const navBoard = computed(() => t('nav.board'))
 const navBoardShort = computed(() => t('nav.boardShort'))
 const skipLabel = computed(() => t('nav.skip'))
 const localeLabel = computed(() => t('locale.label'))
+const romanizationLabel = computed(() =>
+  romanizationVisible.value ? t('romanization.hide') : t('romanization.show'),
+)
 
 function onLocaleChange(ev: Event) {
   const value = (ev.target as HTMLSelectElement).value as Locale
@@ -23,6 +28,12 @@ function onLocaleChange(ev: Event) {
     if (isDev) console.debug('[AppShell] locale toggle', value)
     setLocale(value)
   }
+}
+
+function onRomanizationToggle() {
+  const next = !romanizationVisible.value
+  if (isDev) console.debug('[AppShell] romanization toggle', next)
+  setRomanizationVisible(next)
 }
 </script>
 
@@ -58,6 +69,15 @@ function onLocaleChange(ev: Event) {
             <option value="ja">{{ t('locale.ja') }}</option>
           </select>
         </label>
+        <button
+          type="button"
+          class="romaji-toggle"
+          :aria-pressed="romanizationVisible"
+          :aria-label="romanizationLabel"
+          @click="onRomanizationToggle"
+        >
+          {{ romanizationLabel }}
+        </button>
       </div>
     </header>
     <main id="main-content" class="main" tabindex="-1">
@@ -179,6 +199,18 @@ function onLocaleChange(ev: Event) {
   background: var(--paper-raised);
   color: var(--ink);
   font: inherit;
+}
+
+.romaji-toggle {
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
 }
 
 .main {

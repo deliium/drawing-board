@@ -7,15 +7,16 @@ Trusted curriculum for the five-vowel starter set `あ い う え お` (`set_id
 | Path | Role |
 |------|------|
 | `v1/` | Published (or pending) pack version — **only** this tree is seeded / embedded |
+| `v1/audio/` | Reviewed mora MP3s (`a.mp3`…`o.mp3`); mirrored to `web/public/audio/hiragana5/` |
 | `drafts/` | Untrusted AI or WIP material — **never** imported by seed or recognize |
-| `LICENSES.md` | Font / stroke-data / example-word notes |
+| `LICENSES.md` | Font / stroke-data / example-word / **audio** notes |
 
 | `v1/assessment_review.json` | Human review of scoring tolerances + correction copy (Prompt 12) |
 
 ## Authoring
 
-1. Edit files under `v1/` (or stage WIP in `drafts/`).
-2. Run `make validate-content` (or `go test ./internal/curriculum` / `go run ./cmd/contentvalidate`).
+1. Edit files under `v1/` (or stage WIP in `drafts/`). For audio, stage under `drafts/audio/` until listen-reviewed, then copy into `v1/audio/` and set `pronunciation.audioRef` to `/audio/hiragana5/<file>.mp3`.
+2. Run `make sync-audio` then `make validate-content` (or `go test ./internal/curriculum` / `go run ./cmd/contentvalidate`). Refresh `contentHash` with `go run ./cmd/contentvalidate -hash` after pedagogy/geometry edits.
 3. Open a PR with the reviewer checklist below.
 4. After a qualified Japanese-speaker review, fill `v1/review.json`, set `manifest.reviewStatus` to `published`, refresh `contentHash`.
 5. For assessment tolerance/copy changes, also update `v1/assessment_review.json` (`correctionsReviewed=true`) and re-run `go test ./internal/recognize -run 'Eval|Fixture' -v`.
@@ -34,10 +35,19 @@ Completed for `v1` (see `v1/review.json`; `manifest.reviewStatus=published`):
 - [x] Trace templates align with stroke order (for animation)
 - [x] Example words common, age-neutral, correct spelling/meaning
 - [x] Descriptions helpful, not childish, not claiming ML/AI grading
+- [x] Concise EN/JA guidance distinct from longer descriptions
+- [x] Non-null `audioRef` for all five; files present, short, loudness OK; human listen pass
+- [x] Audio license/provenance recorded in `LICENSES.md` (no TTS-only without review note)
+- [x] `kanjiExtensions` absent/empty on `hira:*`
 - [x] No unreviewed AI text remains in `v1/`
 - [x] License notes accurate
 
 Reuse this list (unchecked) when publishing a future `vN` pack.
+
+### Schema notes (Prompt 17)
+
+- `schemaVersion` ≥ 2 requires `guidance.{en,ja}` and non-null `audioRef` resolved under `vN/audio/`.
+- Optional `kanjiExtensions` (`readings`, `meanings`, `radicals`, `exampleSentences`) is a **future** kanji pack hook — hiragana packs must leave it empty.
 
 ### Assessment review (Prompt 12)
 

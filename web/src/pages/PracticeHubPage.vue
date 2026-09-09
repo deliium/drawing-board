@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useLocale } from '../composables/useLocale'
+import { useRomanizationPreference } from '../composables/useRomanizationPreference'
 import { getLesson, HIRAGANA5_LESSON_ID, type Lesson } from '../services/curriculumApi'
 import {
   clearPracticeData,
@@ -16,6 +17,7 @@ const isDev =
   Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
 
 const { t, locale } = useLocale()
+const { romanizationVisible } = useRomanizationPreference()
 
 const lesson = ref<Lesson | null>(null)
 const progressById = ref<Record<string, ProgressItem>>({})
@@ -168,7 +170,10 @@ async function onClearPractice() {
           <router-link class="row" :to="`/practice/${encodeURIComponent(ch.id)}`">
             <span class="glyph" lang="ja">{{ ch.glyph }}</span>
             <span class="meta">
-              <strong :lang="locale === 'ja' ? 'en' : undefined">{{ ch.romanization }}</strong>
+              <strong
+                v-if="romanizationVisible"
+                :lang="locale === 'ja' ? 'en' : undefined"
+              >{{ ch.romanization }}</strong>
               <span class="muted">
                 {{ t('hub.strokes', { count: ch.strokeCount }) }} · {{ masteryFor(ch.id).label }}
               </span>

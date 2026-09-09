@@ -57,7 +57,9 @@ drawing-board/
 - ✅ Board `POST /api/recognize` stays heuristic-only (no `target`); single-character practice uses `/api/attempts`
 - ✅ Practice journey UI uses local canvas ink + REST attempts; free-board WS/`boardRev` must not gate submit/assess
 - ✅ Schema evolves only via versioned migrations in `internal/db/migrations` (fail-closed on `Open`)
-- ✅ Trusted curriculum lives under `content/hiragana5/vN`; `internal/curriculum` loads/validates; seed + recognize both consume the pack (no dual-maintained stroke JSON)
+- ✅ Trusted curriculum lives under `content/hiragana5/vN`; `internal/curriculum` loads/validates (including audioRef file presence); seed + recognize both consume the pack (no dual-maintained stroke JSON)
+- ✅ Pronunciation audio is pack-owned + statically mirrored (`web/public/audio/hiragana5/`); play is client-side on demand with soft-fail missing/error paths
+- ✅ Optional `kanjiExtensions` in pack JSON is a future hook only — hiragana5 keeps it empty
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
 - ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; `i18n/` owns learner chrome strings; pages compose UI + call services
 - ❌ Do not add a global WS broadcast path — delivery is `sendToUser(userID, …)` only
@@ -84,13 +86,14 @@ drawing-board/
 4. **Honest recognition** — MVP assessment is deterministic multi-criterion target comparison for five hiragana; free-board heuristic scores are match-score ranking aids, not calibrated confidence or ONNX/ML
 5. **Assessor owns scoring + corrections** — `recognize` normalizes strokes, scores criteria, selects ≤2 learner feedback messages; `httpapi` persists engine `feedback` (does not invent a parallel correction map)
 6. **Learning storage** — durable curriculum/attempts/progress behind versioned migrations; board scratchpad remains separate
-7. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
-8. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row; UI should prefer score + feedback over candidates
-9. **Guided journey UI** — `/practice` hub + `/practice/history` + `/practice/:characterId` stage machine; curriculum/progress GETs for pedagogy; compute-on-read mastery + schedule-aware next suggestion; practice-data clear is personal only; trace geometry from client fixtures; no WS for attempt ink
-10. **Responsive bilingual accessible SPA** — mobile-first tokens (`--canvas-size`), client EN/JA preference (`web/src/i18n`), correction **display** by code (API EN message persisted), skip link / focus-visible / live regions / textual result summary; axe in Vitest
-11. **Forgiving personal review** — Leitner-style boxes + UTC wall-clock `due_at`; overdue without shame; next prefers due reviews before new introduction; never market as SM-2/FSRS or streak gamification
-12. **Mastery honesty** — mastery labels are a simple practice summary from assessed attempts (not SM-2 stages, belts, grades, or calibrated scores); abandoned drafts never count
-13. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
+7. **Reviewed content pack** — five-vowel `hiragana5` pedagogy + stroke/trace geometry + reviewed mora audio + guidance versioned under `content/`; seed and recognize agree on glyphs, stroke counts, and `contentVersion`
+8. **Language-learning chrome** — on-demand pronunciation play, hideable romanization preference, concise bilingual guidance; kanji extension points in schema without kanji UI
+9. **Attempt-scoped practice** — create/submit/assess/abandon via REST; assessment never loads free-board strokes; retry = new attempt row; UI should prefer score + feedback over candidates
+10. **Guided journey UI** — `/practice` hub + `/practice/history` + `/practice/:characterId` stage machine; curriculum/progress GETs for pedagogy; compute-on-read mastery + schedule-aware next suggestion; practice-data clear is personal only; trace geometry from client fixtures; no WS for attempt ink
+11. **Responsive bilingual accessible SPA** — mobile-first tokens (`--canvas-size`), client EN/JA preference (`web/src/i18n`), correction **display** by code (API EN message persisted), skip link / focus-visible / live regions / textual result summary; axe in Vitest
+12. **Forgiving personal review** — Leitner-style boxes + UTC wall-clock `due_at`; overdue without shame; next prefers due reviews before new introduction; never market as SM-2/FSRS or streak gamification
+13. **Mastery honesty** — mastery labels are a simple practice summary from assessed attempts (not SM-2 stages, belts, grades, or calibrated scores); abandoned drafts never count
+14. **Production perimeter** — fail-fast `COOKIE_KEY` / `ALLOWED_ORIGINS` when production-secure
 
 ## Code Organization Note
 
@@ -127,5 +130,6 @@ ws.send({ type: 'stroke', opId, baseRev: ws.getBoardRev(), stroke: payload })
 - ❌ Dual-writing deletes/clear via REST and WS for the same UI action (Vue uses WS; REST clear is scripts/tests only)
 - ❌ Allocating `width×height` recognize buffers before canvas bounds checks
 - ❌ Documenting recognition as “AI”, calibrated confidence, or an active ONNX/MNIST handwriting upgrade
+- ❌ Marketing pronunciation clips as “AI pronunciation” / “perfect native TTS” without pack license + listen review
 - ❌ Expanding open-set guesses to unrestricted kanji without measured evidence
 - ❌ Using `Access-Control-Allow-Origin: *` with credentialed requests

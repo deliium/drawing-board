@@ -26,6 +26,8 @@ type lessonCharacterResponse struct {
 	Pronunciation json.RawMessage       `json:"pronunciation"`
 	DescriptionEn string                `json:"descriptionEn"`
 	DescriptionJa string                `json:"descriptionJa,omitempty"`
+	GuidanceEn    string                `json:"guidanceEn,omitempty"`
+	GuidanceJa    string                `json:"guidanceJa,omitempty"`
 	Example       lessonExampleResponse `json:"example"`
 	SortKey       int                   `json:"sortKey"`
 	Position      int                   `json:"position"`
@@ -106,6 +108,7 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 	chars := make([]lessonCharacterResponse, 0, len(placements))
 	ids := make([]string, 0, len(placements))
 	contentVersion := ""
+	missingGuidance := 0
 	for _, lc := range placements {
 		ch, err := ls.Characters().Get(r.Context(), lc.CharacterID)
 		if err != nil {
@@ -120,6 +123,9 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 		if contentVersion == "" {
 			contentVersion = ch.ContentVersion
 		}
+		if strings.TrimSpace(ch.GuidanceEn) == "" && strings.TrimSpace(ch.GuidanceJa) == "" {
+			missingGuidance++
+		}
 		pron := decodePronunciationJSON(ch.PronunciationJSON)
 		chars = append(chars, lessonCharacterResponse{
 			ID:            ch.ID,
@@ -129,6 +135,8 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 			Pronunciation: pron,
 			DescriptionEn: ch.DescriptionEn,
 			DescriptionJa: ch.DescriptionJa,
+			GuidanceEn:    ch.GuidanceEn,
+			GuidanceJa:    ch.GuidanceJa,
 			Example: lessonExampleResponse{
 				Word:         ch.ExampleWord,
 				Romanization: ch.ExampleRomanization,
@@ -141,6 +149,9 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, ch.ID)
 	}
 
+	if missingGuidance > 0 {
+		apiLog("WARN", "[httpapi.Lesson.Get] missing guidance count=%d lessonId=%s", missingGuidance, lesson.ID)
+	}
 	apiLog("INFO", "[httpapi.Lesson.Get] userID=%d lessonId=%s characterCount=%d", uid, lesson.ID, len(chars))
 	apiLog("DEBUG", "[httpapi.Lesson.Get] characterIds=%s", strings.Join(ids, ","))
 	writeJSON(w, 200, lessonResponse{

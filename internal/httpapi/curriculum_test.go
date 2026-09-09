@@ -67,6 +67,16 @@ func TestGetLesson_Hiragana5Published(t *testing.T) {
 		if _, ok := pron["ipa"]; !ok {
 			t.Fatalf("missing ipa in pronunciation for %s: %v", ch.ID, pron)
 		}
+		audioRef, _ := pron["audioRef"].(string)
+		if audioRef == "" {
+			t.Fatalf("missing audioRef for %s: %v", ch.ID, pron)
+		}
+		if ch.GuidanceEn == "" || ch.GuidanceJa == "" {
+			t.Fatalf("missing guidance for %s en=%q ja=%q", ch.ID, ch.GuidanceEn, ch.GuidanceJa)
+		}
+	}
+	if resp.ContentVersion != "hiragana5-content-v2" {
+		t.Fatalf("contentVersion=%q", resp.ContentVersion)
 	}
 }
 

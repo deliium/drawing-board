@@ -10,12 +10,16 @@
       "pronunciation": {
         "ipa": "/a/",
         "jaHint": "「あ」の音",
-        "audioRef": null,
+        "audioRef": "/audio/hiragana5/a.mp3",
         "pitch": "unknown"
       },
       "description": {
         "en": "Open vowel “ah”, as in father (shorter). First chart vowel.",
         "ja": "口を開けた母音「あ」。五十音の最初の母音。"
+      },
+      "guidance": {
+        "en": "Listen for a short open “ah”, then write all three strokes in order.",
+        "ja": "短い開いた「あ」を聞いてから、三画を順に書く。"
       },
       "example": {
         "word": "あさ",
@@ -34,12 +38,16 @@
       "pronunciation": {
         "ipa": "/i/",
         "jaHint": "「い」の音",
-        "audioRef": null,
+        "audioRef": "/audio/hiragana5/i.mp3",
         "pitch": "unknown"
       },
       "description": {
         "en": "Close front vowel “ee”, as in see (shorter).",
         "ja": "前寄りの狭い母音「い」。英語の see より短め。"
+      },
+      "guidance": {
+        "en": "Match the short “ee” sound, then keep the two strokes parallel.",
+        "ja": "短い「い」の音に合わせて、二画を平行に。"
       },
       "example": {
         "word": "いぬ",
@@ -58,12 +66,16 @@
       "pronunciation": {
         "ipa": "/ɯ/",
         "jaHint": "「う」の音",
-        "audioRef": null,
+        "audioRef": "/audio/hiragana5/u.mp3",
         "pitch": "unknown"
       },
       "description": {
         "en": "Close back vowel; lips unrounded vs English “oo”.",
         "ja": "後ろ寄りの狭い母音「う」。英語の oo より唇を丸めない。"
+      },
+      "guidance": {
+        "en": "Lips stay soft (not English “oo”); write the hook after the top stroke.",
+        "ja": "唇を丸めすぎず「う」。上の画のあとにフックを。"
       },
       "example": {
         "word": "うみ",
@@ -82,12 +94,16 @@
       "pronunciation": {
         "ipa": "/e/",
         "jaHint": "「え」の音",
-        "audioRef": null,
+        "audioRef": "/audio/hiragana5/e.mp3",
         "pitch": "unknown"
       },
       "description": {
         "en": "Mid front vowel “eh”, as in get.",
         "ja": "前寄りの中段母音「え」。get の e に近い。"
+      },
+      "guidance": {
+        "en": "Aim for a pure “eh” (as in get), then finish the second stroke cleanly.",
+        "ja": "get の e に近い「え」を意識して、二画目を丁寧に。"
       },
       "example": {
         "word": "えき",
@@ -106,12 +122,16 @@
       "pronunciation": {
         "ipa": "/o/",
         "jaHint": "「お」の音",
-        "audioRef": null,
+        "audioRef": "/audio/hiragana5/o.mp3",
         "pitch": "unknown"
       },
       "description": {
         "en": "Mid back vowel “oh”, pure (not a diphthong).",
         "ja": "後ろ寄りの中段母音「お」。二重母音にしない。"
+      },
+      "guidance": {
+        "en": "Keep “oh” pure (no glide); complete all three strokes before stopping.",
+        "ja": "二重母音にせず「お」。三画まで書き切る。"
       },
       "example": {
         "word": "おと",

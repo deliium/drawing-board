@@ -25,20 +25,25 @@ func SeedHiragana5(s *Store) error {
 
 	setID := pack.Manifest.SetID
 	contentVer := pack.Manifest.ContentVersion
+	audioRefs := 0
 
 	for _, c := range pack.Chars {
 		pronJSON, err := json.Marshal(c.Pronunciation)
 		if err != nil {
 			return fmt.Errorf("seed character %s pronunciation: %w", c.ID, err)
 		}
+		if c.Pronunciation.AudioRef != nil && *c.Pronunciation.AudioRef != "" {
+			audioRefs++
+		}
 		traceRef := curriculum.TraceRef(c.Glyph)
 		_, err = tx.Exec(`
 			INSERT INTO characters(
 				id, set_id, glyph, romanization, stroke_count, sort_key, status,
-				description_en, description_ja, pronunciation_json, example_word, example_romanization,
+				description_en, description_ja, guidance_en, guidance_ja,
+				pronunciation_json, example_word, example_romanization,
 				example_meaning_en, example_meaning_ja,
 				content_version, trace_ref
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				set_id=excluded.set_id,
 				glyph=excluded.glyph,
@@ -48,6 +53,8 @@ func SeedHiragana5(s *Store) error {
 				status=excluded.status,
 				description_en=excluded.description_en,
 				description_ja=excluded.description_ja,
+				guidance_en=excluded.guidance_en,
+				guidance_ja=excluded.guidance_ja,
 				pronunciation_json=excluded.pronunciation_json,
 				example_word=excluded.example_word,
 				example_romanization=excluded.example_romanization,
@@ -57,13 +64,15 @@ func SeedHiragana5(s *Store) error {
 				trace_ref=excluded.trace_ref,
 				updated_at=CURRENT_TIMESTAMP
 		`, c.ID, setID, c.Glyph, c.Romanization, c.StrokeCount, c.SortKey, c.Status,
-			c.Description.En, c.Description.Ja, string(pronJSON), c.Example.Word, c.Example.Romanization,
+			c.Description.En, c.Description.Ja, c.Guidance.En, c.Guidance.Ja,
+			string(pronJSON), c.Example.Word, c.Example.Romanization,
 			c.Example.MeaningEn, c.Example.MeaningJa,
 			contentVer, traceRef)
 		if err != nil {
 			return fmt.Errorf("seed character %s: %w", c.ID, err)
 		}
-		dbLog("DEBUG", "[db.seed] character id=%s romanization=%s strokeCount=%d", c.ID, c.Romanization, c.StrokeCount)
+		dbLog("DEBUG", "[db.seed] character id=%s romanization=%s strokeCount=%d audioRef=%t",
+			c.ID, c.Romanization, c.StrokeCount, c.Pronunciation.AudioRef != nil && *c.Pronunciation.AudioRef != "")
 	}
 
 	lesson := pack.Manifest.Lesson
@@ -97,8 +106,8 @@ func SeedHiragana5(s *Store) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	dbLog("INFO", "[db.seed] set=%s characters=%d lesson=%s contentVersion=%s contentHash=%s",
-		setID, len(pack.Chars), lesson.ID, contentVer, pack.Manifest.ContentHash)
+	dbLog("INFO", "[db.seed] set=%s characters=%d lesson=%s contentVersion=%s contentHash=%s audioRefs=%d",
+		setID, len(pack.Chars), lesson.ID, contentVer, pack.Manifest.ContentHash, audioRefs)
 	return nil
 }
 

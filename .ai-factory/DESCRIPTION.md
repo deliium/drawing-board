@@ -26,11 +26,11 @@ See `.ai-factory/ARCHITECTURE.md` — Go `cmd/` + `internal/` packages with a Vu
 - REST list strokes (`boardRev` envelope); recognize revision-gated; clear available via WS (primary) or REST helper
 - Recognition: multi-criterion deterministic target assessment for five hiragana (`hiragana5`) with ≤2 actionable corrections; optional free-board heuristic ranking with match scores (not ML/ONNX)
 - Durable learning schema (characters/lessons/attempts/assessments/progress) via versioned SQLite migrations, separate from free-board strokes
-- Reviewed five-vowel starter curriculum pack (`content/hiragana5/`) with pedagogy fields, stroke/trace templates, and deterministic seed
+- Reviewed five-vowel starter curriculum pack (`content/hiragana5/`) with pedagogy fields, guidance, reviewed mora audio, stroke/trace templates, and deterministic seed (kanji extension points reserved empty)
 - Attempt-scoped practice assessment REST (`/api/attempts`) — submit strokes for one character, assess via target comparison + correction catalog, persist engine feedback without reading the free-board
-- Guided learner journey UI (`/#/practice`) for hiragana5 — intro, stroke-order animation, trace/free-write, comparison overlay with ≤2 corrections; curriculum/progress read APIs
+- Guided learner journey UI (`/#/practice`) for hiragana5 — intro with pronunciation play + guidance, stroke-order animation, trace/free-write, comparison overlay with ≤2 corrections; curriculum/progress read APIs
 - Attempt history (`/#/practice/history`), explainable per-character mastery, Leitner-style personal review schedule (pass/fail → box/`due_at`), schedule-aware next suggestion, and self-serve clear of practice data (not free-board)
-- Responsive bilingual (EN/JA) learner chrome with fluid shared canvas sizing, focus-visible / live regions, and axe-covered critical surfaces
+- Responsive bilingual (EN/JA) learner chrome with hideable romanization, fluid shared canvas sizing, focus-visible / live regions, and axe-covered critical surfaces
 - Perimeter: origin allowlist, CSRF on mutating `/api/*`, production-secure cookies
 
 ## Non-Functional Requirements

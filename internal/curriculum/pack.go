@@ -17,12 +17,15 @@ import (
 )
 
 const (
-	PackIDHiragana5      = "hiragana5"
-	SetIDHiragana5       = "hiragana5"
-	ReviewStatusDraft    = "draft"
-	ReviewStatusReviewed = "reviewed"
+	PackIDHiragana5       = "hiragana5"
+	SetIDHiragana5        = "hiragana5"
+	ReviewStatusDraft     = "draft"
+	ReviewStatusReviewed  = "reviewed"
 	ReviewStatusPublished = "published"
-	ExpectedCharCount    = 5
+	ExpectedCharCount     = 5
+	CurrentSchemaVersion  = 2
+	// AudioRefStaticPrefix is the URL path prefix served from web/public (and pack audio/).
+	AudioRefStaticPrefix = "/audio/hiragana5/"
 )
 
 // Point is a normalized [0,1] canvas coordinate.
@@ -31,7 +34,7 @@ type Point struct {
 	Y float64 `json:"y"`
 }
 
-// Pronunciation is metadata only (no audio binary in v1).
+// Pronunciation is pedagogy metadata; audioRef points at a static clip when set.
 type Pronunciation struct {
 	IPA      string  `json:"ipa"`
 	JaHint   string  `json:"jaHint"`
@@ -53,17 +56,45 @@ type Example struct {
 	MeaningJa    string `json:"meaningJa"`
 }
 
+// KanjiExampleSentence is a future kanji pack extension point (unused by hiragana5).
+type KanjiExampleSentence struct {
+	Text         string `json:"text"`
+	Reading      string `json:"reading"`
+	MeaningEn    string `json:"meaningEn"`
+	MeaningJa    string `json:"meaningJa"`
+	Romanization string `json:"romanization,omitempty"`
+}
+
+// KanjiExtensions reserves readings/meanings/radicals/sentences for a future kanji pack.
+// Hiragana5 must leave this absent or empty; Validate rejects non-empty payloads on hira:*.
+type KanjiExtensions struct {
+	Readings         []string               `json:"readings,omitempty"`
+	Meanings         []string               `json:"meanings,omitempty"`
+	Radicals         []string               `json:"radicals,omitempty"`
+	ExampleSentences []KanjiExampleSentence `json:"exampleSentences,omitempty"`
+}
+
+// Empty reports whether no kanji extension fields are populated.
+func (k *KanjiExtensions) Empty() bool {
+	if k == nil {
+		return true
+	}
+	return len(k.Readings) == 0 && len(k.Meanings) == 0 && len(k.Radicals) == 0 && len(k.ExampleSentences) == 0
+}
+
 // Character is one curriculum glyph record.
 type Character struct {
-	ID            string        `json:"id"`
-	Glyph         string        `json:"glyph"`
-	Romanization  string        `json:"romanization"`
-	SortKey       int           `json:"sortKey"`
-	StrokeCount   int           `json:"strokeCount"`
-	Status        string        `json:"status"`
-	Pronunciation Pronunciation `json:"pronunciation"`
-	Description   Description   `json:"description"`
-	Example       Example       `json:"example"`
+	ID              string           `json:"id"`
+	Glyph           string           `json:"glyph"`
+	Romanization    string           `json:"romanization"`
+	SortKey         int              `json:"sortKey"`
+	StrokeCount     int              `json:"strokeCount"`
+	Status          string           `json:"status"`
+	Pronunciation   Pronunciation    `json:"pronunciation"`
+	Description     Description      `json:"description"`
+	Guidance        Description      `json:"guidance"`
+	Example         Example          `json:"example"`
+	KanjiExtensions *KanjiExtensions `json:"kanjiExtensions,omitempty"`
 }
 
 // LessonMeta is seeded lesson identity/title.
@@ -119,6 +150,7 @@ type Pack struct {
 	Strokes  map[string][][]Point // glyph → strokes
 	Traces   map[string][][]Point
 	Review   ReviewRecord
+	fsys     fs.FS // set by Load*; used to resolve audioRef files
 }
 
 func logf(level, format string, args ...interface{}) {
@@ -156,8 +188,14 @@ func LoadPack(fsys fs.FS, versionDir string) (Pack, error) {
 		logf("ERROR", "[curriculum.validate] %v", err)
 		return Pack{}, err
 	}
-	logf("INFO", "[curriculum.load] contentVersion=%s hash=%s reviewStatus=%s",
-		p.Manifest.ContentVersion, p.Manifest.ContentHash, p.Manifest.ReviewStatus)
+	audioN := 0
+	for _, c := range p.Chars {
+		if c.Pronunciation.AudioRef != nil && strings.TrimSpace(*c.Pronunciation.AudioRef) != "" {
+			audioN++
+		}
+	}
+	logf("INFO", "[curriculum.load] contentVersion=%s hash=%s reviewStatus=%s audioFiles=%d",
+		p.Manifest.ContentVersion, p.Manifest.ContentHash, p.Manifest.ReviewStatus, audioN)
 	return p, nil
 }
 
@@ -196,6 +234,7 @@ func loadPackRaw(fsys fs.FS, versionDir string) (Pack, error) {
 
 	var p Pack
 	p.Dir = versionDir
+	p.fsys = fsys
 
 	if err := readJSON(fsys, path.Join(versionDir, "manifest.json"), &p.Manifest); err != nil {
 		return Pack{}, err
@@ -312,6 +351,9 @@ func Validate(p Pack) error {
 	if m.SchemaVersion < 1 {
 		return fmt.Errorf("manifest.schemaVersion: invalid")
 	}
+	if m.SchemaVersion > CurrentSchemaVersion {
+		return fmt.Errorf("manifest.schemaVersion: unsupported %d (max %d)", m.SchemaVersion, CurrentSchemaVersion)
+	}
 	switch m.ReviewStatus {
 	case ReviewStatusDraft, ReviewStatusReviewed, ReviewStatusPublished:
 	default:
@@ -368,11 +410,26 @@ func Validate(p Pack) error {
 		if c.Description.Ja == "" {
 			return fmt.Errorf("%s.description.ja: empty", prefix)
 		}
+		if m.SchemaVersion >= 2 {
+			if strings.TrimSpace(c.Guidance.En) == "" {
+				return fmt.Errorf("%s.guidance.en: empty", prefix)
+			}
+			if strings.TrimSpace(c.Guidance.Ja) == "" {
+				return fmt.Errorf("%s.guidance.ja: empty", prefix)
+			}
+		}
 		if c.Example.Word == "" || c.Example.Romanization == "" || c.Example.MeaningEn == "" {
 			return fmt.Errorf("%s.example: incomplete", prefix)
 		}
 		if c.Example.MeaningJa == "" {
 			return fmt.Errorf("%s.example.meaningJa: empty", prefix)
+		}
+		if !c.KanjiExtensions.Empty() {
+			return fmt.Errorf("%s.kanjiExtensions: must be empty for hiragana ids (%s)", prefix, c.ID)
+		}
+
+		if err := validateAudioRef(p, prefix, c); err != nil {
+			return err
 		}
 
 		strokes, ok := p.Strokes[c.Glyph]
@@ -396,6 +453,18 @@ func Validate(p Pack) error {
 			return err
 		}
 		logf("DEBUG", "[curriculum.validate] glyph=%s strokes=%d", c.Glyph, c.StrokeCount)
+	}
+
+	if m.SchemaVersion >= 2 {
+		audioOK := 0
+		for _, c := range p.Chars {
+			if c.Pronunciation.AudioRef != nil && strings.TrimSpace(*c.Pronunciation.AudioRef) != "" {
+				audioOK++
+			}
+		}
+		if audioOK != ExpectedCharCount {
+			return fmt.Errorf("characters: schemaVersion>=2 requires audioRef for all %d glyphs (got %d)", ExpectedCharCount, audioOK)
+		}
 	}
 
 	for i, g := range wantGlyphs {
@@ -454,6 +523,61 @@ func validatePolylines(field string, strokes [][]Point) error {
 			}
 		}
 	}
+	return nil
+}
+
+// AudioPackRelPath maps a static audioRef URL to a pack-relative path under versionDir/audio/.
+// Example: /audio/hiragana5/a.mp3 → audio/a.mp3
+func AudioPackRelPath(audioRef string) (string, error) {
+	ref := strings.TrimSpace(audioRef)
+	if ref == "" {
+		return "", fmt.Errorf("empty audioRef")
+	}
+	if !strings.HasPrefix(ref, AudioRefStaticPrefix) {
+		return "", fmt.Errorf("audioRef %q: want prefix %q", ref, AudioRefStaticPrefix)
+	}
+	base := path.Base(ref)
+	if base == "." || base == "/" || base == "" || strings.Contains(base, "..") {
+		return "", fmt.Errorf("audioRef %q: invalid basename", ref)
+	}
+	ext := strings.ToLower(path.Ext(base))
+	switch ext {
+	case ".mp3", ".ogg", ".webm", ".wav":
+	default:
+		return "", fmt.Errorf("audioRef %q: unsupported extension %q", ref, ext)
+	}
+	return path.Join("audio", base), nil
+}
+
+func validateAudioRef(p Pack, prefix string, c Character) error {
+	refPtr := c.Pronunciation.AudioRef
+	if refPtr == nil || strings.TrimSpace(*refPtr) == "" {
+		if p.Manifest.SchemaVersion >= 2 {
+			return fmt.Errorf("%s.pronunciation.audioRef: required for schemaVersion>=2", prefix)
+		}
+		logf("DEBUG", "[curriculum.validate] audioRef=null glyph=%s", c.Glyph)
+		return nil
+	}
+	ref := strings.TrimSpace(*refPtr)
+	rel, err := AudioPackRelPath(ref)
+	if err != nil {
+		logf("WARN", "[curriculum.validate] audio invalid ref=%s: %v", ref, err)
+		return fmt.Errorf("%s.pronunciation.audioRef: %w", prefix, err)
+	}
+	if p.fsys == nil {
+		return fmt.Errorf("%s.pronunciation.audioRef: pack filesystem unavailable", prefix)
+	}
+	full := path.Join(p.Dir, rel)
+	info, err := fs.Stat(p.fsys, full)
+	if err != nil {
+		logf("WARN", "[curriculum.validate] audio missing ref=%s path=%s", ref, full)
+		return fmt.Errorf("%s.pronunciation.audioRef: missing file %s", prefix, full)
+	}
+	if info.IsDir() || info.Size() <= 0 {
+		logf("WARN", "[curriculum.validate] audio empty ref=%s path=%s", ref, full)
+		return fmt.Errorf("%s.pronunciation.audioRef: empty file %s", prefix, full)
+	}
+	logf("DEBUG", "[curriculum.validate] audioRef=%s ok bytes=%d glyph=%s", ref, info.Size(), c.Glyph)
 	return nil
 }
 

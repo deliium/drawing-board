@@ -25,8 +25,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "ERROR [contentvalidate] %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("INFO [contentvalidate] ok contentVersion=%s hash=%s characters=%d\n",
-		p.Manifest.ContentVersion, p.Manifest.ContentHash, len(p.Chars))
+	audioN := 0
+	for _, c := range p.Chars {
+		if c.Pronunciation.AudioRef != nil && *c.Pronunciation.AudioRef != "" {
+			audioN++
+		}
+	}
+	fmt.Printf("INFO [contentvalidate] ok contentVersion=%s hash=%s characters=%d audioFiles=%d schemaVersion=%d\n",
+		p.Manifest.ContentVersion, p.Manifest.ContentHash, len(p.Chars), audioN, p.Manifest.SchemaVersion)
 }
 
 func loadRawForHash() (string, error) {

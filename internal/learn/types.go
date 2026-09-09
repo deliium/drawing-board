@@ -36,6 +36,8 @@ type Character struct {
 	Status              string
 	DescriptionEn       string
 	DescriptionJa       string
+	GuidanceEn          string
+	GuidanceJa          string
 	PronunciationJSON   string
 	ExampleWord         string
 	ExampleRomanization string

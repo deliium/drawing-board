@@ -34,11 +34,12 @@ web/src/              # Vue SPA
 web/src/pages/        # BoardPage, PracticeHub/History/Character, LoginPage
 web/src/components/practice/  # intro, stroke-order, canvas, overlay, journey chrome
 web/src/canvas/       # CSS/DPR coords, layout helpers, draw, hit-test helpers
-web/src/composables/  # usePracticeCanvas + usePracticeJourney + useLocale
+web/src/composables/  # usePracticeCanvas + usePracticeJourney + useLocale + useRomanizationPreference
 web/src/i18n/         # EN/JA catalogs + correction display map
 web/src/curriculum/   # hiragana5 trace fixtures (geometry only)
 web/src/services/     # apiFetch, attempts/curriculum/progress clients, wsClient
 web/public/fonts/     # self-hosted OFL font subsets
+web/public/audio/hiragana5/  # mirrored mora clips (canonical under content pack)
 web/tests/            # Vitest (+ axe a11y)
 .ai-factory/          # plans, patches, AI context
 docker/               # compose / nginx helpers
@@ -72,6 +73,8 @@ docker/               # compose / nginx helpers
 | `web/src/composables/usePracticeJourney.ts` | Stage machine, session resume, attempt orchestration |
 | `web/src/composables/usePracticeCanvas.ts` | Pointer lifecycle, DPR resize redraw, Escape cancel |
 | `web/src/composables/useLocale.ts` | EN/JA preference + reactive `t` |
+| `web/src/composables/useRomanizationPreference.ts` | Hide/show Hepburn romanization (`romanizationVisible:v1`) |
+| `web/src/components/practice/PronunciationAudioButton.vue` | Accessible on-demand mora playback + soft-fail |
 | `web/src/canvas/*` | CSS-logical coords, layout helpers, stroke paint (incl. dots), hit-test |
 | `web/src/i18n/*` | Lightweight EN/JA catalogs + correction display by code |
 | `web/src/curriculum/*` | Trace template fixtures for animation/overlay |

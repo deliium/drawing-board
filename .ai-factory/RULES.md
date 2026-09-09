@@ -15,7 +15,9 @@ Hard requirements for this repository. More specific files under `.ai-factory/ru
 - Guided practice UI (`/#/practice`) draws attempt ink **locally** — do not enqueue practice strokes on WebSocket / `boardRev`; free-board remains the WS scratchpad.
 - SQLite schema changes use **versioned, fail-closed migrations** (`schema_migrations`); do not reintroduce ad-hoc unversioned DDL on `Open`.
 - Trusted curriculum is versioned under `content/hiragana5/vN` only; AI/WIP drafts stay in `content/hiragana5/drafts/` and must never be seeded or embedded for recognition.
+- Pronunciation audio for published packs is pack-owned (`vN/audio/` + `audioRef`), license-documented, and human listen-reviewed — never ship TTS as the sole undocumented trusted source; never market audio as “AI pronunciation.”
 - Seed and recognize must agree on the `hiragana5` glyph set, stroke counts, and pack `contentVersion` (single pack source of truth).
+- Pack `kanjiExtensions` is a schema extension point only for hiragana5 (must stay empty); do not implement kanji UI/seed without a dedicated plan.
 - Do **not** add classroom/cohort tables or SM-2/FSRS ease factors without a dedicated plan.
 - **Mastery** is a compute-on-read engineering heuristic from **assessed** attempts only — never label it as confidence, grade, belt, or SM-2 stage; abandoned/submitted-only drafts do not count; UI copy must stay humble (`go test ./internal/docguard` must stay green).
 - **Personal review schedule** is Leitner-style fixed boxes (`review_box` / `due_at`) updated automatically from assessed pass/fail only — wall-clock UTC intervals, overdue without penalty; never ship streaks, push/email notifications, daily goals, or SM-2/FSRS marketing; do not invent a parallel SRS service package outside `learn`.

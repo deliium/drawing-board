@@ -23,6 +23,8 @@ export type LessonCharacter = {
   pronunciation: Pronunciation
   descriptionEn: string
   descriptionJa?: string
+  guidanceEn?: string
+  guidanceJa?: string
   example: LessonExample
   sortKey: number
   position: number

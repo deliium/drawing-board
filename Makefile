@@ -1,6 +1,6 @@
 SHELL := /usr/bin/zsh
 
-.PHONY: dev backend frontend build-web run zinnia-build zinnia-model docker-build docker-run docker-stop docker-clean test validate-content
+.PHONY: dev backend frontend build-web run zinnia-build zinnia-model docker-build docker-run docker-stop docker-clean test validate-content sync-audio
 
 backend:
 	go run ./cmd/server
@@ -14,7 +14,13 @@ build-web:
 run:
 	ADDR=:8080 STATIC_DIR=web/dist go run ./cmd/server
 
-validate-content:
+# Mirror pack audio into Vite/public (canonical files live under content/hiragana5/v1/audio/).
+sync-audio:
+	mkdir -p web/public/audio/hiragana5
+	cp -f content/hiragana5/v1/audio/* web/public/audio/hiragana5/
+
+validate-content: sync-audio
+	@diff -rq content/hiragana5/v1/audio web/public/audio/hiragana5
 	go test ./internal/curriculum -count=1
 	go run ./cmd/contentvalidate
 

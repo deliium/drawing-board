@@ -19,6 +19,7 @@ func All() []Migration {
 		{Version: 3, Name: "curriculum_pedagogy", Up: up0003CurriculumPedagogy},
 		{Version: 4, Name: "curriculum_ja_pedagogy", Up: up0004CurriculumJaPedagogy},
 		{Version: 5, Name: "review_schedule", Up: up0005ReviewSchedule},
+		{Version: 6, Name: "curriculum_guidance", Up: up0006CurriculumGuidance},
 	}
 }
 

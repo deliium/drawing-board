@@ -41,7 +41,7 @@ const lessonFixture = {
   code: 'hiragana5',
   title: 'Hiragana vowels',
   setId: 'hiragana5',
-  contentVersion: 'hiragana5-content-v1',
+  contentVersion: 'hiragana5-content-v2',
   characters: [
     {
       id: 'hira:あ',
