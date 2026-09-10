@@ -162,6 +162,7 @@ export const ja: Record<string, string> = {
   'canvas.strokeOrder': '{glyph}の筆順',
   'strokeOrder.reduced': '動きを減らしています — 最終の筆画を表示しています。続けられます。',
   'strokeOrder.skip': 'スキップ',
+  'strokeOrder.missing': '「{glyph}」の筆順を表示できません。続けられます。',
 
   'result.aria': '練習結果の要約',
   'result.heading': '結果',

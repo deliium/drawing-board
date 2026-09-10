@@ -162,6 +162,7 @@ export const en: Record<string, string> = {
   'canvas.strokeOrder': 'Stroke order for {glyph}',
   'strokeOrder.reduced': 'Motion reduced — showing final strokes. You can continue.',
   'strokeOrder.skip': 'Skip',
+  'strokeOrder.missing': 'Stroke order for 「{glyph}」 is unavailable. You can continue.',
 
   'result.aria': 'Attempt result summary',
   'result.heading': 'Result',
