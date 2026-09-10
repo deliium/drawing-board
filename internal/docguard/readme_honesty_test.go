@@ -78,3 +78,49 @@ func TestREADMEDoesNotMarketHeuristicAsAI(t *testing.T) {
 			strings.Join(hits, "\n  - "))
 	}
 }
+
+// When pack LICENSES.md marks strokes.json / traces.json as CC BY-SA, README must not
+// claim that curriculum stroke/trace geometry is under CC0, and must surface the share-alike license.
+var readmeStrokeTraceCC0Claim = regexp.MustCompile(`(?i)stroke/?trace[^\n.]{0,120}\bunder\s+CC0`)
+
+func TestREADMEStrokeTraceLicenseMatchesPack(t *testing.T) {
+	root := moduleRoot(t)
+	licPath := filepath.Join(root, "content", "hiragana5", "LICENSES.md")
+	licRaw, err := os.ReadFile(licPath)
+	if err != nil {
+		t.Fatalf("read LICENSES.md: %v", err)
+	}
+	packShareAlike := false
+	for _, line := range strings.Split(string(licRaw), "\n") {
+		if !strings.Contains(line, "CC BY-SA") {
+			continue
+		}
+		if strings.Contains(line, "strokes.json") || strings.Contains(line, "traces.json") {
+			packShareAlike = true
+			break
+		}
+	}
+	if !packShareAlike {
+		t.Skip("hiragana5 LICENSES.md does not mark strokes.json/traces.json as CC BY-SA")
+	}
+
+	readmePath := filepath.Join(root, "README.md")
+	readmeRaw, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	readme := string(readmeRaw)
+	if loc := readmeStrokeTraceCC0Claim.FindStringIndex(readme); loc != nil {
+		line := 1 + strings.Count(readme[:loc[0]], "\n")
+		end := loc[1] + 40
+		if end > len(readme) {
+			end = len(readme)
+		}
+		snippet := strings.TrimSpace(strings.ReplaceAll(readme[loc[0]:end], "\n", " "))
+		t.Fatalf("README.md claims stroke/trace geometry under CC0 while content/hiragana5/LICENSES.md marks those files CC BY-SA @ line %d: %s",
+			line, snippet)
+	}
+	if !strings.Contains(readme, "CC BY-SA") {
+		t.Fatal("README.md must mention CC BY-SA when hiragana5 stroke/trace geometry is share-alike licensed (see content/hiragana5/LICENSES.md)")
+	}
+}

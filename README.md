@@ -467,7 +467,7 @@ Trusted curriculum lives under `content/hiragana5/v1/` (あ行 vowels). The vowe
 | `characters.json` | Glyph, romanization, pronunciation (`audioRef`), description, concise guidance, example word; optional empty `kanjiExtensions` |
 | `audio/*.mp3` | Reviewed mora clips; `audioRef` = `/audio/hiragana5/<romaji>.mp3` |
 | `strokes.json` | Canonical assessment polylines (normalized 0–1) |
-| `traces.json` | UI trace templates (same stroke count/order; denser smooth paths for display) |
+| `traces.json` | UI trace templates (same stroke count/order; denser KanjiVG-derived schoolbook paths for display; see `content/hiragana5/LICENSES.md`) |
 | `review.json` | Pedagogy pack human-review checklist (includes audio + guidance) |
 | `assessment_review.json` | Scoring tolerances + correction-copy review (Prompt 12) |
 
@@ -746,4 +746,4 @@ ALLOWED_ORIGINS=http://localhost  # Exact browser origin(s); required in product
 Production `docker-compose.yml` sets `APP_ENV=production`, a placeholder `COOKIE_KEY`, and `ALLOWED_ORIGINS` (not `SESSION_SECRET`). The placeholder is a **blocked sentinel**: replace it with a strong random key (≥32 bytes) before the backend will listen. The backend port is **not** published to the host; Nginx on `:80` is the public entrypoint. Dev compose uses a ≥32-byte `COOKIE_KEY` plus an explicit Vite/Nginx origin allowlist without production-secure flags so HTTP works (that key is also a sentinel if copied into production-secure mode). Pair production Secure cookies with HTTPS at the browser (`docker/nginx-tls.conf.example`). Local `APP_ENV=production` over plain `http://localhost` will drop Secure cookies in browsers — treat that compose path as a demo unless TLS is terminated in front.
 
 ## License
-CC0 1.0 Universal — see `LICENSE` at the repository root. Curriculum stroke/trace data and short pedagogy glosses are also under CC0; pronunciation audio provenance/licenses are listed in `content/hiragana5/LICENSES.md`. UI fonts under `web/public/fonts/` are **SIL Open Font License** subsets: IBM Plex Sans and Noto Sans JP (vendored from Fontsource builds for self-hosting; `font-display: swap`).
+CC0 1.0 Universal — see `LICENSE` at the repository root. Short pedagogy glosses in the hiragana5 pack are also under CC0. Canonical stroke/trace geometry (`content/hiragana5/v1/strokes.json`, `traces.json`, and the SPA mirror) is adapted from [KanjiVG](http://kanjivg.tagaini.net) under **CC BY-SA 3.0** — see `content/hiragana5/LICENSES.md` for attribution and for pronunciation audio provenance. UI fonts under `web/public/fonts/` are **SIL Open Font License** subsets: IBM Plex Sans and Noto Sans JP (vendored from Fontsource builds for self-hosting; `font-display: swap`).

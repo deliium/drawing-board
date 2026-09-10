@@ -1,7 +1,7 @@
 {
   "reviewer": "deliium",
   "reviewedAt": "2026-09-09",
-  "notes": "Standard あ行 pedagogy: Hepburn romanization, school stroke counts/order, common elementary example words. Assessment stroke polylines remain sparse control paths; UI traces are denser smooth-sampled paths with the same stroke count/order. Prompt 17: concise guidance added; mora audio from Wikimedia Commons public-domain clips by Hakatanoshio117117 (trimmed/loudness-normalized; human listen pass for phone, clarity, age-neutral teaching use).",
+  "notes": "Standard あ行 pedagogy: Hepburn romanization, school stroke counts/order, common elementary example words. Stroke geometry derived from KanjiVG schoolbook paths (CC BY-SA 3.0): denser UI traces + sparse assessment control paths, same stroke count/order (お = horizontal, vertical-into-loop, top-right tick). Prompt 17: concise guidance added; mora audio from Wikimedia Commons public-domain clips by Hakatanoshio117117 (trimmed/loudness-normalized; human listen pass for phone, clarity, age-neutral teaching use).",
   "checklist": {
     "fiveCharactersARow": true,
     "hepburnRomanization": true,

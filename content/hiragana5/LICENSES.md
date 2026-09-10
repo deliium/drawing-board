@@ -4,11 +4,15 @@ Root repository license is **CC0 1.0** (`LICENSE` at repo root).
 
 | Asset | Status |
 |-------|--------|
-| Canonical stroke polylines (`v1/strokes.json`) | Project-authored under CC0 |
-| Trace templates (`v1/traces.json`) | Project-authored denser UI paths under CC0 (same stroke count/order as assessment; not a byte-identical alias of `strokes.json`) |
+| Canonical stroke polylines (`v1/strokes.json`) | Derived from [KanjiVG](http://kanjivg.tagaini.net) (© Ulrich Apel) under **CC BY-SA 3.0** — sparse control paths sampled from schoolbook stroke SVGs |
+| Trace templates (`v1/traces.json`) | Same KanjiVG source under **CC BY-SA 3.0** — denser sampled paths for UI (same stroke count/order as assessment; not a byte-identical alias of `strokes.json`) |
 | Character pedagogy copy (descriptions, guidance, example glosses) | Original short glosses under CC0; not copied from textbooks |
 | Display fonts (Noto Sans JP / similar) | Self-hosted OFL subsets under `web/public/fonts/` — see font license files there |
 | Pronunciation audio (`v1/audio/*.mp3`) | See table below |
+
+### Stroke geometry (KanjiVG)
+
+`v1/strokes.json` and `v1/traces.json` are adaptations of KanjiVG hiragana SVGs (`03042`–`0304a`), normalized to unit coordinates for this pack. KanjiVG is copyright © Ulrich Apel and licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). Those two geometry files (and substantial derivatives) remain under CC BY-SA 3.0 with attribution to KanjiVG; other pack assets stay as listed above.
 
 Third-party stroke fonts or paths must not enter `v1/` without an explicit compatible license entry here plus attribution.
 

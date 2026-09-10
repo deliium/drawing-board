@@ -1,40 +1,57 @@
 {
-  "name": "i-reverse-both",
+  "name": "i-reverse-stroke2",
   "target": "い",
   "strokes": [
     {
       "points": [
         {
-          "x": 0.3,
-          "y": 0.82
+          "x": 0.329,
+          "y": 0.702
         },
         {
-          "x": 0.22,
-          "y": 0.55
+          "x": 0.268,
+          "y": 0.771
         },
         {
-          "x": 0.28,
-          "y": 0.22
+          "x": 0.186,
+          "y": 0.654
+        },
+        {
+          "x": 0.155,
+          "y": 0.514
+        },
+        {
+          "x": 0.161,
+          "y": 0.37
+        },
+        {
+          "x": 0.145,
+          "y": 0.233
         }
       ]
     },
     {
       "points": [
         {
-          "x": 0.68,
-          "y": 0.8
+          "x": 1.016,
+          "y": 0.67
         },
         {
-          "x": 0.72,
-          "y": 0.55
+          "x": 0.988,
+          "y": 0.531
         },
         {
-          "x": 0.62,
-          "y": 0.28
+          "x": 0.917,
+          "y": 0.409
+        },
+        {
+          "x": 0.818,
+          "y": 0.307
         }
       ]
     }
   ],
   "expectPass": false,
-  "expectFeedbackCode": "start_direction"
+  "expectFeedbackCode": "start_direction",
+  "notes": "Both strokes reversed (plus slight stroke-2 shift) so direction fails under T_pass."
 }

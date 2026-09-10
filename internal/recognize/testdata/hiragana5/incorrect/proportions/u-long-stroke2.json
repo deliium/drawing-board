@@ -5,12 +5,20 @@
     {
       "points": [
         {
-          "x": 0.35,
-          "y": 0.18
+          "x": 0.366,
+          "y": 0.081
         },
         {
-          "x": 0.65,
-          "y": 0.18
+          "x": 0.46,
+          "y": 0.108
+        },
+        {
+          "x": 0.558,
+          "y": 0.117
+        },
+        {
+          "x": 0.5,
+          "y": 0.172
         }
       ]
     },
@@ -180,6 +188,6 @@
     }
   ],
   "expectPass": false,
-  "expectFeedbackCode": "proportions",
+  "expectFeedbackCode": "shape",
   "notes": "Stroke-2 spiral keeps endpoints; length/shape degrade so overall fails; proportions appears in top-2 coaching (placement may rank first by priority)."
 }
