@@ -241,7 +241,7 @@ Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when 
 **CORS / WebSocket origins:** credentialed CORS echoes `Access-Control-Allow-Origin` only for exact allowlisted origins (never `*`). Disallowed CORS preflight returns `403`. WebSocket `CheckOrigin` uses the same allowlist and rejects missing Origin.
 
 - `POST /api/register` — Create account `{ email, password }` (password min 8, max 72 UTF-8 bytes). Success `200` `{ id, email }` + rotated session cookie. New passwords are stored with **bcrypt** (cost 12). If session creation fails after insert, the user row is rolled back so a later register can succeed.
-- `POST /api/login` — Sign in `{ email, password }` (max 72 UTF-8 bytes; min length is not enforced on login so legacy short-password accounts can still sign in). Success `200` `{ id, email }` + rotated session cookie. Legacy unsalted SHA-256 hashes are verified with constant-time compare and transparently upgraded to bcrypt on successful login (login still succeeds if the upgrade write fails; it retries next login).
+- `POST /api/login` — Sign in `{ email, password }` (max 72 UTF-8 bytes; min length is not enforced on login so short-password accounts created before the register minimum can still sign in). Success `200` `{ id, email }` + rotated session cookie. Only bcrypt password hashes authenticate; pre-migration unsalted SHA-256 hashes are rejected (`401 invalid_credentials`) — recreate the account if needed.
 - `POST /api/logout` — Clear session values and expire the cookie (same Path/HttpOnly/SameSite/Secure). Success `200` `{ "ok": "true" }`. CookieStore sessions are client-side signed blobs: logout cannot revoke a stolen cookie copy until expiry or `COOKIE_KEY` rotation.
 - `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }` (always ensures CSRF cookie).
 - `GET /api/csrf` — Ensures CSRF cookie and returns `{ "csrf": "<token>" }`.
@@ -261,7 +261,7 @@ Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
 | 401 | `unauthorized` | `/api/me` without a valid session |
 | 403 | `csrf_rejected` | Missing/mismatched CSRF cookie + `X-CSRF-Token` on mutating `/api/*` |
 
-Passwords are hashed with bcrypt. Existing accounts that still have legacy SHA-256 hashes can log in and are upgraded automatically. Logs never include passwords, raw cookies, CSRF token values, or full hashes (`hash_kind=bcrypt|legacy` and `userID=` only).
+Passwords are hashed with bcrypt (cost 12). Logs never include passwords, raw cookies, CSRF token values, or full hashes (`hash_kind=bcrypt|unknown` and `userID=` only).
 
 #### Perimeter troubleshooting
 | Symptom | Likely cause |

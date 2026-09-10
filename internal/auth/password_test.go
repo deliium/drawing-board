@@ -13,25 +13,26 @@ func TestHashAndVerifyBcrypt(t *testing.T) {
 	if !strings.HasPrefix(hash, "$2") {
 		t.Fatalf("expected bcrypt prefix, got %q", hash[:min(8, len(hash))])
 	}
-	ok, needsUpgrade, err := VerifyPassword(hash, "password1")
-	if err != nil || !ok || needsUpgrade {
-		t.Fatalf("verify bcrypt: ok=%v needsUpgrade=%v err=%v", ok, needsUpgrade, err)
+	ok, err := VerifyPassword(hash, "password1")
+	if err != nil || !ok {
+		t.Fatalf("verify bcrypt: ok=%v err=%v", ok, err)
 	}
-	ok, _, err = VerifyPassword(hash, "wrongpass")
+	ok, err = VerifyPassword(hash, "wrongpass")
 	if err != nil || ok {
 		t.Fatalf("wrong password should fail: ok=%v err=%v", ok, err)
 	}
 }
 
-func TestVerifyPasswordLegacyUpgradeFlag(t *testing.T) {
-	legacy := legacySHA256Hash("password1")
-	ok, needsUpgrade, err := VerifyPassword(legacy, "password1")
-	if err != nil || !ok || !needsUpgrade {
-		t.Fatalf("legacy verify: ok=%v needsUpgrade=%v err=%v", ok, needsUpgrade, err)
-	}
-	ok, _, err = VerifyPassword(legacy, "wrongpass")
+func TestVerifyPasswordRejectsNonBcrypt(t *testing.T) {
+	// Pre-migration unsalted SHA-256 hex of "password1" must not authenticate.
+	legacy := "0b14d501a594442a01c6859541bcb3e8164d183d32937b851835442f69d5c94e"
+	ok, err := VerifyPassword(legacy, "password1")
 	if err != nil || ok {
-		t.Fatalf("legacy wrong password should fail: ok=%v err=%v", ok, err)
+		t.Fatalf("legacy hash must not verify: ok=%v err=%v", ok, err)
+	}
+	ok, err = VerifyPassword("", "password1")
+	if err != nil || ok {
+		t.Fatalf("empty hash must not verify: ok=%v err=%v", ok, err)
 	}
 }
 

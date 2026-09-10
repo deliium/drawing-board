@@ -11,7 +11,7 @@ Personal Japanese handwriting practice app: authenticated users draw on a privat
 | Backend | Go 1.26+, Gorilla mux, Gorilla WebSocket |
 | Frontend | Vue 3, TypeScript, Vite |
 | Database | SQLite (`mattn/go-sqlite3`), per-user stroke store |
-| Auth | Cookie sessions (`sid`), bcrypt passwords (legacy SHA-256 upgrade path) |
+| Auth | Cookie sessions (`sid`), bcrypt passwords |
 | Deploy | Docker Compose + Nginx reverse proxy (`/api`, `/ws`) |
 
 ## Architecture

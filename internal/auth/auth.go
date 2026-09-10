@@ -205,7 +205,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
 		return
 	}
-	ok, needsUpgrade, verifyErr := VerifyPassword(u.PasswordHash, c.Password)
+	ok, verifyErr := VerifyPassword(u.PasswordHash, c.Password)
 	if verifyErr != nil {
 		authLog("ERROR", "[auth.Login] verify unexpected userID="+strconv.FormatInt(u.ID, 10))
 		writeAuthError(w, http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
@@ -217,26 +217,13 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upgraded := false
-	if needsUpgrade {
-		newHash, hashErr := HashPassword(c.Password)
-		if hashErr != nil {
-			authLog("ERROR", "[auth.Login] upgrade_hash_failed userID="+strconv.FormatInt(u.ID, 10)+" reason=bcrypt_generate")
-		} else if updErr := s.Store.UpdateUserPasswordHash(u.ID, newHash); updErr != nil {
-			authLog("ERROR", "[auth.Login] upgrade_hash_failed userID="+strconv.FormatInt(u.ID, 10)+": "+updErr.Error())
-		} else {
-			upgraded = true
-			authLog("DEBUG", "[auth.Login] upgrade_hash_ok userID="+strconv.FormatInt(u.ID, 10))
-		}
-	}
-
 	if err := s.startSession(w, r, u.ID); err != nil {
 		authLog("ERROR", "[auth.Login] startSession userID="+strconv.FormatInt(u.ID, 10)+": "+err.Error())
 		writeAuthError(w, http.StatusInternalServerError, "invalid_credentials", "Email or password is incorrect.")
 		return
 	}
 	s.issueCSRFCookie(w)
-	authLog("INFO", "[auth.Login] userID="+strconv.FormatInt(u.ID, 10)+" upgraded="+strconv.FormatBool(upgraded))
+	authLog("INFO", "[auth.Login] userID="+strconv.FormatInt(u.ID, 10))
 	writeJSON(w, http.StatusOK, userView{ID: u.ID, Email: u.Email})
 }
 

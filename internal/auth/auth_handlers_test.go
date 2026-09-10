@@ -238,7 +238,7 @@ func TestAuthHandlers_RegisterLoginLogoutMe(t *testing.T) {
 	})
 }
 
-func TestAuthHandlers_BcryptRegisterAndLegacyUpgrade(t *testing.T) {
+func TestAuthHandlers_BcryptRegisterAndLogin(t *testing.T) {
 	svc := newTestAuthService(t)
 
 	t.Run("register stores bcrypt hash", func(t *testing.T) {
@@ -259,37 +259,18 @@ func TestAuthHandlers_BcryptRegisterAndLegacyUpgrade(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy sha256 login upgrades hash", func(t *testing.T) {
+	t.Run("non-bcrypt stored hash cannot login", func(t *testing.T) {
 		email := "legacy@example.com"
 		pw := "password1"
-		uid, err := svc.Store.CreateUser(email, legacySHA256Hash(pw))
+		// Pre-migration unsalted SHA-256 hex of "password1".
+		legacyHash := "0b14d501a594442a01c6859541bcb3e8164d183d32937b851835442f69d5c94e"
+		_, err := svc.Store.CreateUser(email, legacyHash)
 		if err != nil {
 			t.Fatalf("seed legacy user: %v", err)
 		}
-		before, _ := svc.Store.GetUserByID(uid)
-		if strings.HasPrefix(before.PasswordHash, "$2") {
-			t.Fatal("seed should be legacy")
-		}
-
 		login := postJSON(t, svc, "/api/login", `{"email":"`+email+`","password":"`+pw+`"}`, nil)
-		if login.Code != http.StatusOK {
-			t.Fatalf("legacy login: %d %s", login.Code, login.Body.String())
-		}
-		after, err := svc.Store.GetUserByID(uid)
-		if err != nil || after == nil {
-			t.Fatalf("reload: %v", err)
-		}
-		if !strings.HasPrefix(after.PasswordHash, "$2") {
-			t.Fatalf("expected upgraded bcrypt hash, got %q", after.PasswordHash)
-		}
-		second := postJSON(t, svc, "/api/login", `{"email":"`+email+`","password":"`+pw+`"}`, nil)
-		if second.Code != http.StatusOK {
-			t.Fatalf("second login after upgrade: %d %s", second.Code, second.Body.String())
-		}
-
-		wrong := postJSON(t, svc, "/api/login", `{"email":"`+email+`","password":"wrongpass"}`, nil)
-		if wrong.Code != http.StatusUnauthorized || decodeError(t, wrong.Body.Bytes()).Error != "invalid_credentials" {
-			t.Fatalf("wrong password: %d %s", wrong.Code, wrong.Body.String())
+		if login.Code != http.StatusUnauthorized || decodeError(t, login.Body.Bytes()).Error != "invalid_credentials" {
+			t.Fatalf("legacy hash login: %d %s", login.Code, login.Body.String())
 		}
 	})
 

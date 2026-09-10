@@ -1,9 +1,6 @@
 package auth
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -23,44 +20,24 @@ func HashPassword(pw string) (string, error) {
 	return string(hash), nil
 }
 
-// VerifyPassword checks a stored hash against the candidate password.
-// ok is true on match. needsUpgrade is true when the stored value is a legacy
-// SHA-256 hex hash that should be rewritten to bcrypt after a successful login.
-func VerifyPassword(stored, pw string) (ok bool, needsUpgrade bool, err error) {
+// VerifyPassword checks a stored bcrypt hash against the candidate password.
+// Non-bcrypt stored values (including pre-migration SHA-256 hex) never match.
+func VerifyPassword(stored, pw string) (ok bool, err error) {
 	authLog("DEBUG", "[auth.hash] VerifyPassword start")
-	if stored == "" {
+	if stored == "" || !strings.HasPrefix(stored, "$2") {
 		authLog("DEBUG", "[auth.hash] hash_kind=unknown")
-		return false, false, nil
+		return false, nil
 	}
-	if strings.HasPrefix(stored, "$2") {
-		authLog("DEBUG", "[auth.hash] hash_kind=bcrypt")
-		cmpErr := bcrypt.CompareHashAndPassword([]byte(stored), []byte(pw))
-		if cmpErr == nil {
-			authLog("DEBUG", "[auth.hash] VerifyPassword match hash_kind=bcrypt")
-			return true, false, nil
-		}
-		if cmpErr == bcrypt.ErrMismatchedHashAndPassword {
-			authLog("DEBUG", "[auth.hash] VerifyPassword mismatch hash_kind=bcrypt")
-			return false, false, nil
-		}
-		authLog("ERROR", "[auth.hash] bcrypt compare unexpected: "+cmpErr.Error())
-		return false, false, cmpErr
+	authLog("DEBUG", "[auth.hash] hash_kind=bcrypt")
+	cmpErr := bcrypt.CompareHashAndPassword([]byte(stored), []byte(pw))
+	if cmpErr == nil {
+		authLog("DEBUG", "[auth.hash] VerifyPassword match hash_kind=bcrypt")
+		return true, nil
 	}
-
-	// Legacy unsalted SHA-256 hex (64 hex chars expected).
-	authLog("DEBUG", "[auth.hash] hash_kind=legacy")
-	sum := sha256.Sum256([]byte(pw))
-	want := hex.EncodeToString(sum[:])
-	if subtle.ConstantTimeCompare([]byte(stored), []byte(want)) == 1 {
-		authLog("DEBUG", "[auth.hash] VerifyPassword match hash_kind=legacy needsUpgrade=true")
-		return true, true, nil
+	if cmpErr == bcrypt.ErrMismatchedHashAndPassword {
+		authLog("DEBUG", "[auth.hash] VerifyPassword mismatch hash_kind=bcrypt")
+		return false, nil
 	}
-	authLog("DEBUG", "[auth.hash] VerifyPassword mismatch hash_kind=legacy")
-	return false, false, nil
-}
-
-// legacySHA256Hash is used only by tests to seed pre-migration users.
-func legacySHA256Hash(pw string) string {
-	sum := sha256.Sum256([]byte(pw))
-	return hex.EncodeToString(sum[:])
+	authLog("ERROR", "[auth.hash] bcrypt compare unexpected: "+cmpErr.Error())
+	return false, cmpErr
 }

@@ -151,7 +151,7 @@ func (s *Store) DeleteUser(userID int64) error {
 	return nil
 }
 
-// UpdateUserPasswordHash rewrites users.password_hash for transparent legacy→bcrypt upgrades.
+// UpdateUserPasswordHash rewrites users.password_hash (e.g. future password-change flows).
 func (s *Store) UpdateUserPasswordHash(userID int64, passwordHash string) error {
 	res, err := s.SQL.Exec("UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, userID)
 	if err != nil {
