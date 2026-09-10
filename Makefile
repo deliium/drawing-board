@@ -1,4 +1,5 @@
-SHELL := /usr/bin/zsh
+# bash is on Ubuntu CI and typical local boxes; do not hardcode zsh (missing on GHA).
+SHELL := /bin/bash
 
 .PHONY: backend frontend build-web run \
 	docker-build docker-build-backend docker-build-frontend \
