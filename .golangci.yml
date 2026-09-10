@@ -1,22 +1,25 @@
-# Small golangci-lint set for Prompt 18 — avoid vanity rule floods.
+# Small golangci-lint set — avoid vanity rule floods.
+version: "2"
+
 run:
-  timeout: 5m
   tests: true
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
     - staticcheck
-
-linters-settings:
-  # govet uses defaults (do not enable-all — that pulls in fieldalignment/shadow vanity floods).
-  staticcheck:
-    checks: ["all"]
+  settings:
+    # govet uses defaults (do not enable-all — that pulls in fieldalignment/shadow vanity floods).
+    # Keep SA/S/U analysis; drop style (ST*) and quickfix (QF*) vanity.
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST*"
+        - "-QF*"
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 50
   max-same-issues: 10

@@ -8,7 +8,7 @@ Personal Japanese handwriting practice app (Vue + Go + SQLite). Strokes are priv
 
 ## Tech Stack
 
-- **Programming language:** Go 1.22+, TypeScript
+- **Programming language:** Go 1.26+, TypeScript
 - **Framework:** Gorilla mux/WebSocket; Vue 3 + Vite
 - **Database:** SQLite
 - **ORM:** none (raw SQL in `internal/db`)

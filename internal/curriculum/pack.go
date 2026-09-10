@@ -312,7 +312,7 @@ func ContentHash(p Pack) (string, error) {
 			for i, s := range strokes {
 				gp.Strokes[i] = make([]point, len(s))
 				for j, pt := range s {
-					gp.Strokes[i][j] = point{X: pt.X, Y: pt.Y}
+					gp.Strokes[i][j] = point(pt)
 				}
 			}
 			out = append(out, gp)

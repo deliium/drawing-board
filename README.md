@@ -39,8 +39,8 @@ A **personal** Japanese handwriting training app: practice on a private canvas, 
 ## Requirements
 
 ### For Local Development
-- **Go 1.22+**
-- **Node 18+**
+- **Go 1.26+**
+- **Node 20+**
 - **Modern web browser** with Canvas and WebSocket support
 
 ### For Docker Deployment
@@ -579,7 +579,7 @@ For local handwriting diagnostics (features, ASCII preview, sample coords), set 
 
 Concise local workflow (commands verified by `make verify-docs`):
 
-1. Clone the repo; install **Go 1.22+** and **Node 18+**.
+1. Clone the repo; install **Go 1.26+** and **Node 20+**.
 2. `go mod tidy` and `cd web && npm install` (or `npm ci`).
 3. Day-to-day: `make backend` + `make frontend` (Vite `:5173`). Optional: `make docker-run-dev` for compose (rebuild for Go changes — not hot reload).
 4. Before a PR: `make check` (gofmt/vet/build + Go tests + web typecheck/Vitest/build + content validate + README command verify). Optional: `CHECK_E2E=1 make check` or `make test-e2e`.
