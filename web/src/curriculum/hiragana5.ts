@@ -1,3 +1,4 @@
+import { pathSmoothPolyline } from '../canvas/smoothPath'
 import traces from './hiragana5-traces.json'
 
 export type TracePoint = { x: number; y: number }
@@ -32,11 +33,8 @@ export function drawTraceTemplates(
   ctx.lineJoin = 'round'
   for (const stroke of entry.strokes) {
     if (stroke.length === 0) continue
-    ctx.beginPath()
-    ctx.moveTo(stroke[0].x * cssWidth, stroke[0].y * cssHeight)
-    for (let i = 1; i < stroke.length; i++) {
-      ctx.lineTo(stroke[i].x * cssWidth, stroke[i].y * cssHeight)
-    }
+    const scaled = stroke.map((p) => ({ x: p.x * cssWidth, y: p.y * cssHeight }))
+    pathSmoothPolyline(ctx, scaled)
     ctx.stroke()
   }
   ctx.restore()

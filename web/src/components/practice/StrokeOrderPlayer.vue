@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { readLogicalCanvasSize } from '../../canvas/layout'
+import { pathSmoothPolyline, slicePolylineByFraction } from '../../canvas/smoothPath'
 import { useLocale } from '../../composables/useLocale'
-import { hiragana5Traces, type TracePoint } from '../../curriculum/hiragana5'
+import { hiragana5Traces } from '../../curriculum/hiragana5'
 
 const props = defineProps<{
   glyph: string
@@ -92,13 +93,10 @@ function paint(upTo: number, progressWithin = 1) {
     const stroke = strokes[i]
     if (!stroke.length) continue
     const complete = i < upTo || progressWithin >= 1
-    const pts = complete ? stroke : sliceStroke(stroke, progressWithin)
+    const pts = complete ? stroke : slicePolylineByFraction(stroke, progressWithin)
     if (!pts.length) continue
-    ctx.beginPath()
-    ctx.moveTo(pts[0].x * size, pts[0].y * size)
-    for (let j = 1; j < pts.length; j++) {
-      ctx.lineTo(pts[j].x * size, pts[j].y * size)
-    }
+    const scaled = pts.map((p) => ({ x: p.x * size, y: p.y * size }))
+    pathSmoothPolyline(ctx, scaled)
     ctx.stroke()
   }
 
@@ -132,12 +130,6 @@ function paint(upTo: number, progressWithin = 1) {
 function repaintCurrentFrame() {
   if (paintUpTo < 0) return
   paint(paintUpTo, paintProgress)
-}
-
-function sliceStroke(stroke: TracePoint[], tFrac: number): TracePoint[] {
-  if (stroke.length <= 1) return stroke
-  const target = Math.max(1, Math.ceil(stroke.length * Math.min(1, Math.max(0, tFrac))))
-  return stroke.slice(0, target)
 }
 
 function paintFinal() {

@@ -467,7 +467,7 @@ Trusted curriculum lives under `content/hiragana5/v1/` (あ行 vowels). The vowe
 | `characters.json` | Glyph, romanization, pronunciation (`audioRef`), description, concise guidance, example word; optional empty `kanjiExtensions` |
 | `audio/*.mp3` | Reviewed mora clips; `audioRef` = `/audio/hiragana5/<romaji>.mp3` |
 | `strokes.json` | Canonical assessment polylines (normalized 0–1) |
-| `traces.json` | UI trace templates (v1 matches strokes) |
+| `traces.json` | UI trace templates (same stroke count/order; denser smooth paths for display) |
 | `review.json` | Pedagogy pack human-review checklist (includes audio + guidance) |
 | `assessment_review.json` | Scoring tolerances + correction-copy review (Prompt 12) |
 

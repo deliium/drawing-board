@@ -5,7 +5,7 @@ Root repository license is **CC0 1.0** (`LICENSE` at repo root).
 | Asset | Status |
 |-------|--------|
 | Canonical stroke polylines (`v1/strokes.json`) | Project-authored under CC0 |
-| Trace templates (`v1/traces.json`) | Same as stroke data (v1 aliases assessment paths) |
+| Trace templates (`v1/traces.json`) | Project-authored denser UI paths under CC0 (same stroke count/order as assessment; not a byte-identical alias of `strokes.json`) |
 | Character pedagogy copy (descriptions, guidance, example glosses) | Original short glosses under CC0; not copied from textbooks |
 | Display fonts (Noto Sans JP / similar) | Self-hosted OFL subsets under `web/public/fonts/` — see font license files there |
 | Pronunciation audio (`v1/audio/*.mp3`) | See table below |

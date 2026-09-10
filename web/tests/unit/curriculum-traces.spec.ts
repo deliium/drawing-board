@@ -8,6 +8,7 @@ function mockCtx() {
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
+    quadraticCurveTo: vi.fn(),
     stroke: vi.fn(),
     strokeStyle: '',
     lineWidth: 0,
@@ -26,7 +27,7 @@ describe('hiragana5 trace fixtures', () => {
     for (const c of hiragana5Traces.characters) {
       expect(c.strokes.length).toBe(expectedCounts[c.glyph])
       for (const s of c.strokes) {
-        expect(s.length).toBeGreaterThan(0)
+        expect(s.length).toBeGreaterThanOrEqual(5)
         for (const p of s) {
           expect(p.x).toBeGreaterThanOrEqual(0)
           expect(p.x).toBeLessThanOrEqual(1)
@@ -37,12 +38,12 @@ describe('hiragana5 trace fixtures', () => {
     }
   })
 
-  it('draws scaled polylines for a glyph', () => {
+  it('draws scaled smooth polylines for a glyph', () => {
     const ctx = mockCtx()
     drawTraceTemplates(ctx, hiragana5Traces, 'あ', 300, 300)
     expect(ctx.beginPath).toHaveBeenCalled()
     expect(ctx.moveTo).toHaveBeenCalled()
-    expect(ctx.lineTo).toHaveBeenCalled()
+    expect(ctx.quadraticCurveTo).toHaveBeenCalled()
     expect(ctx.stroke).toHaveBeenCalledTimes(3)
   })
 })
