@@ -43,6 +43,18 @@ func TestCreateUser(t *testing.T) {
 	if err == nil {
 		t.Fatal("Should not be able to create duplicate user")
 	}
+
+	if err := store.DeleteUser(userID); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+	if u, err := store.GetUserByID(userID); err != nil {
+		t.Fatalf("GetUserByID after delete: %v", err)
+	} else if u != nil {
+		t.Fatal("user should be gone after DeleteUser")
+	}
+	if err := store.DeleteUser(userID); err == nil {
+		t.Fatal("DeleteUser on missing id should fail")
+	}
 }
 
 func TestUpdateUserPasswordHash(t *testing.T) {

@@ -167,6 +167,11 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.startSession(w, r, uid); err != nil {
 		authLog("ERROR", "[auth.Register] startSession userID="+strconv.FormatInt(uid, 10)+": "+err.Error())
+		if delErr := s.Store.DeleteUser(uid); delErr != nil {
+			authLog("ERROR", "[auth.Register] rollback DeleteUser userID="+strconv.FormatInt(uid, 10)+": "+delErr.Error())
+		} else {
+			authLog("WARN", "[auth.Register] rolled back userID="+strconv.FormatInt(uid, 10)+" reason=session_failed")
+		}
 		writeAuthError(w, http.StatusInternalServerError, "registration_failed", "Unable to create account. If you already have one, sign in.")
 		return
 	}
@@ -183,7 +188,8 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	normalizeCredentials(&c)
-	if code := validateCredentials(c, true); code != "" {
+	// Min length is register-only so legacy short-password accounts can still sign in.
+	if code := validateCredentials(c, false); code != "" {
 		authLog("DEBUG", "[auth.Login] code="+code)
 		writeAuthError(w, http.StatusBadRequest, code, validationMessage(code))
 		return

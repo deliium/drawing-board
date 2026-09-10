@@ -135,6 +135,22 @@ func (s *Store) CreateUser(email, passwordHash string) (int64, error) {
 	return res.LastInsertId()
 }
 
+// DeleteUser removes a user by id. Used to roll back a failed registration after insert.
+func (s *Store) DeleteUser(userID int64) error {
+	res, err := s.SQL.Exec("DELETE FROM users WHERE id = ?", userID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("DeleteUser: no user id=%d", userID)
+	}
+	return nil
+}
+
 // UpdateUserPasswordHash rewrites users.password_hash for transparent legacy→bcrypt upgrades.
 func (s *Store) UpdateUserPasswordHash(userID int64, passwordHash string) error {
 	res, err := s.SQL.Exec("UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, userID)

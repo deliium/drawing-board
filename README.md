@@ -240,8 +240,8 @@ Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when 
 
 **CORS / WebSocket origins:** credentialed CORS echoes `Access-Control-Allow-Origin` only for exact allowlisted origins (never `*`). Disallowed CORS preflight returns `403`. WebSocket `CheckOrigin` uses the same allowlist and rejects missing Origin.
 
-- `POST /api/register` — Create account `{ email, password }` (password min 8, max 72 UTF-8 bytes). Success `200` `{ id, email }` + rotated session cookie. New passwords are stored with **bcrypt** (cost 12).
-- `POST /api/login` — Sign in `{ email, password }`. Success `200` `{ id, email }` + rotated session cookie. Legacy unsalted SHA-256 hashes are verified with constant-time compare and transparently upgraded to bcrypt on successful login (login still succeeds if the upgrade write fails; it retries next login).
+- `POST /api/register` — Create account `{ email, password }` (password min 8, max 72 UTF-8 bytes). Success `200` `{ id, email }` + rotated session cookie. New passwords are stored with **bcrypt** (cost 12). If session creation fails after insert, the user row is rolled back so a later register can succeed.
+- `POST /api/login` — Sign in `{ email, password }` (max 72 UTF-8 bytes; min length is not enforced on login so legacy short-password accounts can still sign in). Success `200` `{ id, email }` + rotated session cookie. Legacy unsalted SHA-256 hashes are verified with constant-time compare and transparently upgraded to bcrypt on successful login (login still succeeds if the upgrade write fails; it retries next login).
 - `POST /api/logout` — Clear session values and expire the cookie (same Path/HttpOnly/SameSite/Secure). Success `200` `{ "ok": "true" }`. CookieStore sessions are client-side signed blobs: logout cannot revoke a stolen cookie copy until expiry or `COOKIE_KEY` rotation.
 - `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }` (always ensures CSRF cookie).
 - `GET /api/csrf` — Ensures CSRF cookie and returns `{ "csrf": "<token>" }`.
@@ -254,7 +254,7 @@ Auth error JSON shape: `{ "error": "<code>", "message": "<optional>" }`.
 | 400 | `bad_json` | Body not JSON |
 | 400 | `missing_fields` | Empty email or password |
 | 400 | `invalid_email` | Email fails basic format check |
-| 400 | `password_too_short` | Password shorter than 8 characters |
+| 400 | `password_too_short` | Register only: password shorter than 8 characters |
 | 400 | `password_too_long` | Password longer than 72 bytes (bcrypt input limit) |
 | 400 | `registration_failed` | Unable to create account (includes duplicate email; does **not** return `email exists`) |
 | 401 | `invalid_credentials` | Login failed (unknown email or wrong password — same response) |

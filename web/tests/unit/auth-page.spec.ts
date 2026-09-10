@@ -166,6 +166,32 @@ describe('AuthPage behavior', () => {
     expect(root.querySelector('h1')?.textContent).toContain('Create account')
   })
 
+  it('rejects short passwords on register without calling the API', async () => {
+    const { root } = await mountAuth('register')
+    await setInput(root.querySelector('#auth-email') as HTMLInputElement, 'short@example.com')
+    await setInput(root.querySelector('#auth-password') as HTMLInputElement, 'abcd')
+    const form = root.querySelector('form') as HTMLFormElement
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush()
+    const alert = root.querySelector('[role="alert"]')
+    expect(alert?.textContent).toMatch(/at least 8|8文字/i)
+    expect(apiFetch).not.toHaveBeenCalled()
+  })
+
+  it('allows short passwords on login client-side (legacy accounts)', async () => {
+    apiFetch.mockResolvedValue({ id: 9, email: 'legacy@example.com' })
+    const { root } = await mountAuth('login')
+    await setInput(root.querySelector('#auth-email') as HTMLInputElement, 'legacy@example.com')
+    await setInput(root.querySelector('#auth-password') as HTMLInputElement, 'abcd')
+    const form = root.querySelector('form') as HTMLFormElement
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flush()
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/api/login',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
   it('rejects passwords longer than 72 UTF-8 bytes client-side', async () => {
     const { root } = await mountAuth('register')
     const email = root.querySelector('#auth-email') as HTMLInputElement

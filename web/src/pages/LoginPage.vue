@@ -101,7 +101,7 @@ function validateClient(): boolean {
     fieldErrors.value = next
     return false
   }
-  if (password.value.length < 8) {
+  if (mode.value === 'register' && password.value.length < 8) {
     next.password = errorCopy('password_too_short')
     formError.value = errorCopy('password_too_short')
     fieldErrors.value = next
@@ -271,7 +271,7 @@ async function submit() {
           name="password"
           :autocomplete="passwordAutocomplete"
           required
-          minlength="8"
+          :minlength="mode === 'register' ? 8 : undefined"
           :disabled="submitting"
           :aria-invalid="Boolean(fieldErrors.password)"
           :aria-describedby="fieldErrors.password ? 'auth-password-error' : undefined"

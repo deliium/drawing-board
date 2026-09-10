@@ -98,7 +98,7 @@ func TestAuthHandlers_RegisterLoginLogoutMe(t *testing.T) {
 		}{
 			{"missing", `{"email":"","password":""}`, "missing_fields"},
 			{"invalid email", `{"email":"not-an-email","password":"password1"}`, "invalid_email"},
-			{"short password", `{"email":"ok@example.com","password":"short"}`, "password_too_short"},
+			{"short password", `{"email":"ok@example.com","password":"abcd"}`, "password_too_short"},
 			{"bad json", `{`, "bad_json"},
 		}
 		for _, tc := range cases {
@@ -112,6 +112,36 @@ func TestAuthHandlers_RegisterLoginLogoutMe(t *testing.T) {
 					t.Fatalf("expected error=%s got=%s body=%s", tc.code, got.Error, rec.Body.String())
 				}
 			})
+		}
+		// Short password must not leave a row that blocks a later valid register.
+		if u, err := svc.Store.GetUserByEmail("ok@example.com"); err != nil {
+			t.Fatalf("lookup: %v", err)
+		} else if u != nil {
+			t.Fatalf("short-password register created user id=%d", u.ID)
+		}
+		ok := postJSON(t, svc, "/api/register", `{"email":"ok@example.com","password":"password1"}`, nil)
+		if ok.Code != http.StatusOK {
+			t.Fatalf("valid register after short reject: %d %s", ok.Code, ok.Body.String())
+		}
+	})
+
+	t.Run("login allows short password for existing account", func(t *testing.T) {
+		email := "shortlegacy@example.com"
+		hash, err := HashPassword("abcd")
+		if err != nil {
+			t.Fatalf("hash: %v", err)
+		}
+		if _, err := svc.Store.CreateUser(email, hash); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		login := postJSON(t, svc, "/api/login", `{"email":"`+email+`","password":"abcd"}`, nil)
+		if login.Code != http.StatusOK {
+			t.Fatalf("short login: %d %s", login.Code, login.Body.String())
+		}
+		// Re-register with a long password must still fail (email taken), not hang the account.
+		again := postJSON(t, svc, "/api/register", `{"email":"`+email+`","password":"password1"}`, nil)
+		if again.Code != http.StatusBadRequest || decodeError(t, again.Body.Bytes()).Error != "registration_failed" {
+			t.Fatalf("expected registration_failed, got %d %s", again.Code, again.Body.String())
 		}
 	})
 
