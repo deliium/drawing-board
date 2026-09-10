@@ -16,7 +16,7 @@ func TestLearnStoreAttemptLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	uid, err := store.CreateUser("learner@example.com", "hash")
 	if err != nil {
@@ -118,7 +118,7 @@ func TestBoardClearLeavesAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, err := store.CreateUser("cleariso@example.com", "hash")
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestUserDeleteCascadesLearning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, err := store.CreateUser("cascade@example.com", "hash")
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestCharacterDeleteRestrictedByAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, _ := store.CreateUser("restrict@example.com", "hash")
 	ls := NewLearnStore(store)
 	ctx := context.Background()
@@ -222,7 +222,7 @@ func TestAttemptOwnershipIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	a, _ := store.CreateUser("a@example.com", "hash")
 	b, _ := store.CreateUser("b@example.com", "hash")
 	ls := NewLearnStore(store)
@@ -241,7 +241,7 @@ func TestCreateDraftIdempotentClientAttemptID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, err := store.CreateUser("idem@example.com", "hash")
 	if err != nil {
 		t.Fatal(err)
@@ -282,7 +282,7 @@ func TestListStrokesAfterSubmit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, err := store.CreateUser("list@example.com", "hash")
 	if err != nil {
 		t.Fatal(err)
@@ -333,7 +333,7 @@ func TestListAttemptsPaginationAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, _ := store.CreateUser("hist@example.com", "hash")
 	other, _ := store.CreateUser("hist-other@example.com", "hash")
 	ls := NewLearnStore(store)
@@ -443,7 +443,7 @@ func TestClearPracticeDataKeepsBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, _ := store.CreateUser("clearprac@example.com", "hash")
 	ls := NewLearnStore(store)
 	ctx := context.Background()
@@ -487,7 +487,7 @@ func TestListAssessedOutcomesForMastery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, _ := store.CreateUser("out@example.com", "hash")
 	ls := NewLearnStore(store)
 	ctx := context.Background()
@@ -522,7 +522,7 @@ func TestReviewScheduleOnAssessWithClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, _ := store.CreateUser("review@example.com", "hash")
 	ls := NewLearnStore(store)
 	ctx := context.Background()

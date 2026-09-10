@@ -22,10 +22,6 @@ func TestNewAPI(t *testing.T) {
 		Store: store,
 	}
 
-	if api == nil {
-		t.Fatal("API should not be nil")
-	}
-
 	if api.Auth != authService {
 		t.Fatal("Auth should be set correctly")
 	}

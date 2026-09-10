@@ -12,8 +12,7 @@ linters:
     - staticcheck
 
 linters-settings:
-  govet:
-    enable-all: true
+  # govet uses defaults (do not enable-all — that pulls in fieldalignment/shadow vanity floods).
   staticcheck:
     checks: ["all"]
 

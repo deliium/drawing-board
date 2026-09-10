@@ -57,7 +57,7 @@ func TestWSDial_CreateAckBoardRev(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	sessionStore := sessions.NewCookieStore([]byte("test-cookie-key-32-bytes-minimum!!"))
 	authSvc := &auth.Service{Store: store, Sessions: sessionStore}
@@ -125,7 +125,7 @@ func TestWSDial_StaleBoardNack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	sessionStore := sessions.NewCookieStore([]byte("test-cookie-key-32-bytes-minimum!!"))
 	authSvc := &auth.Service{Store: store, Sessions: sessionStore}
 	uid, err := store.CreateUser("wsstale@example.com", "hash")
@@ -180,7 +180,7 @@ func TestWSDial_SendToUserIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	sessionStore := sessions.NewCookieStore([]byte("test-cookie-key-32-bytes-minimum!!"))
 	authSvc := &auth.Service{Store: store, Sessions: sessionStore}
 	uidA, err := store.CreateUser("wsa@example.com", "hash")

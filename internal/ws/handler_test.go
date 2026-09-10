@@ -338,12 +338,12 @@ func TestSendAck_ToConnOnly(t *testing.T) {
 
 func TestHandleStroke_StaleBoardAndClear(t *testing.T) {
 	tmpFile := "test_ws_board_rev.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 	store, err := db.Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	uid, err := store.CreateUser("wsrev@example.com", "hash")
 	if err != nil {
@@ -437,12 +437,12 @@ func TestHandleStroke_StaleBoardAndClear(t *testing.T) {
 
 func TestHandleDelete_ByOpIdBeforeCreate(t *testing.T) {
 	tmpFile := "test_ws_delete_opid.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 	store, err := db.Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, err := store.CreateUser("wsdel@example.com", "hash")
 	if err != nil {
 		t.Fatalf("user: %v", err)

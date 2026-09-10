@@ -19,7 +19,7 @@ func TestMigrateFreshOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	ver, err := store.SchemaVersion()
 	if err != nil {
@@ -68,12 +68,12 @@ func TestMigrateFreshOpen(t *testing.T) {
 	t.Logf("seed contentVersion=%s", contentVer)
 
 	// Re-open is idempotent.
-	store.SQL.Close()
+	_ = store.SQL.Close()
 	store2, err := Open(path)
 	if err != nil {
 		t.Fatalf("re-Open: %v", err)
 	}
-	defer store2.SQL.Close()
+	defer func() { _ = store2.SQL.Close() }()
 	ver2, _ := store2.SchemaVersion()
 	if ver2 != ver {
 		t.Fatalf("re-open version=%d want %d", ver2, ver)
@@ -142,7 +142,7 @@ func TestMigrateLegacyBootstrapPreservesStrokes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open legacy: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	ver, err := store.SchemaVersion()
 	if err != nil {
@@ -179,7 +179,7 @@ func TestLearningDomainDownThenUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	m2 := migrations.All()[1]
 	if m2.Down == nil {
@@ -208,12 +208,12 @@ func TestLearningDomainDownThenUp(t *testing.T) {
 		t.Fatalf("characters still present after Down")
 	}
 
-	store.SQL.Close()
+	_ = store.SQL.Close()
 	store2, err := Open(path)
 	if err != nil {
 		t.Fatalf("re-Open after Down: %v", err)
 	}
-	defer store2.SQL.Close()
+	defer func() { _ = store2.SQL.Close() }()
 	_ = store2.SQL.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='characters'`).Scan(&n)
 	if n != 1 {
 		t.Fatalf("characters missing after re-Up")
@@ -226,7 +226,7 @@ func TestMigrateFailClosedBadUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	before, err := store.SchemaVersion()
 	if err != nil {
@@ -266,7 +266,7 @@ func TestSeedHiragana5IdempotentAndBoardAttemptIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	uid, err := store.CreateUser("iso@example.com", "hash")
 	if err != nil {
@@ -368,7 +368,7 @@ func TestMigrateUpgradeFromVersion2Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open upgrade: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	ver, err := store.SchemaVersion()
 	if err != nil {
 		t.Fatalf("version: %v", err)
@@ -388,7 +388,7 @@ func TestHiragana5SeedMatchesRecognizeGlyphs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recognizer: %v", err)
 	}
-	defer rec.Close()
+	defer func() { _ = rec.Close() }()
 
 	seedGlyphs := Hiragana5Glyphs()
 	if len(seedGlyphs) != 5 {
@@ -411,7 +411,7 @@ func TestHiragana5SeedMatchesRecognizeGlyphs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	ls := NewLearnStore(store)
 	chars, err := ls.Characters().ListBySet(context.Background(), recognize.SetIDHiragana5)
 	if err != nil {

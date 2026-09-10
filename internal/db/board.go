@@ -123,7 +123,7 @@ func (s *Store) ListStrokesWithRev(userID int64) (StrokesSnapshot, error) {
 	if err != nil {
 		return StrokesSnapshot{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Stroke
 	for rows.Next() {
@@ -139,12 +139,12 @@ func (s *Store) ListStrokesWithRev(userID int64) (StrokesSnapshot, error) {
 		for pr.Next() {
 			var x, y float64
 			if err := pr.Scan(&x, &y); err != nil {
-				pr.Close()
+				_ = pr.Close()
 				return StrokesSnapshot{}, err
 			}
 			st.Points = append(st.Points, StrokePoint{X: x, Y: y})
 		}
-		pr.Close()
+		_ = pr.Close()
 		out = append(out, st)
 	}
 	if err := rows.Err(); err != nil {
@@ -421,12 +421,12 @@ func (s *Store) ApplyClear(userID, baseRev int64, opID string) (BoardApplyResult
 	for rows.Next() {
 		var oid string
 		if err := rows.Scan(&oid); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return BoardApplyResult{}, err
 		}
 		createOpIDs = append(createOpIDs, oid)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return BoardApplyResult{}, err
 	}

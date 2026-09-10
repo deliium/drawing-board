@@ -65,7 +65,7 @@ func (ls *LearnStore) ListBySet(ctx context.Context, setID string) ([]learn.Char
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []learn.Character
 	for rows.Next() {
 		var c learn.Character
@@ -143,7 +143,7 @@ func (ls *LearnStore) ListCharacters(ctx context.Context, lessonID string) ([]le
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []learn.LessonCharacter
 	for rows.Next() {
 		var lc learn.LessonCharacter
@@ -273,7 +273,7 @@ func (ls *LearnStore) ListStrokes(ctx context.Context, userID, attemptID int64) 
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var strokes []learn.StrokeInput
 	for rows.Next() {
@@ -303,7 +303,7 @@ func (ls *LearnStore) loadAttemptStrokePoints(strokeID int64) ([]learn.StrokePoi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var pts []learn.StrokePoint
 	for rows.Next() {
 		var p learn.StrokePoint
@@ -773,7 +773,7 @@ func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter lea
 	if err != nil {
 		return learn.AttemptListResult{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type rowScan struct {
 		item         learn.AttemptHistoryItem
@@ -835,13 +835,13 @@ func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter lea
 			for frows.Next() {
 				var fb learn.FeedbackItem
 				if err := frows.Scan(&fb.Rank, &fb.Code, &fb.Message); err != nil {
-					frows.Close()
+					_ = frows.Close()
 					return learn.AttemptListResult{}, err
 				}
 				item.Feedback = append(item.Feedback, fb)
 			}
 			ferr := frows.Err()
-			frows.Close()
+			_ = frows.Close()
 			if ferr != nil {
 				return learn.AttemptListResult{}, ferr
 			}
@@ -925,17 +925,17 @@ func (ls *LearnStore) ListAssessedOutcomes(ctx context.Context, userID int64, ch
 			var o learn.AssessedOutcome
 			var passInt int
 			if err := rows.Scan(&o.AttemptID, &passInt, &o.AssessedAt); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			o.Pass = passInt != 0
 			desc = append(desc, o)
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
-		rows.Close()
+		_ = rows.Close()
 		// Reverse to ASC for DeriveMastery.
 		for i, j := 0, len(desc)-1; i < j; i, j = i+1, j-1 {
 			desc[i], desc[j] = desc[j], desc[i]
@@ -983,7 +983,7 @@ func (ls *LearnStore) GetByAttempt(ctx context.Context, userID, attemptID int64)
 	if err != nil {
 		return nil, err
 	}
-	defer frows.Close()
+	defer func() { _ = frows.Close() }()
 	for frows.Next() {
 		var fb learn.FeedbackItem
 		if err := frows.Scan(&fb.Rank, &fb.Code, &fb.Message); err != nil {
@@ -1113,7 +1113,7 @@ func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Pr
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []learn.Progress
 	for rows.Next() {
 		var p learn.Progress

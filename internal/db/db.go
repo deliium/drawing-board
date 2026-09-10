@@ -265,7 +265,7 @@ func (s *Store) ListStrokesByUser(userID int64) ([]Stroke, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Stroke
 	for rows.Next() {
 		var st Stroke
@@ -280,12 +280,12 @@ func (s *Store) ListStrokesByUser(userID int64) ([]Stroke, error) {
 		for pr.Next() {
 			var x, y float64
 			if err := pr.Scan(&x, &y); err != nil {
-				pr.Close()
+				_ = pr.Close()
 				return nil, err
 			}
 			st.Points = append(st.Points, StrokePoint{X: x, Y: y})
 		}
-		pr.Close()
+		_ = pr.Close()
 		out = append(out, st)
 	}
 	return out, nil

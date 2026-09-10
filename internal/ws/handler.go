@@ -108,7 +108,7 @@ func NewHub(store *db.Store, authSvc *auth.Service) *Hub {
 }
 
 func defaultWriteMessage(c *websocket.Conn, data []byte) error {
-	c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	return c.WriteMessage(websocket.TextMessage, data)
 }
 
@@ -147,7 +147,7 @@ func (h *Hub) sendToUser(userID int64, v interface{}) {
 			if !isBenignNetErr(err) {
 				log.Printf("[ws.sendToUser] ERROR write userID=%d: %v", userID, err)
 			}
-			c.Close()
+			_ = c.Close()
 			delete(h.clients, c)
 		}
 	}
@@ -236,14 +236,14 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	globalHub.add(conn, uid)
 	defer func() {
 		globalHub.remove(conn)
-		conn.Close()
+		_ = conn.Close()
 		log.Printf("[ws.Handle] DEBUG disconnect userID=%d remote=%s", uid, r.RemoteAddr)
 	}()
 
 	conn.SetReadLimit(int64(limits.MaxWSMessageBytes))
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 
@@ -265,7 +265,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 			case <-done:
 				return
 			case <-ticker.C:
-				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 				if err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
 					if !isBenignNetErr(err) {
 						log.Printf("[ws.Handle] ERROR ping userID=%d: %v", uid, err)

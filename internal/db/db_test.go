@@ -9,28 +9,24 @@ import (
 func TestOpen(t *testing.T) {
 	// Create a temporary database file
 	tmpFile := "test.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
-
-	if store == nil {
-		t.Fatal("Store should not be nil")
-	}
+	defer func() { _ = store.SQL.Close() }()
 }
 
 func TestCreateUser(t *testing.T) {
 	tmpFile := "test_create_user.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	// Test creating a new user
 	userID, err := store.CreateUser("test@example.com", "password123")
@@ -51,13 +47,13 @@ func TestCreateUser(t *testing.T) {
 
 func TestUpdateUserPasswordHash(t *testing.T) {
 	tmpFile := "test_update_password_hash.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	uid, err := store.CreateUser("hash@example.com", "legacy-hash")
 	if err != nil {
@@ -80,13 +76,13 @@ func TestUpdateUserPasswordHash(t *testing.T) {
 
 func TestGetUserByEmail(t *testing.T) {
 	tmpFile := "test_get_user.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	// Create a user first
 	createdUserID, err := store.CreateUser("test@example.com", "password123")
@@ -120,13 +116,13 @@ func TestGetUserByEmail(t *testing.T) {
 
 func TestSaveStroke(t *testing.T) {
 	tmpFile := "test_save_stroke.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	// Create a user first
 	userID, err := store.CreateUser("test@example.com", "password123")
@@ -159,13 +155,13 @@ func TestSaveStroke(t *testing.T) {
 
 func TestListStrokesByUser(t *testing.T) {
 	tmpFile := "test_list_strokes.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	// Create a user first
 	userID, err := store.CreateUser("test@example.com", "password123")
@@ -211,13 +207,13 @@ func TestListStrokesByUser(t *testing.T) {
 
 func TestClearStrokes(t *testing.T) {
 	tmpFile := "test_clear_strokes.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	// Create a user first
 	userID, err := store.CreateUser("test@example.com", "password123")
@@ -267,13 +263,13 @@ func TestClearStrokes(t *testing.T) {
 
 func TestDeleteStroke(t *testing.T) {
 	tmpFile := "test_delete_stroke.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	// Create a user first
 	userID, err := store.CreateUser("test@example.com", "password123")
@@ -313,13 +309,13 @@ func TestDeleteStroke(t *testing.T) {
 
 func TestListStrokesByUser_CrossUserIsolation(t *testing.T) {
 	tmpFile := "test_stroke_privacy.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	userA, err := store.CreateUser("a@example.com", "password123")
 	if err != nil {
@@ -354,13 +350,13 @@ func TestListStrokesByUser_CrossUserIsolation(t *testing.T) {
 
 func TestSaveStrokeIdempotent(t *testing.T) {
 	tmpFile := "test_save_stroke_idempotent.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	userID, err := store.CreateUser("idem@example.com", "password123")
 	if err != nil {
@@ -398,13 +394,13 @@ func TestSaveStrokeIdempotent(t *testing.T) {
 
 func TestBoardRev_CreateStaleAndIdempotent(t *testing.T) {
 	tmpFile := "test_board_rev_create.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	uid, err := store.CreateUser("board@example.com", "hash")
 	if err != nil {
@@ -430,13 +426,13 @@ func TestBoardRev_CreateStaleAndIdempotent(t *testing.T) {
 
 func TestBoardRev_ClearTombstonesCreate(t *testing.T) {
 	tmpFile := "test_board_rev_clear.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	uid, err := store.CreateUser("clear@example.com", "hash")
 	if err != nil {
@@ -463,13 +459,13 @@ func TestBoardRev_ClearTombstonesCreate(t *testing.T) {
 
 func TestBoardRev_DeleteByOpIdBeforeCreate(t *testing.T) {
 	tmpFile := "test_board_rev_delete_opid.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 
 	uid, err := store.CreateUser("delop@example.com", "hash")
 	if err != nil {
@@ -487,12 +483,12 @@ func TestBoardRev_DeleteByOpIdBeforeCreate(t *testing.T) {
 
 func TestBoardRev_IdempotentClear(t *testing.T) {
 	tmpFile := "test_board_rev_idem_clear.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, err := store.CreateUser("idemclear@example.com", "hash")
 	if err != nil {
 		t.Fatalf("user: %v", err)
@@ -513,12 +509,12 @@ func TestBoardRev_IdempotentClear(t *testing.T) {
 
 func TestBoardRev_DeleteByIdBumpsOnce(t *testing.T) {
 	tmpFile := "test_board_rev_del_id.db"
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 	store, err := Open(tmpFile)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer store.SQL.Close()
+	defer func() { _ = store.SQL.Close() }()
 	uid, err := store.CreateUser("delid@example.com", "hash")
 	if err != nil {
 		t.Fatalf("user: %v", err)
