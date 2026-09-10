@@ -8,12 +8,12 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/deliium/drawing-board/internal/auth"
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/ids"
 	"github.com/deliium/drawing-board/internal/features"
 	"github.com/deliium/drawing-board/internal/limits"
 	"github.com/deliium/drawing-board/internal/metrics"
@@ -36,7 +36,7 @@ type StrokePoint struct {
 }
 
 type Stroke struct {
-	ID              int64         `json:"id"`
+	ID              string        `json:"id"`
 	Points          []StrokePoint `json:"points"`
 	Color           string        `json:"color"`
 	Width           int           `json:"width"`
@@ -78,6 +78,16 @@ type ClearResponse struct {
 type staleRevisionBody struct {
 	Error    string `json:"error"`
 	Message  string `json:"message,omitempty"`
+	BoardRev int64  `json:"boardRev"`
+}
+
+// deleteStrokeNotFoundBody is returned when ApplyStrokeDelete commits but no owned stroke row was removed.
+// boardRev is included because the revision-gated op still advanced (parity with WS).
+type deleteStrokeNotFoundBody struct {
+	Error    string `json:"error"`
+	Message  string `json:"message,omitempty"`
+	ID       string `json:"id"`
+	Deleted  bool   `json:"deleted"`
 	BoardRev int64  `json:"boardRev"`
 }
 
@@ -128,10 +138,10 @@ func (a *API) ListStrokes(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, 401, "unauthorized", "authentication required")
 		return
 	}
-	apiLog("DEBUG", "[httpapi.ListStrokes] userID=%d", uid)
+	apiLog("DEBUG", "[httpapi.ListStrokes] userID=%s", uid)
 	snap, err := a.Store.ListStrokesWithRev(uid)
 	if err != nil {
-		apiLog("ERROR", "[httpapi.ListStrokes] store userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.ListStrokes] store userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to list strokes")
 		return
 	}
@@ -151,7 +161,7 @@ func (a *API) ListStrokes(w http.ResponseWriter, r *http.Request) {
 			OpID:            s.OpID,
 		})
 	}
-	apiLog("INFO", "[httpapi.ListStrokes] userID=%d boardRev=%d strokes=%d", uid, snap.BoardRev, len(out))
+	apiLog("INFO", "[httpapi.ListStrokes] userID=%s boardRev=%d strokes=%d", uid, snap.BoardRev, len(out))
 	writeJSON(w, 200, StrokesListResponse{BoardRev: snap.BoardRev, Strokes: out})
 }
 
@@ -161,7 +171,7 @@ func (a *API) ClearStrokes(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, 401, "unauthorized", "authentication required")
 		return
 	}
-	apiLog("DEBUG", "[httpapi.ClearStrokes] userID=%d", uid)
+	apiLog("DEBUG", "[httpapi.ClearStrokes] userID=%s", uid)
 
 	var req ClearRequest
 	if r.Body != nil && r.ContentLength != 0 {
@@ -190,7 +200,7 @@ func (a *API) ClearStrokes(w http.ResponseWriter, r *http.Request) {
 	} else {
 		cur, err := a.Store.GetBoardRev(uid)
 		if err != nil {
-			apiLog("ERROR", "[httpapi.ClearStrokes] get-rev userID=%d: %v", uid, err)
+			apiLog("ERROR", "[httpapi.ClearStrokes] get-rev userID=%s: %v", uid, err)
 			writeAPIError(w, 500, "internal_error", "failed to clear strokes")
 			return
 		}
@@ -200,7 +210,7 @@ func (a *API) ClearStrokes(w http.ResponseWriter, r *http.Request) {
 	result, err := a.Store.ApplyClear(uid, baseRev, opID)
 	if err != nil {
 		if errors.Is(err, db.ErrStaleBoard) {
-			apiLog("WARN", "[httpapi.ClearStrokes] userID=%d code=stale_board boardRev=%d", uid, result.BoardRev)
+			apiLog("WARN", "[httpapi.ClearStrokes] userID=%s code=stale_board boardRev=%d", uid, result.BoardRev)
 			writeJSON(w, 409, staleRevisionBody{
 				Error:    "stale_revision",
 				Message:  "board revision mismatch",
@@ -208,11 +218,11 @@ func (a *API) ClearStrokes(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		apiLog("ERROR", "[httpapi.ClearStrokes] store userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.ClearStrokes] store userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to clear strokes")
 		return
 	}
-	apiLog("INFO", "[httpapi.ClearStrokes] clear completed userID=%d boardRev=%d", uid, result.BoardRev)
+	apiLog("INFO", "[httpapi.ClearStrokes] clear completed userID=%s boardRev=%d", uid, result.BoardRev)
 	writeJSON(w, 200, ClearResponse{OK: true, BoardRev: result.BoardRev})
 }
 
@@ -223,16 +233,16 @@ func (a *API) DeleteStroke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	idStr := r.URL.Query().Get("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
-		writeAPIError(w, 400, "bad_id", "invalid stroke id")
+	id, err := ids.Parse(idStr)
+	if err != nil {
+		writeAPIError(w, 400, ids.ErrorCode(err), "invalid stroke id")
 		return
 	}
-	apiLog("DEBUG", "[httpapi.DeleteStroke] userID=%d id=%d", uid, id)
+	apiLog("DEBUG", "[httpapi.DeleteStroke] userID=%s id=%s", uid, id)
 
 	cur, err := a.Store.GetBoardRev(uid)
 	if err != nil {
-		apiLog("ERROR", "[httpapi.DeleteStroke] get-rev userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.DeleteStroke] get-rev userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to delete stroke")
 		return
 	}
@@ -240,12 +250,12 @@ func (a *API) DeleteStroke(w http.ResponseWriter, r *http.Request) {
 	if len(opID) > limits.MaxOpIDLen {
 		opID = opID[:limits.MaxOpIDLen]
 	}
-	apiLog("INFO", "[FIX][httpapi.DeleteStroke] routing through ApplyStrokeDelete userID=%d id=%d baseRev=%d opId=%s",
+	apiLog("INFO", "[httpapi.DeleteStroke] routing through ApplyStrokeDelete userID=%s id=%s baseRev=%d opId=%s",
 		uid, id, cur, opID)
 	result, err := a.Store.ApplyStrokeDelete(uid, cur, opID, id, "")
 	if err != nil {
 		if errors.Is(err, db.ErrStaleBoard) {
-			apiLog("WARN", "[httpapi.DeleteStroke] userID=%d code=stale_board boardRev=%d", uid, result.BoardRev)
+			apiLog("WARN", "[httpapi.DeleteStroke] userID=%s code=stale_board boardRev=%d", uid, result.BoardRev)
 			writeJSON(w, 409, staleRevisionBody{
 				Error:    "stale_revision",
 				Message:  "board revision mismatch",
@@ -253,12 +263,24 @@ func (a *API) DeleteStroke(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		apiLog("ERROR", "[httpapi.DeleteStroke] store userID=%d id=%d: %v", uid, id, err)
+		apiLog("ERROR", "[httpapi.DeleteStroke] store userID=%s id=%s: %v", uid, id, err)
 		writeAPIError(w, 500, "internal_error", "failed to delete stroke")
 		return
 	}
-	apiLog("INFO", "[httpapi.DeleteStroke] delete success userID=%d id=%d boardRev=%d", uid, id, result.BoardRev)
-	writeJSON(w, 200, map[string]any{"ok": true, "id": id, "boardRev": result.BoardRev})
+	if !result.Deleted {
+		// Revision still advanced (same as WS); surface not_found so clients do not treat a no-op row delete as success.
+		apiLog("INFO", "[httpapi.DeleteStroke] not_found userID=%s id=%s boardRev=%d", uid, id, result.BoardRev)
+		writeJSON(w, 404, deleteStrokeNotFoundBody{
+			Error:    "not_found",
+			Message:  "stroke not found",
+			ID:       id,
+			Deleted:  false,
+			BoardRev: result.BoardRev,
+		})
+		return
+	}
+	apiLog("INFO", "[httpapi.DeleteStroke] delete success userID=%s id=%s boardRev=%d", uid, id, result.BoardRev)
+	writeJSON(w, 200, map[string]any{"ok": true, "deleted": true, "id": id, "boardRev": result.BoardRev})
 }
 
 func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +298,7 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 	if !a.recognizeLimiter().Allow(uid) {
 		metrics.Add("recognize_requests_total{result=reject}", 1)
 		metrics.Add("recognize_reject_total{code=rate_limited}", 1)
-		apiLog("WARN", "[httpapi.Recognize] userID=%d result=reject code=rate_limited", uid)
+		apiLog("WARN", "[httpapi.Recognize] userID=%s result=reject code=rate_limited", uid)
 		writeAPIError(w, 429, "rate_limited", "too many recognition requests")
 		return
 	}
@@ -288,7 +310,7 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 		code, msg := mapRecognizeDecodeError(err)
 		metrics.Add("recognize_requests_total{result=reject}", 1)
 		metrics.Add("recognize_reject_total{code="+code+"}", 1)
-		apiLog("DEBUG", "[httpapi.Recognize] userID=%d result=reject code=%s", uid, code)
+		apiLog("DEBUG", "[httpapi.Recognize] userID=%s result=reject code=%s", uid, code)
 		writeAPIError(w, 400, code, msg)
 		return
 	}
@@ -319,14 +341,14 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 	snap, err := a.Store.ListStrokesWithRev(uid)
 	if err != nil {
 		metrics.Add("recognize_requests_total{result=error}", 1)
-		apiLog("ERROR", "[httpapi.Recognize] userID=%d store: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Recognize] userID=%s store: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to load strokes")
 		return
 	}
 	if *req.BoardRev != snap.BoardRev {
 		metrics.Add("recognize_requests_total{result=reject}", 1)
 		metrics.Add("recognize_reject_total{code=stale_revision}", 1)
-		apiLog("WARN", "[httpapi.Recognize] userID=%d result=reject code=stale_revision boardRev=%d req=%d",
+		apiLog("WARN", "[httpapi.Recognize] userID=%s result=reject code=stale_revision boardRev=%d req=%d",
 			uid, snap.BoardRev, *req.BoardRev)
 		writeJSON(w, 409, staleRevisionBody{
 			Error:    "stale_revision",
@@ -373,7 +395,7 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		metrics.Add("recognize_requests_total{result=error}", 1)
-		apiLog("ERROR", "[httpapi.Recognize] userID=%d mode=heuristic recognizer failed", uid)
+		apiLog("ERROR", "[httpapi.Recognize] userID=%s mode=heuristic recognizer failed", uid)
 		writeAPIError(w, 500, "internal_error", "recognition failed")
 		return
 	}
@@ -384,15 +406,15 @@ func (a *API) Recognize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	metrics.Add("recognize_requests_total{result=ok}", 1)
-	apiLog("INFO", "[httpapi.Recognize] userID=%d result=ok mode=heuristic boardRev=%d strokes=%d points=%d candidates=%d",
+	apiLog("INFO", "[httpapi.Recognize] userID=%s result=ok mode=heuristic boardRev=%d strokes=%d points=%d candidates=%d",
 		uid, snap.BoardRev, len(strokes), totalPoints, len(cands))
 	writeJSON(w, 200, resp)
 }
 
-func (a *API) rejectRecognize(w http.ResponseWriter, uid int64, code, message string) {
+func (a *API) rejectRecognize(w http.ResponseWriter, uid string, code, message string) {
 	metrics.Add("recognize_requests_total{result=reject}", 1)
 	metrics.Add("recognize_reject_total{code="+code+"}", 1)
-	apiLog("DEBUG", "[httpapi.Recognize] userID=%d result=reject code=%s", uid, code)
+	apiLog("DEBUG", "[httpapi.Recognize] userID=%s result=reject code=%s", uid, code)
 	writeAPIError(w, 400, code, message)
 }
 

@@ -6,10 +6,10 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/ids"
 	"github.com/deliium/drawing-board/internal/security"
 	"github.com/gorilla/sessions"
 )
@@ -34,7 +34,7 @@ type credentials struct {
 }
 
 type userView struct {
-	ID    int64  `json:"id"`
+	ID    string `json:"id"`
 	Email string `json:"email"`
 }
 
@@ -166,17 +166,17 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.startSession(w, r, uid); err != nil {
-		authLog("ERROR", "[auth.Register] startSession userID="+strconv.FormatInt(uid, 10)+": "+err.Error())
+		authLog("ERROR", "[auth.Register] startSession userID="+uid+": "+err.Error())
 		if delErr := s.Store.DeleteUser(uid); delErr != nil {
-			authLog("ERROR", "[auth.Register] rollback DeleteUser userID="+strconv.FormatInt(uid, 10)+": "+delErr.Error())
+			authLog("ERROR", "[auth.Register] rollback DeleteUser userID="+uid+": "+delErr.Error())
 		} else {
-			authLog("WARN", "[auth.Register] rolled back userID="+strconv.FormatInt(uid, 10)+" reason=session_failed")
+			authLog("WARN", "[auth.Register] rolled back userID="+uid+" reason=session_failed")
 		}
 		writeAuthError(w, http.StatusInternalServerError, "registration_failed", "Unable to create account. If you already have one, sign in.")
 		return
 	}
 	s.issueCSRFCookie(w)
-	authLog("INFO", "[auth.Register] userID="+strconv.FormatInt(uid, 10)+" upgraded=false")
+	authLog("INFO", "[auth.Register] userID="+uid+" upgraded=false")
 	writeJSON(w, http.StatusOK, userView{ID: uid, Email: c.Email})
 }
 
@@ -207,7 +207,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	ok, verifyErr := VerifyPassword(u.PasswordHash, c.Password)
 	if verifyErr != nil {
-		authLog("ERROR", "[auth.Login] verify unexpected userID="+strconv.FormatInt(u.ID, 10))
+		authLog("ERROR", "[auth.Login] verify unexpected userID="+u.ID)
 		writeAuthError(w, http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
 		return
 	}
@@ -218,12 +218,12 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.startSession(w, r, u.ID); err != nil {
-		authLog("ERROR", "[auth.Login] startSession userID="+strconv.FormatInt(u.ID, 10)+": "+err.Error())
+		authLog("ERROR", "[auth.Login] startSession userID="+u.ID+": "+err.Error())
 		writeAuthError(w, http.StatusInternalServerError, "invalid_credentials", "Email or password is incorrect.")
 		return
 	}
 	s.issueCSRFCookie(w)
-	authLog("INFO", "[auth.Login] userID="+strconv.FormatInt(u.ID, 10))
+	authLog("INFO", "[auth.Login] userID="+u.ID)
 	writeJSON(w, http.StatusOK, userView{ID: u.ID, Email: u.Email})
 }
 
@@ -268,16 +268,16 @@ func (s *Service) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.Store.GetUserByID(uid)
 	if err != nil {
-		authLog("ERROR", "[auth.Me] lookup userID="+strconv.FormatInt(uid, 10)+": "+err.Error())
+		authLog("ERROR", "[auth.Me] lookup userID="+uid+": "+err.Error())
 		writeAuthError(w, http.StatusInternalServerError, "unauthorized", "")
 		return
 	}
 	if u == nil {
-		authLog("DEBUG", "[auth.Me] code=unauthorized missing userID="+strconv.FormatInt(uid, 10))
+		authLog("DEBUG", "[auth.Me] code=unauthorized missing userID="+uid)
 		writeAuthError(w, http.StatusUnauthorized, "unauthorized", "")
 		return
 	}
-	authLog("DEBUG", "[auth.Me] userID="+strconv.FormatInt(uid, 10))
+	authLog("DEBUG", "[auth.Me] userID="+uid)
 	writeJSON(w, http.StatusOK, userView{ID: u.ID, Email: u.Email})
 }
 
@@ -291,19 +291,16 @@ func (s *Service) issueCSRFCookie(w http.ResponseWriter) {
 	authLog("DEBUG", "[auth.issueCSRFCookie] issued")
 }
 
-func (s *Service) UserIDFromRequest(r *http.Request) (int64, bool) {
+func (s *Service) UserIDFromRequest(r *http.Request) (string, bool) {
 	sess, err := s.Sessions.Get(r, sessionName)
 	if err != nil {
-		return 0, false
+		return "", false
 	}
-	v, ok := sess.Values["user_id"].(int64)
-	if ok {
-		return v, true
+	v, ok := sess.Values["user_id"].(string)
+	if !ok || !ids.Valid(v) {
+		return "", false
 	}
-	if f, ok := sess.Values["user_id"].(float64); ok {
-		return int64(f), true
-	}
-	return 0, false
+	return v, true
 }
 
 func (s *Service) RequireAuth(next http.Handler) http.Handler {
@@ -327,7 +324,7 @@ func (s *Service) applySessionOptions(sess *sessions.Session) {
 }
 
 // startSession invalidates any prior sid then creates a new authenticated session (rotation).
-func (s *Service) startSession(w http.ResponseWriter, r *http.Request, userID int64) error {
+func (s *Service) startSession(w http.ResponseWriter, r *http.Request, userID string) error {
 	// Only expire an existing cookie when the client actually sent one. Calling Get on a
 	// cookieless request would fabricate a session that we must not MaxAge=-1 away before New.
 	if _, err := r.Cookie(sessionName); err == nil {
@@ -338,7 +335,7 @@ func (s *Service) startSession(w http.ResponseWriter, r *http.Request, userID in
 			old.Options.MaxAge = -1
 			s.applySessionOptions(old)
 			if saveErr := old.Save(r, w); saveErr != nil {
-				authLog("ERROR", "[auth.startSession] invalidate prior failed userID="+strconv.FormatInt(userID, 10)+": "+saveErr.Error())
+				authLog("ERROR", "[auth.startSession] invalidate prior failed userID="+userID+": "+saveErr.Error())
 				// Continue to create a new session; rotation still proceeds.
 			}
 		}
@@ -346,17 +343,17 @@ func (s *Service) startSession(w http.ResponseWriter, r *http.Request, userID in
 
 	sess, err := s.Sessions.New(r, sessionName)
 	if err != nil {
-		authLog("ERROR", "[auth.startSession] New failed userID="+strconv.FormatInt(userID, 10)+": "+err.Error())
+		authLog("ERROR", "[auth.startSession] New failed userID="+userID+": "+err.Error())
 		return err
 	}
 	sess.Values["user_id"] = userID
 	sess.Options.MaxAge = 0 // browser-session cookie (store default)
 	s.applySessionOptions(sess)
 	if err := sess.Save(r, w); err != nil {
-		authLog("ERROR", "[auth.startSession] Save failed userID="+strconv.FormatInt(userID, 10)+": "+err.Error())
+		authLog("ERROR", "[auth.startSession] Save failed userID="+userID+": "+err.Error())
 		return err
 	}
-	authLog("DEBUG", "[auth.startSession] rotated userID="+strconv.FormatInt(userID, 10))
+	authLog("DEBUG", "[auth.startSession] rotated userID="+userID)
 	return nil
 }
 

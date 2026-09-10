@@ -48,7 +48,7 @@ type progressItemResponse struct {
 	Status        string           `json:"status"`
 	AttemptCount  int              `json:"attemptCount"`
 	PassCount     int              `json:"passCount"`
-	LastAttemptID *int64           `json:"lastAttemptId,omitempty"`
+	LastAttemptID *string          `json:"lastAttemptId,omitempty"`
 	LastPassedAt  *string          `json:"lastPassedAt,omitempty"`
 	UpdatedAt     string           `json:"updatedAt"`
 	Mastery       *masteryResponse `json:"mastery,omitempty"`
@@ -81,7 +81,7 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 
 	lessonID := strings.TrimSpace(mux.Vars(r)["id"])
 	if lessonID == "" {
-		apiLog("WARN", "[httpapi.Lesson.Get] not_found empty id userID=%d", uid)
+		apiLog("WARN", "[httpapi.Lesson.Get] not_found empty id userID=%s", uid)
 		writeAPIError(w, 404, "not_found", "lesson not found")
 		return
 	}
@@ -89,7 +89,7 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 	lesson, err := ls.Lessons().GetPublished(r.Context(), lessonID)
 	if err != nil {
 		if errors.Is(err, learn.ErrNotFound) {
-			apiLog("WARN", "[httpapi.Lesson.Get] not_found userID=%d lessonId=%s", uid, lessonID)
+			apiLog("WARN", "[httpapi.Lesson.Get] not_found userID=%s lessonId=%s", uid, lessonID)
 			writeAPIError(w, 404, "not_found", "lesson not found")
 			return
 		}
@@ -152,7 +152,7 @@ func (a *API) GetLesson(w http.ResponseWriter, r *http.Request) {
 	if missingGuidance > 0 {
 		apiLog("WARN", "[httpapi.Lesson.Get] missing guidance count=%d lessonId=%s", missingGuidance, lesson.ID)
 	}
-	apiLog("INFO", "[httpapi.Lesson.Get] userID=%d lessonId=%s characterCount=%d", uid, lesson.ID, len(chars))
+	apiLog("INFO", "[httpapi.Lesson.Get] userID=%s lessonId=%s characterCount=%d", uid, lesson.ID, len(chars))
 	apiLog("DEBUG", "[httpapi.Lesson.Get] characterIds=%s", strings.Join(ids, ","))
 	writeJSON(w, 200, lessonResponse{
 		ID:             lesson.ID,
@@ -183,7 +183,7 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := ls.Progress().ListForUser(r.Context(), uid)
 	if err != nil {
-		apiLog("ERROR", "[httpapi.Progress.List] store userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Progress.List] store userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to load progress")
 		return
 	}
@@ -192,7 +192,7 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 	if lessonID != "" {
 		if _, err := ls.Lessons().GetPublished(r.Context(), lessonID); err != nil {
 			if errors.Is(err, learn.ErrNotFound) {
-				apiLog("WARN", "[httpapi.Progress.List] not_found lessonId=%s userID=%d", lessonID, uid)
+				apiLog("WARN", "[httpapi.Progress.List] not_found lessonId=%s userID=%s", lessonID, uid)
 				writeAPIError(w, 404, "not_found", "lesson not found")
 				return
 			}
@@ -236,7 +236,7 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 
 	outcomes, err := ls.Progress().ListAssessedOutcomes(r.Context(), uid, charIDs, learn.MasteryOutcomeWindow)
 	if err != nil {
-		apiLog("ERROR", "[httpapi.Progress.List] outcomes userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Progress.List] outcomes userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to load progress")
 		return
 	}
@@ -256,16 +256,16 @@ func (a *API) ListProgress(w http.ResponseWriter, r *http.Request) {
 		m := learn.DeriveMastery(outcomes[items[i].CharacterID])
 		mr := masteryFromLearn(m)
 		items[i].Mastery = &mr
-		apiLog("DEBUG", "[learn.mastery] userID=%d characterID=%s state=%s reasonCode=%s assessedCount=%d",
+		apiLog("DEBUG", "[learn.mastery] userID=%s characterID=%s state=%s reasonCode=%s assessedCount=%d",
 			uid, items[i].CharacterID, m.State, m.ReasonCode, m.AssessedCount)
 		if items[i].Status == learn.ProgressStatusPassed && m.AssessedCount == 0 {
-			apiLog("WARN", "[httpapi.Progress.List] data inconsistency userID=%d characterID=%s status=passed assessedCount=0",
+			apiLog("WARN", "[httpapi.Progress.List] data inconsistency userID=%s characterID=%s status=passed assessedCount=0",
 				uid, items[i].CharacterID)
 		}
 	}
 
-	apiLog("DEBUG", "[httpapi.Progress.List] userID=%d dueCount=%d", uid, dueCount)
-	apiLog("INFO", "[httpapi.Progress.List] userID=%d progressCount=%d masteryAttached=%d lessonId=%s setId=%s",
+	apiLog("DEBUG", "[httpapi.Progress.List] userID=%s dueCount=%d", uid, dueCount)
+	apiLog("INFO", "[httpapi.Progress.List] userID=%s progressCount=%d masteryAttached=%d lessonId=%s setId=%s",
 		uid, len(items), len(charIDs), lessonID, setID)
 	writeJSON(w, 200, progressListResponse{Items: items})
 }

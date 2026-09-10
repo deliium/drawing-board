@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -210,5 +211,25 @@ func TestProgressNext_DueReviewAndCaughtUp(t *testing.T) {
 	}
 	if next.DueAt == nil || next.ReviewBox == nil {
 		t.Fatalf("due fields missing: %+v", next)
+	}
+}
+
+func TestDecodeAttemptCursor_RequiresUUID(t *testing.T) {
+	validID := "550e8400-e29b-41d4-a716-446655440000"
+	okCur := encodeAttemptCursor(time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC), validID)
+	gotT, gotID, err := decodeAttemptCursor(okCur)
+	if err != nil || gotID != validID || gotT.IsZero() {
+		t.Fatalf("valid cursor: t=%v id=%q err=%v", gotT, gotID, err)
+	}
+
+	for _, badID := range []string{"42", "", "not-a-uuid"} {
+		raw, _ := json.Marshal(attemptListCursorPayload{
+			StartedAt: time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC).Format(time.RFC3339Nano),
+			ID:        badID,
+		})
+		cur := base64.RawURLEncoding.EncodeToString(raw)
+		if _, _, err := decodeAttemptCursor(cur); err == nil {
+			t.Fatalf("expected invalid cursor for id=%q", badID)
+		}
 	}
 }

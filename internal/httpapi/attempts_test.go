@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func newAttemptTestAPI(t *testing.T, name string) (*API, *db.Store, int64) {
+func newAttemptTestAPI(t *testing.T, name string) (*API, *db.Store, string) {
 	t.Helper()
 	metrics.ResetForTest()
 	api, store, _ := newTestAPI(t, filepath.Join(t.TempDir(), name))
@@ -38,7 +37,7 @@ func newAttemptTestAPI(t *testing.T, name string) (*API, *db.Store, int64) {
 	return api, store, uid
 }
 
-func attemptSessionReq(t *testing.T, api *API, method, path string, uid int64, body string) *http.Request {
+func attemptSessionReq(t *testing.T, api *API, method, path string, uid string, body string) *http.Request {
 	t.Helper()
 	req := sessionRequest(t, api.Auth, method, path, uid)
 	if body != "" {
@@ -108,7 +107,7 @@ func TestAttemptLifecycleAndIdempotency(t *testing.T) {
 	if created.Status != "draft" || created.Glyph != "あ" {
 		t.Fatalf("created=%+v", created)
 	}
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	req = attemptSessionReq(t, api, http.MethodPost, "/api/attempts", uid, createBody)
 	rec = httptest.NewRecorder()
@@ -119,7 +118,7 @@ func TestAttemptLifecycleAndIdempotency(t *testing.T) {
 	var replay attemptResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &replay)
 	if replay.ID != created.ID {
-		t.Fatalf("replay id=%d want %d", replay.ID, created.ID)
+		t.Fatalf("replay id=%s want %s", replay.ID, created.ID)
 	}
 
 	mismatch := `{"characterId":"hira:い","clientAttemptId":"attempt-client-1"}`
@@ -209,7 +208,7 @@ func TestAttemptAssessWhileDraft(t *testing.T) {
 	api.CreateAttempt(rec, req)
 	var created attemptResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	req = withMuxVars(attemptSessionReq(t, api, http.MethodPost, "/api/attempts/"+id+"/assess", uid, `{}`), id)
 	rec = httptest.NewRecorder()
@@ -226,7 +225,7 @@ func TestAttemptAbandon(t *testing.T) {
 	api.CreateAttempt(rec, req)
 	var created attemptResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	req = withMuxVars(attemptSessionReq(t, api, http.MethodPost, "/api/attempts/"+id+"/abandon", uid, `{}`), id)
 	rec = httptest.NewRecorder()
@@ -253,7 +252,7 @@ func TestAttemptOtherUserNotFound(t *testing.T) {
 	api.CreateAttempt(rec, req)
 	var created attemptResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	req = withMuxVars(attemptSessionReq(t, api, http.MethodGet, "/api/attempts/"+id, other, ""), id)
 	rec = httptest.NewRecorder()
@@ -280,7 +279,7 @@ func TestAttemptSubmitBodyTooLarge(t *testing.T) {
 	api.CreateAttempt(rec, req)
 	var created attemptResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	huge := `{"width":300,"height":300,"strokes":[{"color":"#000","width":2,"points":[{"x":1,"y":1}]}],"pad":"` + strings.Repeat("x", limits.MaxAPIJSONBodyBytes) + `"}`
 	req = withMuxVars(attemptSessionReq(t, api, http.MethodPost, "/api/attempts/"+id+"/submit", uid, huge), id)
@@ -328,7 +327,7 @@ func TestAttemptAssessIncorrectFeedbackMessages(t *testing.T) {
 	}
 	var created attemptResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	// Two strokes for あ (want 3) → count mismatch coaching.
 	submit := `{

@@ -23,12 +23,12 @@ describe('applyIncomingMessage personal stroke isolation', () => {
     const result = applyIncomingMessage([local], {
       type: 'stroke',
       opId: 'op-local-1',
-      stroke: { ...local, id: 42, opId: 'op-local-1' },
+      stroke: { ...local, id: '42424242-4242-4242-8242-424242424242', opId: 'op-local-1' },
     })
 
     expect(result.action, 'expected echo to merge id onto pending local stroke').toBe('merged-id')
     expect(result.strokes).toHaveLength(1)
-    expect(result.strokes[0].id).toBe(42)
+    expect(result.strokes[0].id).toBe('42424242-4242-4242-8242-424242424242')
     expect(result.strokes[0].sync).toBe('saved')
   })
 
@@ -38,10 +38,10 @@ describe('applyIncomingMessage personal stroke isolation', () => {
       type: 'ack',
       opId: 'op-local-1',
       ok: true,
-      strokeId: 99,
+      strokeId: '99999999-9999-4999-8999-999999999990',
     })
     expect(result.action).toBe('acked-stroke')
-    expect(result.strokes[0].id).toBe(99)
+    expect(result.strokes[0].id).toBe('99999999-9999-4999-8999-999999999990')
     expect(result.strokes[0].sync).toBe('saved')
   })
 
@@ -58,23 +58,23 @@ describe('applyIncomingMessage personal stroke isolation', () => {
   })
 
   it('ignores duplicate ack for already saved stroke', () => {
-    const local = pendingStroke({ id: 99, sync: 'saved' })
+    const local = pendingStroke({ id: '99999999-9999-4999-8999-999999999990', sync: 'saved' })
     const result = applyIncomingMessage([local], {
       type: 'ack',
       opId: 'op-local-1',
       ok: true,
-      strokeId: 99,
+      strokeId: '99999999-9999-4999-8999-999999999990',
     })
     expect(result.action).toBe('ignored-duplicate-ack')
   })
 
   it('ignores an incoming stroke that does not match local pending state', () => {
-    const local = pendingStroke({ id: 1, sync: 'saved' })
+    const local = pendingStroke({ id: '11111111-1111-4111-8111-111111111111', sync: 'saved' })
     const foreign = pendingStroke({
       clientId: 'other-client',
       startedAtUnixMs: 99,
       opId: 'op-other',
-      id: 7,
+      id: '77777777-7777-4777-8777-777777777777',
     })
     const result = applyIncomingMessage([local], { type: 'stroke', stroke: foreign })
 
@@ -86,8 +86,8 @@ describe('applyIncomingMessage personal stroke isolation', () => {
   })
 
   it('ignores delete for an unknown id (no-op)', () => {
-    const local = pendingStroke({ id: 5, sync: 'saved' })
-    const result = applyIncomingMessage([local], { type: 'delete', delete: 999 })
+    const local = pendingStroke({ id: '55555555-5555-4555-8555-555555555555', sync: 'saved' })
+    const result = applyIncomingMessage([local], { type: 'delete', delete: '99999999-9999-4999-8999-999999999998' })
 
     expect(
       result.action,
@@ -97,15 +97,15 @@ describe('applyIncomingMessage personal stroke isolation', () => {
   })
 
   it('removes a stroke when delete id is known locally', () => {
-    const keep = pendingStroke({ id: 1, clientId: 'a', opId: 'op-a', sync: 'saved' })
+    const keep = pendingStroke({ id: '11111111-1111-4111-8111-111111111111', clientId: 'a', opId: 'op-a', sync: 'saved' })
     const remove = pendingStroke({
-      id: 2,
+      id: '22222222-2222-4222-8222-222222222222',
       clientId: 'b',
       startedAtUnixMs: 2,
       opId: 'op-b',
       sync: 'saved',
     })
-    const result = applyIncomingMessage([keep, remove], { type: 'delete', delete: 2 })
+    const result = applyIncomingMessage([keep, remove], { type: 'delete', delete: '22222222-2222-4222-8222-222222222222' })
 
     expect(result.action).toBe('deleted')
     expect(result.strokes).toEqual([keep])

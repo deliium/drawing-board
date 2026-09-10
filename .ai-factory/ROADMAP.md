@@ -28,6 +28,7 @@
 - [x] **R2: Product-ready bilingual accessible learner shell** — independently releasable cutover of Prompt 14 (+ shell honesty); no review/audio requirement; a11y + EN/JA gates
 - [x] **R3: Personal progress, mastery, and spaced review** — independently releasable cutover of Prompts 15–16; schema ≤0005; history/mastery/clear + Leitner due/next; privacy gates
 - [x] **R4: Language-learning chrome, CI confidence, and docs honesty** — independently releasable cutover of Prompts 17–19; schema ≤0006; audio/guidance + required CI/docs honesty gates
+- [x] **UUID primary keys for all surrogate IDs** — replace INTEGER AUTOINCREMENT / integer FK entity IDs with UUID TEXT end-to-end (SQLite → Go → REST/WS → Vue); migration 0007 rewrite; sessions invalidate on deploy
 
 ## Completed
 
@@ -57,3 +58,4 @@
 | R2: Product-ready bilingual accessible learner shell | 2026-09-10 |
 | R3: Personal progress, mastery, and spaced review | 2026-09-10 |
 | R4: Language-learning chrome, CI confidence, and docs honesty | 2026-09-10 |
+| UUID primary keys for all surrogate IDs | 2026-09-10 |

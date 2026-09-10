@@ -9,7 +9,7 @@ export type CreateAttemptRequest = {
 }
 
 export type Attempt = {
-  id: number
+  id: string
   characterId: string
   glyph?: string
   lessonId?: string
@@ -38,7 +38,7 @@ export type SubmitAttemptRequest = {
 }
 
 export type SubmitAttemptResponse = {
-  id: number
+  id: string
   status: 'submitted'
   submittedAt: string
   strokeCount: number
@@ -59,7 +59,7 @@ export type AssessmentCandidate = {
 }
 
 export type AttemptAssessment = {
-  attemptId: number
+  attemptId: string
   characterId: string
   glyph?: string
   status: 'assessed'
@@ -89,12 +89,12 @@ export function createAttempt(body: CreateAttemptRequest): Promise<Attempt> {
   })
 }
 
-export function getAttempt(id: number): Promise<Attempt> {
+export function getAttempt(id: string): Promise<Attempt> {
   debug('get', id)
   return apiFetch<Attempt>(`/api/attempts/${id}`)
 }
 
-export function submitAttempt(id: number, body: SubmitAttemptRequest): Promise<SubmitAttemptResponse> {
+export function submitAttempt(id: string, body: SubmitAttemptRequest): Promise<SubmitAttemptResponse> {
   debug('submit', id, 'strokes', body.strokes.length)
   return apiFetch<SubmitAttemptResponse>(`/api/attempts/${id}/submit`, {
     method: 'POST',
@@ -102,7 +102,7 @@ export function submitAttempt(id: number, body: SubmitAttemptRequest): Promise<S
   })
 }
 
-export function assessAttempt(id: number): Promise<AttemptAssessment> {
+export function assessAttempt(id: string): Promise<AttemptAssessment> {
   debug('assess', id)
   return apiFetch<AttemptAssessment>(`/api/attempts/${id}/assess`, {
     method: 'POST',
@@ -110,21 +110,21 @@ export function assessAttempt(id: number): Promise<AttemptAssessment> {
   })
 }
 
-export function getAttemptAssessment(id: number): Promise<AttemptAssessment> {
+export function getAttemptAssessment(id: string): Promise<AttemptAssessment> {
   debug('getAssessment', id)
   return apiFetch<AttemptAssessment>(`/api/attempts/${id}/assessment`)
 }
 
-export function abandonAttempt(id: number): Promise<{ id: number; status: 'abandoned' }> {
+export function abandonAttempt(id: string): Promise<{ id: string; status: 'abandoned' }> {
   debug('abandon', id)
-  return apiFetch<{ id: number; status: 'abandoned' }>(`/api/attempts/${id}/abandon`, {
+  return apiFetch<{ id: string; status: 'abandoned' }>(`/api/attempts/${id}/abandon`, {
     method: 'POST',
     body: '{}',
   })
 }
 
 export type AttemptHistoryItem = {
-  id: number
+  id: string
   characterId: string
   glyph: string
   lessonId?: string

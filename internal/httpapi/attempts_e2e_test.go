@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/deliium/drawing-board/internal/auth"
@@ -97,7 +96,7 @@ func TestAttemptE2ELifecycle(t *testing.T) {
 	}
 	var created attemptResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
-	id := strconv.FormatInt(created.ID, 10)
+	id := created.ID
 
 	submit := `{
 		"width":300,"height":300,

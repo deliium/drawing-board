@@ -3,7 +3,7 @@ export type Point = { x: number; y: number }
 export type StrokeSyncState = 'pending' | 'saving' | 'saved' | 'failed'
 
 export type Stroke = {
-  id?: number
+  id?: string
   points: Point[]
   color: string
   width: number
@@ -22,7 +22,7 @@ export type StrokeMessage = {
 export type DeleteMessage = {
   type: 'delete'
   opId?: string
-  delete?: number
+  delete?: string
   deleteOpId?: string
   boardRev?: number
 }
@@ -37,8 +37,8 @@ export type AckMessage = {
   opId: string
   ok: boolean
   boardRev?: number
-  strokeId?: number
-  delete?: number
+  strokeId?: string
+  delete?: string
   clear?: boolean
   error?: string
   message?: string

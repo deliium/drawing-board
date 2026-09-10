@@ -11,12 +11,12 @@ type AttemptListFilter struct {
 	Limit    int
 	// AfterStartedAt + AfterID form an opaque DESC cursor (exclusive): rows older than this pair.
 	AfterStartedAt *time.Time
-	AfterID        *int64
+	AfterID        *string
 }
 
 // AttemptHistoryItem is a list-row summary — never includes stroke points.
 type AttemptHistoryItem struct {
-	ID          int64
+	ID          string
 	CharacterID string
 	Glyph       string
 	LessonID    string
@@ -33,7 +33,7 @@ type AttemptHistoryItem struct {
 type AttemptListResult struct {
 	Items         []AttemptHistoryItem
 	NextStartedAt *time.Time
-	NextID        *int64
+	NextID        *string
 	HasNext       bool
 }
 

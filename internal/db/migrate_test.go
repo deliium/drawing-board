@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/deliium/drawing-board/internal/curriculum"
@@ -152,7 +153,14 @@ func TestMigrateLegacyBootstrapPreservesStrokes(t *testing.T) {
 		t.Fatalf("version=%d want %d", ver, migrations.LatestVersion())
 	}
 
-	strokes, err := store.ListStrokesByUser(uid)
+	u, err := store.GetUserByEmail("legacy@example.com")
+	if err != nil || u == nil {
+		t.Fatalf("GetUserByEmail: %v u=%v", err, u)
+	}
+	if u.ID == "" {
+		t.Fatalf("expected remapped UUID user id, got empty")
+	}
+	strokes, err := store.ListStrokesByUser(u.ID)
 	if err != nil {
 		t.Fatalf("ListStrokes: %v", err)
 	}
@@ -164,6 +172,9 @@ func TestMigrateLegacyBootstrapPreservesStrokes(t *testing.T) {
 	}
 	if strokes[0].Points[0].X != 10.5 || strokes[0].Points[0].Y != 20.5 {
 		t.Fatalf("points: %+v", strokes[0].Points)
+	}
+	if !strings.Contains(strokes[0].ID, "-") {
+		t.Fatalf("expected UUID stroke id, got %q", strokes[0].ID)
 	}
 
 	var charCount int
@@ -287,7 +298,7 @@ func TestSeedHiragana5IdempotentAndBoardAttemptIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attempt create: %v", err)
 	}
-	t.Logf("[db.migrate] attempt id=%d before board clear", att.ID)
+	t.Logf("[db.migrate] attempt id=%s before board clear", att.ID)
 
 	if err := SeedHiragana5(store); err != nil {
 		t.Fatalf("re-seed: %v", err)

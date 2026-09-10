@@ -120,14 +120,14 @@ describe('hiragana5 practice journey integration', () => {
     vi.mocked(getLesson).mockResolvedValue(lessonWithAll() as never)
     vi.mocked(listProgress).mockResolvedValue({ items: [] })
     vi.mocked(createAttempt).mockResolvedValue({
-      id: 100,
+      id: '10000000-1000-4000-8000-100000000000',
       characterId: g.id,
       status: 'draft',
       startedAt: 't',
       clientAttemptId: 'c-pass',
     })
     vi.mocked(submitAttempt).mockResolvedValue({
-      id: 100,
+      id: '10000000-1000-4000-8000-100000000000',
       status: 'submitted',
       submittedAt: 't',
       strokeCount: 1,
@@ -135,7 +135,7 @@ describe('hiragana5 practice journey integration', () => {
       height: 300,
     })
     vi.mocked(assessAttempt).mockResolvedValueOnce({
-      attemptId: 100,
+      attemptId: '10000000-1000-4000-8000-100000000000',
       characterId: g.id,
       status: 'assessed',
       pass: false,
@@ -185,14 +185,14 @@ describe('hiragana5 practice journey integration', () => {
     overlay.unmount()
 
     vi.mocked(createAttempt).mockResolvedValue({
-      id: 101,
+      id: '10100000-1010-4010-8010-101000000000',
       characterId: g.id,
       status: 'draft',
       startedAt: 't',
       clientAttemptId: 'c-retry',
     })
     vi.mocked(assessAttempt).mockResolvedValueOnce({
-      attemptId: 101,
+      attemptId: '10100000-1010-4010-8010-101000000000',
       characterId: g.id,
       status: 'assessed',
       pass: true,
@@ -237,7 +237,7 @@ describe('hiragana5 practice journey integration', () => {
     vi.mocked(getLesson).mockResolvedValue(lessonWithAll() as never)
     vi.mocked(listProgress).mockResolvedValue({ items: [] })
     vi.mocked(createAttempt).mockResolvedValue({
-      id: 200,
+      id: '20000000-2000-4000-8000-200000000000',
       characterId: 'hira:あ',
       status: 'draft',
       startedAt: 't',

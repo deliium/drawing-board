@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/deliium/drawing-board/internal/auth"
@@ -46,7 +45,7 @@ func newTestAPI(t *testing.T, dbPath string) (*API, *db.Store, *auth.Service) {
 	return &API{Auth: authSvc, Store: store}, store, authSvc
 }
 
-func sessionRequest(t *testing.T, authSvc *auth.Service, method, path string, userID int64) *http.Request {
+func sessionRequest(t *testing.T, authSvc *auth.Service, method, path string, userID string) *http.Request {
 	t.Helper()
 	req := httptest.NewRequest(method, path, nil)
 	rec := httptest.NewRecorder()
@@ -95,6 +94,53 @@ func TestDeleteStroke_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestDeleteStroke_InvalidUUID(t *testing.T) {
+	api, store, authSvc := newTestAPI(t, "test_http_delete_bad_uuid.db")
+	uid, err := store.CreateUser("del-bad-uuid@example.com", "hash")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	req := sessionRequest(t, authSvc, http.MethodPost, "/api/strokes/delete?id=not-a-uuid", uid)
+	rec := httptest.NewRecorder()
+	api.DeleteStroke(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body apiErrorBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Error != "invalid_input" {
+		t.Fatalf("expected invalid_input, got %+v", body)
+	}
+}
+
+func TestDeleteStroke_UnknownUUID_NotFound(t *testing.T) {
+	api, store, authSvc := newTestAPI(t, "test_http_delete_missing.db")
+	uid, err := store.CreateUser("del-missing@example.com", "hash")
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	missing := "00000000-0000-4000-8000-000000000099"
+	revBefore, err := store.GetBoardRev(uid)
+	if err != nil {
+		t.Fatalf("rev: %v", err)
+	}
+	req := sessionRequest(t, authSvc, http.MethodPost, "/api/strokes/delete?id="+missing, uid)
+	rec := httptest.NewRecorder()
+	api.DeleteStroke(rec, req)
+	if rec.Code != 404 {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body deleteStrokeNotFoundBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Error != "not_found" || body.Deleted || body.BoardRev != revBefore+1 {
+		t.Fatalf("unexpected body: %+v want boardRev=%d", body, revBefore+1)
+	}
+}
+
 func TestClearAndDelete_OnlyTouchCallerData(t *testing.T) {
 	api, store, authSvc := newTestAPI(t, "test_http_isolation.db")
 
@@ -117,11 +163,18 @@ func TestClearAndDelete_OnlyTouchCallerData(t *testing.T) {
 	}
 
 	t.Run("delete own stroke leaves other user intact", func(t *testing.T) {
-		req := sessionRequest(t, authSvc, http.MethodPost, "/api/strokes/delete?id="+strconv.FormatInt(idA, 10), userA)
+		req := sessionRequest(t, authSvc, http.MethodPost, "/api/strokes/delete?id="+idA, userA)
 		rec := httptest.NewRecorder()
 		api.DeleteStroke(rec, req)
 		if rec.Code != 200 {
 			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body["deleted"] != true {
+			t.Fatalf("expected deleted=true, got %v", body)
 		}
 		strokesB, err := store.ListStrokesByUser(userB)
 		if err != nil {
@@ -129,6 +182,33 @@ func TestClearAndDelete_OnlyTouchCallerData(t *testing.T) {
 		}
 		if len(strokesB) != 1 || strokesB[0].ID != idB {
 			t.Fatalf("user B data must remain after A deletes own stroke; got %+v", strokesB)
+		}
+	})
+
+	t.Run("delete foreign stroke returns not_found and advances caller boardRev", func(t *testing.T) {
+		revBefore, err := store.GetBoardRev(userA)
+		if err != nil {
+			t.Fatalf("rev before: %v", err)
+		}
+		req := sessionRequest(t, authSvc, http.MethodPost, "/api/strokes/delete?id="+idB, userA)
+		rec := httptest.NewRecorder()
+		api.DeleteStroke(rec, req)
+		if rec.Code != 404 {
+			t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var body deleteStrokeNotFoundBody
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Error != "not_found" || body.Deleted || body.ID != idB {
+			t.Fatalf("unexpected not_found body: %+v", body)
+		}
+		if body.BoardRev != revBefore+1 {
+			t.Fatalf("boardRev want %d got %d", revBefore+1, body.BoardRev)
+		}
+		strokesB, err := store.ListStrokesByUser(userB)
+		if err != nil || len(strokesB) != 1 || strokesB[0].ID != idB {
+			t.Fatalf("user B stroke must remain; got %+v err=%v", strokesB, err)
 		}
 	})
 
@@ -172,7 +252,7 @@ func TestClearAndDelete_OnlyTouchCallerData(t *testing.T) {
 			t.Fatalf("decode: %v", err)
 		}
 		if len(out.Strokes) != 1 || out.Strokes[0].ID != idB {
-			t.Fatalf("list must return only user B stroke id=%d, got %+v", idB, out)
+			t.Fatalf("list must return only user B stroke id=%s, got %+v", idB, out)
 		}
 	})
 }

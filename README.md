@@ -240,10 +240,12 @@ Cookie session name: `sid` (`HttpOnly`, `SameSite=Lax`, `Path=/`; `Secure` when 
 
 **CORS / WebSocket origins:** credentialed CORS echoes `Access-Control-Allow-Origin` only for exact allowlisted origins (never `*`). Disallowed CORS preflight returns `403`. WebSocket `CheckOrigin` uses the same allowlist and rejects missing Origin.
 
-- `POST /api/register` — Create account `{ email, password }` (password min 8, max 72 UTF-8 bytes). Success `200` `{ id, email }` + rotated session cookie. New passwords are stored with **bcrypt** (cost 12). If session creation fails after insert, the user row is rolled back so a later register can succeed.
-- `POST /api/login` — Sign in `{ email, password }` (max 72 UTF-8 bytes; min length is not enforced on login so short-password accounts created before the register minimum can still sign in). Success `200` `{ id, email }` + rotated session cookie. Only bcrypt password hashes authenticate; pre-migration unsalted SHA-256 hashes are rejected (`401 invalid_credentials`) — recreate the account if needed.
+- `POST /api/register` — Create account `{ email, password }` (password min 8, max 72 UTF-8 bytes). Success `200` `{ id, email }` where `id` is a **UUID string** + rotated session cookie. New passwords are stored with **bcrypt** (cost 12). If session creation fails after insert, the user row is rolled back so a later register can succeed.
+- `POST /api/login` — Sign in `{ email, password }` (max 72 UTF-8 bytes; min length is not enforced on login so short-password accounts created before the register minimum can still sign in). Success `200` `{ id, email }` (`id` UUID string) + rotated session cookie. Only bcrypt password hashes authenticate; pre-migration unsalted SHA-256 hashes are rejected (`401 invalid_credentials`) — recreate the account if needed.
 - `POST /api/logout` — Clear session values and expire the cookie (same Path/HttpOnly/SameSite/Secure). Success `200` `{ "ok": "true" }`. CookieStore sessions are client-side signed blobs: logout cannot revoke a stolen cookie copy until expiry or `COOKIE_KEY` rotation.
-- `GET /api/me` — Current user or `401` `{ "error": "unauthorized" }` (always ensures CSRF cookie).
+- `GET /api/me` — Current user `{ id, email }` (`id` UUID string) or `401` `{ "error": "unauthorized" }` (always ensures CSRF cookie).
+
+**Breaking ID/session note:** Surrogate entity IDs (`users`, strokes, attempts, assessments) are UUID **TEXT** (migration `0007`). Session cookie `user_id` is a string UUID — existing cookies from integer-ID builds invalidate on deploy (re-login). Cached numeric attempt IDs in browser `sessionStorage` are ignored.
 - `GET /api/csrf` — Ensures CSRF cookie and returns `{ "csrf": "<token>" }`.
 - `GET /api/features` — Authenticated learning kill-switch mirror `{ practice, progress, review, audio }` (see Release train).
 
@@ -273,13 +275,13 @@ Passwords are hashed with bcrypt (cost 12). Logs never include passwords, raw co
 | Secure cookies missing on `http://localhost` compose | Use HTTPS at the browser, or avoid `APP_ENV=production` for plain-HTTP demos |
 
 ### Drawing Endpoints
-- `GET /api/strokes` — `{ "boardRev": <n>, "strokes": [...] }` for the authenticated user (reload source of truth)
+- `GET /api/strokes` — `{ "boardRev": <n>, "strokes": [...] }` for the authenticated user (reload source of truth). Each stroke `id` is a UUID **string**.
 - `POST /api/strokes/clear` — revision-gated clear via the same store helper as WS (`opId`/`baseRev` optional in body; server may generate). Returns `{ "ok": true, "boardRev": <n> }`. **Vue board uses WS `clear`** so other tabs receive a live echo; REST clear is for scripts/tests and does not fan out over the hub
-- `POST /api/strokes/delete?id={id}` — thin REST delete wrapper (UI uses WS delete)
+- `POST /api/strokes/delete?id={uuid}` — thin REST delete wrapper; `id` must be a UUID string (UI uses WS delete). Success: `{ "ok": true, "deleted": true, "id": "…", "boardRev": <n> }`. Unknown/other-user UUID still advances `boardRev` (revision-gated like WS) but returns `404` `{ "error": "not_found", "deleted": false, "id": "…", "boardRev": <n> }`. Invalid UUID → `400` `invalid_input`.
 
 ### Practice Attempt Endpoints
 
-Canonical **single-character practice** assessment. Attempt routes do **not** use `boardRev` / WS queue gating. Draft rows persist metadata only — stroke geometry is sent once on submit and then frozen. Retry = new `POST /api/attempts` (new `clientAttemptId`). Board clear/undo does not mutate attempts. The Vue journey at `/#/practice/:characterId` draws locally (no WS for attempt ink).
+Canonical **single-character practice** assessment. Attempt routes do **not** use `boardRev` / WS queue gating. Path `{id}` is a UUID string. Draft rows persist metadata only — stroke geometry is sent once on submit and then frozen. Retry = new `POST /api/attempts` (new `clientAttemptId`). Board clear/undo does not mutate attempts. The Vue journey at `/#/practice/:characterId` draws locally (no WS for attempt ink).
 
 State machine: `draft` → `submitted` → `assessed`, or `draft` → `abandoned`.
 
@@ -333,7 +335,7 @@ Authenticated GETs for the practice hub / journey (CSRF not required on GET). Pe
 | 400 | `invalid_input` / `character_not_active` / limit codes / `body_too_large` | Validation |
 | 401 | `unauthorized` | No session |
 | 403 | `csrf_rejected` | Missing/mismatched CSRF on mutating methods |
-| 404 | `not_found` | Unknown/foreign attempt, character, or lesson |
+| 404 | `not_found` | Unknown/foreign attempt, character, lesson, or free-board stroke delete (REST) |
 | 409 | `conflict` / `invalid_status` | Idempotency mismatch or wrong lifecycle state |
 | 429 | `rate_limited` | Assess rate limit (same defaults as recognize) |
 | 503 | `recognizer_unavailable` | Assessor not configured |
@@ -374,8 +376,8 @@ Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**
 // Create (idempotent while active; ack + echo include boardRev)
 {"type":"stroke","opId":"550e8400-e29b-41d4-a716-446655440000","baseRev":12,"stroke":{"points":[{"x":10,"y":20}],"color":"#1d4ed8","width":4,"clientId":"abc","startedAtUnixMs":1690000000000}}
 
-// Delete by stroke id
-{"type":"delete","opId":"550e8400-e29b-41d4-a716-446655440001","baseRev":12,"delete":123}
+// Delete by stroke id (UUID string)
+{"type":"delete","opId":"550e8400-e29b-41d4-a716-446655440001","baseRev":12,"delete":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}
 
 // Delete / cancel by create opId (pending or persisted)
 {"type":"delete","opId":"550e8400-e29b-41d4-a716-446655440002","baseRev":12,"deleteOpId":"550e8400-e29b-41d4-a716-446655440000"}
@@ -384,8 +386,8 @@ Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**
 {"type":"clear","opId":"550e8400-e29b-41d4-a716-446655440003","baseRev":12}
 
 // Acknowledgements
-{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":true,"boardRev":13,"strokeId":456}
-{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440001","ok":true,"boardRev":13,"delete":123}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":true,"boardRev":13,"strokeId":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}
+{"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440001","ok":true,"boardRev":13,"delete":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}
 {"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440003","ok":true,"boardRev":13,"clear":true}
 {"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":false,"error":"stale_board","message":"board revision mismatch","boardRev":14}
 {"type":"ack","opId":"550e8400-e29b-41d4-a716-446655440000","ok":false,"error":"op_cancelled","message":"create cancelled","boardRev":13}
@@ -398,7 +400,7 @@ Text frames are capped at **64 KiB**. Stroke ingest is rate-limited per user (**
 {"type":"error","error":"bad_json","message":"invalid JSON message"}
 ```
 
-WS error / nack codes include `bad_json`, `payload_too_large`, `invalid_stroke`, `invalid_op_id`, `too_many_points`, `invalid_coordinates`, `rate_limited`, `stale_board`, `op_cancelled`, `internal_error`. Soft validation prefers an `ack` nack (when `opId` is known) or `error` frame over disconnect; oversize frames may close the connection after the read-limit error.
+WS error / nack codes include `bad_json`, `payload_too_large`, `invalid_stroke`, `invalid_op_id`, `invalid_input` (malformed UUID stroke id), `too_many_points`, `invalid_coordinates`, `rate_limited`, `stale_board`, `op_cancelled`, `internal_error`. Soft validation prefers an `ack` nack (when `opId` is known) or `error` frame over disconnect; oversize frames may close the connection after the read-limit error.
 
 The Vue client keeps a **bounded in-memory queue** (32 ops), reconnects with exponential backoff, and retries until ack / nack / attempt budget. Each outbound mutate stamps `baseRev` from the latest known `boardRev`. Header status: **Connecting… / Saving… / Saved / Offline — retrying… / Sync error**. Recognize stays disabled until **Saved** with an empty queue. Undo/erase work for pending (`deleteOpId` / drop) and acknowledged strokes. Unmatched inbound stroke creates remain non-authoritative. Full page reload uses `GET /api/strokes` (`boardRev` + strokes) as source of truth and drops the session queue (no durable offline storage in this iteration). On `stale_board`, the client reloads from REST. DEV builds `console.debug` WS frames without toasts.
 
@@ -451,6 +453,7 @@ SQLite schema changes are **versioned** and applied fail-closed on `db.Open`. Ap
 | 4 | `curriculum_ja_pedagogy` | `description_ja`, `example_meaning_ja`, lesson `title_ja` |
 | 5 | `review_schedule` | Leitner-style `review_box` / `due_at` / `last_reviewed_at` on progress |
 | 6 | `curriculum_guidance` | `guidance_en` / `guidance_ja` on `characters` |
+| 7 | `uuid_primary_keys` | Rewrite surrogate INTEGER PK/FKs to UUID TEXT (users, strokes, attempts, assessments, progress FKs); curriculum natural keys and `board_rev` unchanged |
 
 **Free-board vs attempts:** Board strokes (`strokes` / `stroke_points`) are a scratchpad with `boardRev` / `opId`. Practice attempts use separate `attempt_strokes` tables — board clear/undo/erase does **not** delete attempt history. Match scores stored on assessments remain `score_kind=match` (not calibrated confidence).
 
@@ -602,6 +605,7 @@ drawing-board/
 │   ├── learn/          # Learning-domain types + repository interfaces
 │   ├── httpapi/        # HTTP API handlers
 │   ├── limits/         # Shared stroke/recognize input bounds
+│   ├── ids/            # UUID generate/parse for surrogate entity IDs
 │   ├── metrics/        # Process-local reject/ok counters
 │   ├── recognize/      # hiragana5 target comparison (paths from content pack)
 │   └── ws/             # WebSocket handling

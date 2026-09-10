@@ -26,6 +26,7 @@ internal/learn/       # learning-domain types + repository interfaces
 internal/httpapi/     # REST API
 internal/ws/          # WebSocket hub
 internal/limits/      # shared validators
+internal/ids/         # UUID generate/parse for surrogate entity IDs
 internal/recognize/   # hiragana5 multi-criterion assess + heuristic ranking + correction catalog
 internal/security/    # CORS/CSRF/origins
 internal/metrics/     # counters
@@ -70,6 +71,8 @@ docker/               # compose / nginx helpers
 | `internal/learn/review.go` | Leitner-style boxes, ApplyReviewOutcome, SuggestNextWithReview |
 | `internal/db/board.go` | boardRev transactional create/delete/clear |
 | `internal/db/migrate.go` | versioned schema runner + `schema_migrations` |
+| `internal/db/migrations/0007_uuid_primary_keys.go` | UUID TEXT rewrite of surrogate PK/FKs |
+| `internal/ids/ids.go` | UUID generate / parse / validate for entity IDs |
 | `internal/db/learn_store.go` | SQLite learning repos (attempts/assessments/progress + review upsert) |
 | `internal/learn/` | learning-domain types + repository interfaces |
 | `web/src/pages/BoardPage.vue` | Free-board canvas UI (tools/WS/recognize) |

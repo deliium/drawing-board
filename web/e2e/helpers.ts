@@ -69,7 +69,7 @@ export async function assessCharacterViaAPI(
   cookies: Cookie[],
   characterId: string,
   glyph: string,
-): Promise<{ attemptId: number; pass: boolean; score: number }> {
+): Promise<{ attemptId: string; pass: boolean; score: number }> {
   const created = await apiFetchJSON(request, cookies, 'POST', '/api/attempts', {
     characterId,
     lessonId: 'lesson:hiragana5',
@@ -87,7 +87,7 @@ export async function assessCharacterViaAPI(
     }
     Object.assign(created, retry)
   }
-  const attemptId = created.json.id as number
+  const attemptId = created.json.id as string
   const strokes = loadGoldStrokes(glyph).map((s) => ({
     color: '#111827',
     width: 3,

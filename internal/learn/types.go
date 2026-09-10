@@ -72,8 +72,8 @@ type LessonCharacter struct {
 
 // Attempt is a per-user practice submission lifecycle row.
 type Attempt struct {
-	ID              int64
-	UserID          int64
+	ID              string
+	UserID          string
 	CharacterID     string
 	LessonID        string // empty when null
 	Status          string
@@ -111,8 +111,8 @@ type FeedbackItem struct {
 
 // AssessmentResult is the persisted target-comparison outcome for one attempt.
 type AssessmentResult struct {
-	ID        int64
-	AttemptID int64
+	ID        string
+	AttemptID string
 	Pass      bool
 	Score     float64
 	ScoreKind string
@@ -125,12 +125,12 @@ type AssessmentResult struct {
 
 // Progress is per-user per-character practice state, including Leitner-style review fields.
 type Progress struct {
-	UserID         int64
+	UserID         string
 	CharacterID    string
 	Status         string
 	AttemptCount   int
 	PassCount      int
-	LastAttemptID  *int64
+	LastAttemptID  *string
 	LastPassedAt   *time.Time
 	ReviewBox      int
 	DueAt          *time.Time
@@ -140,7 +140,7 @@ type Progress struct {
 
 // CreateDraft is input for starting a practice attempt.
 type CreateDraft struct {
-	UserID          int64
+	UserID          string
 	CharacterID     string
 	LessonID        string // optional
 	ClientAttemptID string // optional ≤36
@@ -148,7 +148,7 @@ type CreateDraft struct {
 
 // SaveAssessment is input for persisting assessment + feedback + progress in one tx.
 type SaveAssessment struct {
-	AttemptID int64
+	AttemptID string
 	Pass      bool
 	Score     float64
 	ScoreKind string

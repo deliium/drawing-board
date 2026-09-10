@@ -10,7 +10,7 @@ type Limiter struct {
 	mu      sync.Mutex
 	rate    float64 // tokens per second
 	burst   float64
-	entries map[int64]*bucket
+	entries map[string]*bucket
 	maxKeys int
 	idleTTL time.Duration
 	now     func() time.Time
@@ -32,7 +32,7 @@ func NewLimiter(ratePerMin, burst int) *Limiter {
 	return &Limiter{
 		rate:    float64(ratePerMin) / 60.0,
 		burst:   float64(burst),
-		entries: make(map[int64]*bucket),
+		entries: make(map[string]*bucket),
 		maxKeys: 10_000,
 		idleTTL: 10 * time.Minute,
 		now:     time.Now,
@@ -40,7 +40,7 @@ func NewLimiter(ratePerMin, burst int) *Limiter {
 }
 
 // Allow reports whether key may proceed (consumes one token on success).
-func (l *Limiter) Allow(key int64) bool {
+func (l *Limiter) Allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -80,7 +80,7 @@ func (l *Limiter) gcLocked(now time.Time) {
 }
 
 func (l *Limiter) evictOneLocked() {
-	var oldest int64
+	var oldest string
 	var oldestTime time.Time
 	first := true
 	for k, b := range l.entries {

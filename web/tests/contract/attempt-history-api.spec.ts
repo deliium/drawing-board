@@ -92,7 +92,7 @@ describe('attempt history + mastery API contract', () => {
         json: async () => ({
           items: [
             {
-              id: 9,
+              id: '99999999-9999-4999-8999-999999999999',
               characterId: 'hira:あ',
               glyph: 'あ',
               status: 'assessed',

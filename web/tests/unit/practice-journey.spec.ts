@@ -104,14 +104,14 @@ describe('usePracticeJourney', () => {
 
   it('happy path submit → result with ≤2 feedback', async () => {
     vi.mocked(createAttempt).mockResolvedValue({
-      id: 11,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       characterId: 'hira:あ',
       status: 'draft',
       startedAt: '2026-09-09T00:00:00Z',
       clientAttemptId: 'c1',
     })
     vi.mocked(submitAttempt).mockResolvedValue({
-      id: 11,
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       status: 'submitted',
       submittedAt: '2026-09-09T00:01:00Z',
       strokeCount: 3,
@@ -119,7 +119,7 @@ describe('usePracticeJourney', () => {
       height: 300,
     })
     vi.mocked(assessAttempt).mockResolvedValue({
-      attemptId: 11,
+      attemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       characterId: 'hira:あ',
       status: 'assessed',
       pass: true,
@@ -158,14 +158,14 @@ describe('usePracticeJourney', () => {
   it('retry creates a new clientAttemptId', async () => {
     vi.mocked(createAttempt)
       .mockResolvedValueOnce({
-        id: 1,
+        id: '11111111-1111-4111-8111-111111111111',
         characterId: 'hira:あ',
         status: 'draft',
         startedAt: 't',
         clientAttemptId: 'old',
       })
       .mockResolvedValueOnce({
-        id: 2,
+        id: '22222222-2222-4222-8222-222222222222',
         characterId: 'hira:あ',
         status: 'draft',
         startedAt: 't',
@@ -178,7 +178,7 @@ describe('usePracticeJourney', () => {
     await harness.api.continueFromAnimate()
     const first = harness.api.clientAttemptId.value
     harness.api.assessment.value = {
-      attemptId: 1,
+      attemptId: '11111111-1111-4111-8111-111111111111',
       characterId: 'hira:あ',
       status: 'assessed',
       pass: false,
@@ -199,7 +199,7 @@ describe('usePracticeJourney', () => {
 
   it('resumes draft from sessionStorage', async () => {
     const snap: PracticeSessionSnapshot = {
-      attemptId: 42,
+      attemptId: '42424242-4242-4242-8242-424242424242',
       clientAttemptId: 'resume-1',
       characterId: 'hira:あ',
       stage: 'freewrite',
@@ -209,7 +209,7 @@ describe('usePracticeJourney', () => {
     }
     sessionStorage.setItem(sessionKey('hira:あ'), JSON.stringify(snap))
     vi.mocked(getAttempt).mockResolvedValue({
-      id: 42,
+      id: '42424242-4242-4242-8242-424242424242',
       characterId: 'hira:あ',
       status: 'draft',
       startedAt: 't',
@@ -224,7 +224,7 @@ describe('usePracticeJourney', () => {
 
   it('resumes draft with empty strokes and shows not-saved notice', async () => {
     const snap: PracticeSessionSnapshot = {
-      attemptId: 43,
+      attemptId: '43434343-4343-4343-8343-434343434343',
       clientAttemptId: 'resume-empty',
       characterId: 'hira:あ',
       stage: 'freewrite',
@@ -232,7 +232,7 @@ describe('usePracticeJourney', () => {
     }
     sessionStorage.setItem(sessionKey('hira:あ'), JSON.stringify(snap))
     vi.mocked(getAttempt).mockResolvedValue({
-      id: 43,
+      id: '43434343-4343-4343-8343-434343434343',
       characterId: 'hira:あ',
       status: 'draft',
       startedAt: 't',
@@ -249,7 +249,7 @@ describe('usePracticeJourney', () => {
 
   it('submit failure stays on freewrite without claiming pass', async () => {
     vi.mocked(createAttempt).mockResolvedValue({
-      id: 50,
+      id: '50505050-5050-4505-8505-505050505050',
       characterId: 'hira:あ',
       status: 'draft',
       startedAt: 't',
@@ -279,14 +279,14 @@ describe('usePracticeJourney', () => {
 
   it('assess failure after submit stays submitting; retryAssess recovers', async () => {
     vi.mocked(createAttempt).mockResolvedValue({
-      id: 51,
+      id: '51515151-5151-4515-8515-515151515151',
       characterId: 'hira:あ',
       status: 'draft',
       startedAt: 't',
       clientAttemptId: 'c-fail-assess',
     })
     vi.mocked(submitAttempt).mockResolvedValue({
-      id: 51,
+      id: '51515151-5151-4515-8515-515151515151',
       status: 'submitted',
       submittedAt: 't',
       strokeCount: 1,
@@ -296,7 +296,7 @@ describe('usePracticeJourney', () => {
     vi.mocked(assessAttempt)
       .mockRejectedValueOnce({ status: 429, message: 'rate limited' })
       .mockResolvedValueOnce({
-        attemptId: 51,
+        attemptId: '51515151-5151-4515-8515-515151515151',
         characterId: 'hira:あ',
         status: 'assessed',
         pass: true,
@@ -335,20 +335,20 @@ describe('usePracticeJourney', () => {
     sessionStorage.setItem(
       sessionKey('hira:あ'),
       JSON.stringify({
-        attemptId: 7,
+        attemptId: '77777777-7777-4777-8777-777777777777',
         clientAttemptId: 'mid',
         characterId: 'hira:あ',
         stage: 'submitting',
       }),
     )
     vi.mocked(getAttempt).mockResolvedValue({
-      id: 7,
+      id: '77777777-7777-4777-8777-777777777777',
       characterId: 'hira:あ',
       status: 'submitted',
       startedAt: 't',
     })
     vi.mocked(assessAttempt).mockResolvedValue({
-      attemptId: 7,
+      attemptId: '77777777-7777-4777-8777-777777777777',
       characterId: 'hira:あ',
       status: 'assessed',
       pass: false,
@@ -362,7 +362,7 @@ describe('usePracticeJourney', () => {
 
     harness = mountJourney()
     await harness.api.load()
-    expect(assessAttempt).toHaveBeenCalledWith(7)
+    expect(assessAttempt).toHaveBeenCalledWith('77777777-7777-4777-8777-777777777777')
     expect(harness.api.stage.value).toBe('result')
   })
 
@@ -370,20 +370,20 @@ describe('usePracticeJourney', () => {
     sessionStorage.setItem(
       sessionKey('hira:あ'),
       JSON.stringify({
-        attemptId: 9,
+        attemptId: '99999999-9999-4999-8999-999999999999',
         clientAttemptId: 'done',
         characterId: 'hira:あ',
         stage: 'result',
       }),
     )
     vi.mocked(getAttempt).mockResolvedValue({
-      id: 9,
+      id: '99999999-9999-4999-8999-999999999999',
       characterId: 'hira:あ',
       status: 'assessed',
       startedAt: 't',
     })
     vi.mocked(getAttemptAssessment).mockResolvedValue({
-      attemptId: 9,
+      attemptId: '99999999-9999-4999-8999-999999999999',
       characterId: 'hira:あ',
       status: 'assessed',
       pass: true,
@@ -397,19 +397,19 @@ describe('usePracticeJourney', () => {
 
     harness = mountJourney()
     await harness.api.load()
-    expect(getAttemptAssessment).toHaveBeenCalledWith(9)
+    expect(getAttemptAssessment).toHaveBeenCalledWith('99999999-9999-4999-8999-999999999999')
     expect(harness.api.stage.value).toBe('result')
     expect(harness.api.assessment.value?.pass).toBe(true)
   })
 
   it('cancel abandons draft and clears session', async () => {
     vi.mocked(createAttempt).mockResolvedValue({
-      id: 3,
+      id: '33333333-3333-4333-8333-333333333333',
       characterId: 'hira:あ',
       status: 'draft',
       startedAt: 't',
     })
-    vi.mocked(abandonAttempt).mockResolvedValue({ id: 3, status: 'abandoned' })
+    vi.mocked(abandonAttempt).mockResolvedValue({ id: '33333333-3333-4333-8333-333333333333', status: 'abandoned' })
 
     harness = mountJourney()
     await harness.api.load()
@@ -417,7 +417,7 @@ describe('usePracticeJourney', () => {
     await harness.api.continueFromAnimate()
     expect(sessionStorage.getItem(sessionKey('hira:あ'))).toBeTruthy()
     await harness.api.cancelPractice()
-    expect(abandonAttempt).toHaveBeenCalledWith(3)
+    expect(abandonAttempt).toHaveBeenCalledWith('33333333-3333-4333-8333-333333333333')
     expect(sessionStorage.getItem(sessionKey('hira:あ'))).toBeNull()
     expect(harness.api.stage.value).toBe('intro')
   })

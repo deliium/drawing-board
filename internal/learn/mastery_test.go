@@ -1,6 +1,7 @@
 package learn
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -12,7 +13,7 @@ func ts(n int) time.Time {
 func outcomes(passes ...bool) []AssessedOutcome {
 	out := make([]AssessedOutcome, len(passes))
 	for i, p := range passes {
-		out[i] = AssessedOutcome{AttemptID: int64(i + 1), Pass: p, AssessedAt: ts(i)}
+		out[i] = AssessedOutcome{AttemptID: fmt.Sprintf("attempt-%d", i+1), Pass: p, AssessedAt: ts(i)}
 	}
 	return out
 }

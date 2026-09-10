@@ -33,7 +33,7 @@ const MasteryOutcomeWindow = 20
 
 // AssessedOutcome is one assessed attempt timeline point (pass/fail only; no scores).
 type AssessedOutcome struct {
-	AttemptID  int64
+	AttemptID  string
 	Pass       bool
 	AssessedAt time.Time
 }

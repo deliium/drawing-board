@@ -27,7 +27,7 @@ describe('auth guards', () => {
   })
 
   it('redirects authenticated users away from guest auth routes', () => {
-    setAuthenticatedUser({ id: 1, email: 'a@example.com' })
+    setAuthenticatedUser({ id: '11111111-1111-4111-8111-111111111111', email: 'a@example.com' })
     expect(sessionContext.state).toBe('authenticated')
     const next = vi.fn()
     requireAuth(

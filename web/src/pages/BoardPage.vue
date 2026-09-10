@@ -203,7 +203,7 @@ function onStrokeComplete(points: Point[]) {
   strokes.value = [...strokes.value, { ...stroke, sync: 'saving' }]
 }
 
-function enqueueDeleteById(strokeId: number) {
+function enqueueDeleteById(strokeId: string) {
   const opId = newOpId()
   ws.send({ type: 'delete', opId, baseRev: ws.getBoardRev(), delete: strokeId })
 }

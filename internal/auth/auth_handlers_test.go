@@ -71,7 +71,7 @@ func TestAuthHandlers_RegisterLoginLogoutMe(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &uv); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if uv.Email != "learner@example.com" || uv.ID == 0 {
+		if uv.Email != "learner@example.com" || uv.ID == "" {
 			t.Fatalf("unexpected user view %+v", uv)
 		}
 		cookies := rec.Result().Cookies()
@@ -117,7 +117,7 @@ func TestAuthHandlers_RegisterLoginLogoutMe(t *testing.T) {
 		if u, err := svc.Store.GetUserByEmail("ok@example.com"); err != nil {
 			t.Fatalf("lookup: %v", err)
 		} else if u != nil {
-			t.Fatalf("short-password register created user id=%d", u.ID)
+			t.Fatalf("short-password register created user id=%s", u.ID)
 		}
 		ok := postJSON(t, svc, "/api/register", `{"email":"ok@example.com","password":"password1"}`, nil)
 		if ok.Code != http.StatusOK {

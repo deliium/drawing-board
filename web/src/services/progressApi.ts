@@ -27,7 +27,7 @@ export type ProgressItem = {
   status: ProgressStatus | string
   attemptCount: number
   passCount: number
-  lastAttemptId?: number
+  lastAttemptId?: string
   lastPassedAt?: string
   updatedAt: string
   mastery?: MasterySummary

@@ -110,7 +110,7 @@ describe('AuthPage behavior', () => {
     expect(submit.disabled).toBe(true)
     expect(form.getAttribute('aria-busy')).toBe('true')
 
-    resolveLogin({ id: 7, email: 'learner@example.com' })
+    resolveLogin({ id: '77777777-7777-4777-8777-777777777777', email: 'learner@example.com' })
     await vi.waitFor(() => {
       expect(router.currentRoute.value.name).toBe('board')
     })
@@ -126,7 +126,7 @@ describe('AuthPage behavior', () => {
     })
     apiFetch.mockImplementation(async (path: string) => {
       if (path === '/api/login') {
-        return { id: 3, email: 'flag@example.com' }
+        return { id: '33333333-3333-4333-8333-333333333333', email: 'flag@example.com' }
       }
       if (path === '/api/features') {
         return { practice: false, progress: false, review: false, audio: false }
@@ -179,7 +179,7 @@ describe('AuthPage behavior', () => {
   })
 
   it('allows short passwords on login client-side (legacy accounts)', async () => {
-    apiFetch.mockResolvedValue({ id: 9, email: 'legacy@example.com' })
+    apiFetch.mockResolvedValue({ id: '99999999-9999-4999-8999-999999999999', email: 'legacy@example.com' })
     const { root } = await mountAuth('login')
     await setInput(root.querySelector('#auth-email') as HTMLInputElement, 'legacy@example.com')
     await setInput(root.querySelector('#auth-password') as HTMLInputElement, 'abcd')

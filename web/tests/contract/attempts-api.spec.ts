@@ -17,7 +17,7 @@ describe('attempts API contract', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        id: 1,
+        id: '11111111-1111-4111-8111-111111111111',
         characterId: 'hira:あ',
         glyph: 'あ',
         status: 'draft',
@@ -31,7 +31,7 @@ describe('attempts API contract', () => {
       lessonId: 'lesson:hiragana5',
       clientAttemptId: 'client-1',
     })
-    expect(out.id).toBe(1)
+    expect(out.id).toBe('11111111-1111-4111-8111-111111111111')
     expect(out.status).toBe('draft')
 
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -51,7 +51,7 @@ describe('attempts API contract', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          id: 7,
+          id: '77777777-7777-4777-8777-777777777777',
           status: 'submitted',
           submittedAt: '2026-09-09T00:00:01Z',
           strokeCount: 2,
@@ -62,7 +62,7 @@ describe('attempts API contract', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          attemptId: 7,
+          attemptId: '77777777-7777-4777-8777-777777777777',
           characterId: 'hira:い',
           status: 'assessed',
           pass: true,
@@ -76,15 +76,16 @@ describe('attempts API contract', () => {
       })
     vi.stubGlobal('fetch', fetchMock)
 
-    await submitAttempt(7, {
+    const attemptId = '77777777-7777-4777-8777-777777777777'
+    await submitAttempt(attemptId, {
       width: 300,
       height: 300,
       strokes: [{ points: [{ x: 1, y: 2 }] }],
     })
-    await assessAttempt(7)
+    await assessAttempt(attemptId)
 
-    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/attempts/7/submit')
-    expect((fetchMock.mock.calls[1] as [string])[0]).toBe('/api/attempts/7/assess')
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`/api/attempts/${attemptId}/submit`)
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe(`/api/attempts/${attemptId}/assess`)
   })
 
   it('surfaces API error codes from failed responses', async () => {
@@ -97,17 +98,18 @@ describe('attempts API contract', () => {
       }),
     )
 
-    await expect(getAttempt(3)).rejects.toMatchObject({
+    await expect(getAttempt('33333333-3333-4333-8333-333333333333')).rejects.toMatchObject({
       status: 409,
       code: 'invalid_status',
     })
   })
 
   it('assessAttempt surfaces feedback messages from the contract', async () => {
+    const attemptId = '77777777-7777-4777-8777-777777777777'
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        attemptId: 7,
+        attemptId,
         characterId: 'hira:あ',
         glyph: 'あ',
         status: 'assessed',
@@ -129,7 +131,7 @@ describe('attempts API contract', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const out = await assessAttempt(7)
+    const out = await assessAttempt(attemptId)
     expect(out.scoreKind).toBe('match')
     expect(out.feedback.length).toBeGreaterThan(0)
     expect(out.feedback.length).toBeLessThanOrEqual(2)
@@ -140,10 +142,11 @@ describe('attempts API contract', () => {
   })
 
   it('getAttemptAssessment uses GET path', async () => {
+    const attemptId = '99999999-9999-4999-8999-999999999999'
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        attemptId: 9,
+        attemptId,
         characterId: 'hira:う',
         status: 'assessed',
         pass: false,
@@ -163,9 +166,9 @@ describe('attempts API contract', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const out = await getAttemptAssessment(9)
+    const out = await getAttemptAssessment(attemptId)
     expect(out.scoreKind).toBe('match')
     expect(out.feedback[0]?.message.trim().length).toBeGreaterThan(0)
-    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/attempts/9/assessment')
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`/api/attempts/${attemptId}/assessment`)
   })
 })

@@ -173,7 +173,7 @@ async function submit() {
   authDebug(mode.value, 'submit')
   const path = mode.value === 'login' ? '/api/login' : '/api/register'
   try {
-    const user = await apiFetch<{ id: number; email: string }>(path, {
+    const user = await apiFetch<{ id: string; email: string }>(path, {
       method: 'POST',
       body: JSON.stringify({ email: email.value.trim(), password: password.value }),
     })

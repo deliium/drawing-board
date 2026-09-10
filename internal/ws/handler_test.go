@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -19,7 +20,7 @@ func TestHub_Add(t *testing.T) {
 	hub := NewHub(store, authSvc)
 	conn := &websocket.Conn{}
 
-	hub.add(conn, 42)
+	hub.add(conn, "user-42")
 
 	if len(hub.clients) != 1 {
 		t.Fatalf("Expected 1 client, got %d", len(hub.clients))
@@ -29,8 +30,8 @@ func TestHub_Add(t *testing.T) {
 	if !exists {
 		t.Fatal("Client should be registered")
 	}
-	if uid != 42 {
-		t.Fatalf("Expected userID 42, got %d", uid)
+	if uid != "user-42" {
+		t.Fatalf("Expected userID user-42, got %s", uid)
 	}
 }
 
@@ -40,7 +41,7 @@ func TestHub_Remove(t *testing.T) {
 	hub := NewHub(store, authSvc)
 	conn := &websocket.Conn{}
 
-	hub.add(conn, 7)
+	hub.add(conn, "user-7")
 	if len(hub.clients) != 1 {
 		t.Fatalf("Expected 1 client after add, got %d", len(hub.clients))
 	}
@@ -59,7 +60,7 @@ func TestHub_SendToUser_NoClients(t *testing.T) {
 	msg := message{
 		Type: "stroke",
 		Stroke: &Stroke{
-			ID:     1,
+			ID:     "stroke-1",
 			Points: []Point{{X: 10, Y: 20}},
 			Color:  "#000000",
 			Width:  2,
@@ -67,7 +68,7 @@ func TestHub_SendToUser_NoClients(t *testing.T) {
 	}
 
 	// Should not panic with no clients
-	hub.sendToUser(1, msg)
+	hub.sendToUser("user-1", msg)
 }
 
 func TestHub_SendToUser_Isolation(t *testing.T) {
@@ -79,9 +80,9 @@ func TestHub_SendToUser_Isolation(t *testing.T) {
 	connA1 := &websocket.Conn{}
 	connA2 := &websocket.Conn{}
 	connB := &websocket.Conn{}
-	hub.add(connA1, 1)
-	hub.add(connA2, 1)
-	hub.add(connB, 2)
+	hub.add(connA1, "user-1")
+	hub.add(connA2, "user-1")
+	hub.add(connB, "user-2")
 
 	var mu sync.Mutex
 	delivered := map[*websocket.Conn]int{}
@@ -95,7 +96,7 @@ func TestHub_SendToUser_Isolation(t *testing.T) {
 	strokeMsg := message{
 		Type: "stroke",
 		Stroke: &Stroke{
-			ID:              10,
+			ID:              "stroke-10",
 			Points:          []Point{{X: 1, Y: 2}},
 			Color:           "#111111",
 			Width:           3,
@@ -103,7 +104,7 @@ func TestHub_SendToUser_Isolation(t *testing.T) {
 			StartedAtUnixMs: 100,
 		},
 	}
-	hub.sendToUser(1, strokeMsg)
+	hub.sendToUser("user-1", strokeMsg)
 
 	mu.Lock()
 	a1 := delivered[connA1]
@@ -123,9 +124,9 @@ func TestHub_SendToUser_Isolation(t *testing.T) {
 	delivered = map[*websocket.Conn]int{}
 	mu.Unlock()
 
-	delID := int64(10)
+	delID := "stroke-10"
 	deleteMsg := message{Type: "delete", Delete: &delID}
-	hub.sendToUser(1, deleteMsg)
+	hub.sendToUser("user-1", deleteMsg)
 
 	mu.Lock()
 	a1 = delivered[connA1]
@@ -146,8 +147,8 @@ func TestHub_SendToUser_OnlyTargetUser(t *testing.T) {
 	hub := NewHub(&db.Store{}, &auth.Service{})
 	connA := &websocket.Conn{}
 	connB := &websocket.Conn{}
-	hub.add(connA, 1)
-	hub.add(connB, 2)
+	hub.add(connA, "user-1")
+	hub.add(connB, "user-2")
 
 	var mu sync.Mutex
 	delivered := map[*websocket.Conn]int{}
@@ -158,8 +159,8 @@ func TestHub_SendToUser_OnlyTargetUser(t *testing.T) {
 		return nil
 	}
 
-	delID := int64(99)
-	hub.sendToUser(2, message{Type: "delete", Delete: &delID})
+	delID := "stroke-99"
+	hub.sendToUser("user-2", message{Type: "delete", Delete: &delID})
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -179,13 +180,13 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 	done := make(chan bool)
 
 	for i := 0; i < 10; i++ {
-		go func(userID int64) {
+		go func(userID string) {
 			conn := &websocket.Conn{}
 			hub.add(conn, userID)
 			time.Sleep(1 * time.Millisecond)
 			hub.remove(conn)
 			done <- true
-		}(int64(i + 1))
+		}(fmt.Sprintf("user-%d", i+1))
 	}
 
 	for i := 0; i < 10; i++ {
@@ -201,7 +202,7 @@ func TestMessage_JSON(t *testing.T) {
 	strokeMsg := message{
 		Type: "stroke",
 		Stroke: &Stroke{
-			ID:     1,
+			ID:     "stroke-1",
 			Points: []Point{{X: 10, Y: 20}, {X: 30, Y: 40}},
 			Color:  "#000000",
 			Width:  2,
@@ -223,8 +224,8 @@ func TestMessage_JSON(t *testing.T) {
 		t.Fatalf("Expected type 'stroke', got '%s'", unmarshaled.Type)
 	}
 
-	if unmarshaled.Stroke.ID != 1 {
-		t.Fatalf("Expected stroke ID 1, got %d", unmarshaled.Stroke.ID)
+	if unmarshaled.Stroke.ID != "stroke-1" {
+		t.Fatalf("Expected stroke ID stroke-1, got %s", unmarshaled.Stroke.ID)
 	}
 
 	if len(unmarshaled.Stroke.Points) != 2 {
@@ -234,7 +235,7 @@ func TestMessage_JSON(t *testing.T) {
 
 func TestStroke_JSON(t *testing.T) {
 	stroke := Stroke{
-		ID:     1,
+		ID:     "stroke-1",
 		Points: []Point{{X: 10, Y: 20}, {X: 30, Y: 40}},
 		Color:  "#000000",
 		Width:  2,
@@ -251,8 +252,8 @@ func TestStroke_JSON(t *testing.T) {
 		t.Fatalf("Failed to unmarshal stroke: %v", err)
 	}
 
-	if unmarshaled.ID != 1 {
-		t.Fatalf("Expected ID 1, got %d", unmarshaled.ID)
+	if unmarshaled.ID != "stroke-1" {
+		t.Fatalf("Expected ID stroke-1, got %s", unmarshaled.ID)
 	}
 
 	if len(unmarshaled.Points) != 2 {
@@ -306,8 +307,8 @@ func TestSendAck_ToConnOnly(t *testing.T) {
 
 	connA := &websocket.Conn{}
 	connB := &websocket.Conn{}
-	hub.add(connA, 1)
-	hub.add(connB, 1)
+	hub.add(connA, "user-1")
+	hub.add(connB, "user-1")
 
 	var mu sync.Mutex
 	delivered := map[*websocket.Conn]int{}
@@ -323,7 +324,7 @@ func TestSendAck_ToConnOnly(t *testing.T) {
 		return nil
 	}
 
-	id := int64(42)
+	id := "stroke-42"
 	hub.sendAck(connA, "op-1", true, nil, &id, nil, nil, "", "")
 
 	mu.Lock()
@@ -490,5 +491,59 @@ func TestHandleDelete_ByOpIdBeforeCreate(t *testing.T) {
 	}
 	if !cancelled {
 		t.Fatalf("expected op_cancelled for late create, got %+v", frames)
+	}
+}
+
+func TestHandleDelete_InvalidUUID_SoftNack(t *testing.T) {
+	tmpFile := "test_ws_delete_bad_uuid.db"
+	defer func() { _ = os.Remove(tmpFile) }()
+	store, err := db.Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = store.SQL.Close() }()
+	uid, err := store.CreateUser("ws-del-uuid@example.com", "hash")
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+
+	hub := NewHub(store, &auth.Service{})
+	prev := globalHub
+	globalHub = hub
+	defer func() { globalHub = prev }()
+	SetStrokeLimiterForTest(limits.NewLimiter(1000, 1000))
+
+	conn := &websocket.Conn{}
+	hub.add(conn, uid)
+	var frames []message
+	hub.writeFn = func(c *websocket.Conn, data []byte) error {
+		var m message
+		_ = json.Unmarshal(data, &m)
+		frames = append(frames, m)
+		return nil
+	}
+
+	bad := "not-a-uuid"
+	base := int64(0)
+	handleDeleteMessage(conn, uid, message{
+		Type:    "delete",
+		OpID:    "op-bad-del",
+		BaseRev: &base,
+		Delete:  &bad,
+	})
+	if len(frames) != 1 || frames[0].Type != "ack" {
+		t.Fatalf("expected single ack frame, got %+v", frames)
+	}
+	ack := frames[0]
+	if ack.OK == nil || *ack.OK || ack.Error != "invalid_input" {
+		t.Fatalf("expected soft nack invalid_input, got %+v", ack)
+	}
+	// Connection remains registered (no disconnect on validation reject).
+	if _, ok := hub.clients[conn]; !ok {
+		t.Fatal("connection must stay registered after invalid_input nack")
+	}
+	rev, err := store.GetBoardRev(uid)
+	if err != nil || rev != 0 {
+		t.Fatalf("boardRev must not advance on invalid_input; rev=%d err=%v", rev, err)
 	}
 }

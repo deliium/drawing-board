@@ -47,7 +47,7 @@ describe('feature flag nav gating', () => {
     document.body.innerHTML = ''
     initLocale()
     resetFeatureFlagsForTest()
-    setAuthenticatedUser({ id: 1, email: 'a@b.c' })
+    setAuthenticatedUser({ id: '11111111-1111-4111-8111-111111111111', email: 'a@b.c' })
   })
 
   afterEach(() => {

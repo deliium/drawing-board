@@ -21,7 +21,7 @@ describe('ws parity contract', () => {
     const ok = client.send({
       type: 'delete',
       opId: '',
-      delete: 1,
+      delete: '11111111-1111-4111-8111-111111111111',
     })
     expect(ok).toBe(false)
   })

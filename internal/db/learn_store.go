@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deliium/drawing-board/internal/ids"
 	"github.com/deliium/drawing-board/internal/learn"
 	"github.com/deliium/drawing-board/internal/limits"
 )
@@ -157,8 +158,8 @@ func (ls *LearnStore) ListCharacters(ctx context.Context, lessonID string) ([]le
 
 func (ls *LearnStore) CreateDraft(ctx context.Context, in learn.CreateDraft) (learn.Attempt, error) {
 	_ = ctx
-	learnLog("DEBUG", "[learn.AttemptRepo.CreateDraft] userID=%d characterID=%s", in.UserID, in.CharacterID)
-	if in.UserID <= 0 || in.CharacterID == "" {
+	learnLog("DEBUG", "[learn.AttemptRepo.CreateDraft] userID=%s characterID=%s", in.UserID, in.CharacterID)
+	if !ids.Valid(in.UserID) || in.CharacterID == "" {
 		return learn.Attempt{}, learn.ErrInvalidInput
 	}
 	if in.ClientAttemptID != "" && len(in.ClientAttemptID) > limits.MaxOpIDLen {
@@ -189,10 +190,11 @@ func (ls *LearnStore) CreateDraft(ctx context.Context, in learn.CreateDraft) (le
 		clientArg = in.ClientAttemptID
 	}
 
-	res, err := tx.Exec(`
-		INSERT INTO practice_attempts(user_id, character_id, lesson_id, status, client_attempt_id, started_at, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-	`, in.UserID, in.CharacterID, lessonArg, learn.AttemptStatusDraft, clientArg, now, now, now)
+	attemptID := ids.New()
+	_, err = tx.Exec(`
+		INSERT INTO practice_attempts(id, user_id, character_id, lesson_id, status, client_attempt_id, started_at, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, attemptID, in.UserID, in.CharacterID, lessonArg, learn.AttemptStatusDraft, clientArg, now, now, now)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			_ = tx.Rollback()
@@ -201,26 +203,23 @@ func (ls *LearnStore) CreateDraft(ctx context.Context, in learn.CreateDraft) (le
 				return learn.Attempt{}, gerr
 			}
 			if existing.CharacterID != in.CharacterID || existing.LessonID != in.LessonID {
-				learnLog("WARN", "[learn.AttemptRepo.CreateDraft] conflict mismatch userID=%d clientAttemptID=%s", in.UserID, in.ClientAttemptID)
+				learnLog("WARN", "[learn.AttemptRepo.CreateDraft] conflict mismatch userID=%s clientAttemptID=%s", in.UserID, in.ClientAttemptID)
 				return learn.Attempt{}, learn.ErrConflict
 			}
-			learnLog("INFO", "[learn.AttemptRepo.CreateDraft] idempotent replay userID=%d attemptID=%d clientAttemptID=%s",
+			learnLog("INFO", "[learn.AttemptRepo.CreateDraft] idempotent replay userID=%s attemptID=%s clientAttemptID=%s",
 				in.UserID, existing.ID, in.ClientAttemptID)
 			return existing, nil
 		}
 		return learn.Attempt{}, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return learn.Attempt{}, err
-	}
+	id := attemptID
 	if err := tx.Commit(); err != nil {
 		return learn.Attempt{}, err
 	}
 	return ls.getAttempt(in.UserID, id)
 }
 
-func (ls *LearnStore) getAttempt(userID, attemptID int64) (learn.Attempt, error) {
+func (ls *LearnStore) getAttempt(userID, attemptID string) (learn.Attempt, error) {
 	row := ls.s.SQL.QueryRow(`
 		SELECT id, user_id, character_id, lesson_id, status, client_attempt_id,
 			canvas_width, canvas_height, started_at, submitted_at, assessed_at, abandoned_at, created_at, updated_at
@@ -229,7 +228,7 @@ func (ls *LearnStore) getAttempt(userID, attemptID int64) (learn.Attempt, error)
 	return scanAttempt(row)
 }
 
-func (ls *LearnStore) getByClientAttemptID(userID int64, clientAttemptID string) (learn.Attempt, error) {
+func (ls *LearnStore) getByClientAttemptID(userID string, clientAttemptID string) (learn.Attempt, error) {
 	if clientAttemptID == "" {
 		return learn.Attempt{}, learn.ErrInvalidInput
 	}
@@ -242,7 +241,7 @@ func (ls *LearnStore) getByClientAttemptID(userID int64, clientAttemptID string)
 }
 
 // GetByClientAttemptID returns an attempt owned by userID for the given clientAttemptID.
-func (ls *LearnStore) GetByClientAttemptID(ctx context.Context, userID int64, clientAttemptID string) (*learn.Attempt, error) {
+func (ls *LearnStore) GetByClientAttemptID(ctx context.Context, userID string, clientAttemptID string) (*learn.Attempt, error) {
 	_ = ctx
 	a, err := ls.getByClientAttemptID(userID, clientAttemptID)
 	if err != nil {
@@ -252,14 +251,14 @@ func (ls *LearnStore) GetByClientAttemptID(ctx context.Context, userID int64, cl
 }
 
 // ListStrokes returns ordered stroke geometry for a submitted/assessed attempt (ownership-checked).
-func (ls *LearnStore) ListStrokes(ctx context.Context, userID, attemptID int64) ([]learn.StrokeInput, int, int, error) {
+func (ls *LearnStore) ListStrokes(ctx context.Context, userID, attemptID string) ([]learn.StrokeInput, int, int, error) {
 	_ = ctx
 	a, err := ls.getAttempt(userID, attemptID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 	if a.Status != learn.AttemptStatusSubmitted && a.Status != learn.AttemptStatusAssessed {
-		learnLog("WARN", "[learn.AttemptRepo.ListStrokes] invalid_status attemptID=%d status=%s", attemptID, a.Status)
+		learnLog("WARN", "[learn.AttemptRepo.ListStrokes] invalid_status attemptID=%s status=%s", attemptID, a.Status)
 		return nil, 0, 0, learn.ErrInvalidStatus
 	}
 	if a.CanvasWidth == nil || a.CanvasHeight == nil {
@@ -277,7 +276,7 @@ func (ls *LearnStore) ListStrokes(ctx context.Context, userID, attemptID int64) 
 
 	var strokes []learn.StrokeInput
 	for rows.Next() {
-		var strokeID int64
+		var strokeID string
 		var st learn.StrokeInput
 		if err := rows.Scan(&strokeID, &st.Color, &st.Width, &st.StartedAtUnixMs); err != nil {
 			return nil, 0, 0, err
@@ -292,11 +291,11 @@ func (ls *LearnStore) ListStrokes(ctx context.Context, userID, attemptID int64) 
 	if err := rows.Err(); err != nil {
 		return nil, 0, 0, err
 	}
-	learnLog("DEBUG", "[learn.AttemptRepo.ListStrokes] attemptID=%d strokeCount=%d", attemptID, len(strokes))
+	learnLog("DEBUG", "[learn.AttemptRepo.ListStrokes] attemptID=%s strokeCount=%d", attemptID, len(strokes))
 	return strokes, *a.CanvasWidth, *a.CanvasHeight, nil
 }
 
-func (ls *LearnStore) loadAttemptStrokePoints(strokeID int64) ([]learn.StrokePoint, error) {
+func (ls *LearnStore) loadAttemptStrokePoints(strokeID string) ([]learn.StrokePoint, error) {
 	rows, err := ls.s.SQL.Query(`
 		SELECT x, y FROM attempt_stroke_points WHERE attempt_stroke_id = ? ORDER BY seq ASC
 	`, strokeID)
@@ -316,7 +315,7 @@ func (ls *LearnStore) loadAttemptStrokePoints(strokeID int64) ([]learn.StrokePoi
 }
 
 // CountAttemptStrokes returns the number of strokes for an owned attempt (0 if none).
-func (ls *LearnStore) CountAttemptStrokes(ctx context.Context, userID, attemptID int64) (int, error) {
+func (ls *LearnStore) CountAttemptStrokes(ctx context.Context, userID, attemptID string) (int, error) {
 	_ = ctx
 	if _, err := ls.getAttempt(userID, attemptID); err != nil {
 		return 0, err
@@ -370,13 +369,13 @@ func scanAttempt(row *sql.Row) (learn.Attempt, error) {
 	return a, nil
 }
 
-func (ls *LearnStore) SubmitStrokes(ctx context.Context, userID, attemptID int64, strokes []learn.StrokeInput, w, h int) error {
+func (ls *LearnStore) SubmitStrokes(ctx context.Context, userID, attemptID string, strokes []learn.StrokeInput, w, h int) error {
 	_ = ctx
 	totalPoints := 0
 	for _, st := range strokes {
 		totalPoints += len(st.Points)
 	}
-	learnLog("DEBUG", "[learn.AttemptRepo.SubmitStrokes] userID=%d attemptID=%d strokes=%d points=%d", userID, attemptID, len(strokes), totalPoints)
+	learnLog("DEBUG", "[learn.AttemptRepo.SubmitStrokes] userID=%s attemptID=%s strokes=%d points=%d", userID, attemptID, len(strokes), totalPoints)
 
 	if err := limits.CheckCanvas(w, h); err != nil {
 		return learn.ErrInvalidInput
@@ -422,7 +421,7 @@ func (ls *LearnStore) SubmitStrokes(ctx context.Context, userID, attemptID int64
 		return err
 	}
 	if status != learn.AttemptStatusDraft {
-		learnLog("WARN", "[learn.AttemptRepo.SubmitStrokes] invalid_status attemptID=%d status=%s", attemptID, status)
+		learnLog("WARN", "[learn.AttemptRepo.SubmitStrokes] invalid_status attemptID=%s status=%s", attemptID, status)
 		return learn.ErrInvalidStatus
 	}
 
@@ -449,21 +448,18 @@ func (ls *LearnStore) SubmitStrokes(ctx context.Context, userID, attemptID int64
 		if width == 0 {
 			width = 2
 		}
-		r, err := tx.Exec(`
-			INSERT INTO attempt_strokes(attempt_id, seq, color, width, started_at_unix_ms)
-			VALUES(?, ?, ?, ?, ?)
-		`, attemptID, seq, color, width, st.StartedAtUnixMs)
-		if err != nil {
-			return err
-		}
-		strokeID, err := r.LastInsertId()
+		strokeID := ids.New()
+		_, err := tx.Exec(`
+			INSERT INTO attempt_strokes(id, attempt_id, seq, color, width, started_at_unix_ms)
+			VALUES(?, ?, ?, ?, ?, ?)
+		`, strokeID, attemptID, seq, color, width, st.StartedAtUnixMs)
 		if err != nil {
 			return err
 		}
 		for pi, p := range st.Points {
 			if _, err := tx.Exec(`
-				INSERT INTO attempt_stroke_points(attempt_stroke_id, seq, x, y) VALUES(?, ?, ?, ?)
-			`, strokeID, pi, p.X, p.Y); err != nil {
+				INSERT INTO attempt_stroke_points(id, attempt_stroke_id, seq, x, y) VALUES(?, ?, ?, ?, ?)
+			`, ids.New(), strokeID, pi, p.X, p.Y); err != nil {
 				return err
 			}
 		}
@@ -475,7 +471,7 @@ func (ls *LearnStore) SubmitStrokes(ctx context.Context, userID, attemptID int64
 	return tx.Commit()
 }
 
-func upsertProgressOnSubmitTx(tx *sql.Tx, userID int64, characterID string, attemptID int64) error {
+func upsertProgressOnSubmitTx(tx *sql.Tx, userID string, characterID string, attemptID string) error {
 	now := time.Now().UTC()
 	_, err := tx.Exec(`
 		INSERT INTO user_character_progress(user_id, character_id, status, attempt_count, pass_count, last_attempt_id, updated_at)
@@ -492,7 +488,7 @@ func upsertProgressOnSubmitTx(tx *sql.Tx, userID int64, characterID string, atte
 	return err
 }
 
-func (ls *LearnStore) MarkAssessed(ctx context.Context, userID, attemptID int64) error {
+func (ls *LearnStore) MarkAssessed(ctx context.Context, userID, attemptID string) error {
 	_ = ctx
 	tx, err := ls.s.beginImmediate()
 	if err != nil {
@@ -519,13 +515,13 @@ func (ls *LearnStore) MarkAssessed(ctx context.Context, userID, attemptID int64)
 		if err != nil {
 			return err
 		}
-		learnLog("WARN", "[learn.AttemptRepo.MarkAssessed] invalid_status attemptID=%d status=%s", attemptID, status)
+		learnLog("WARN", "[learn.AttemptRepo.MarkAssessed] invalid_status attemptID=%s status=%s", attemptID, status)
 		return learn.ErrInvalidStatus
 	}
 	return tx.Commit()
 }
 
-func (ls *LearnStore) Abandon(ctx context.Context, userID, attemptID int64) error {
+func (ls *LearnStore) Abandon(ctx context.Context, userID, attemptID string) error {
 	_ = ctx
 	tx, err := ls.s.beginImmediate()
 	if err != nil {
@@ -557,9 +553,9 @@ func (ls *LearnStore) Abandon(ctx context.Context, userID, attemptID int64) erro
 	return tx.Commit()
 }
 
-func (ls *LearnStore) SaveResult(ctx context.Context, userID int64, in learn.SaveAssessment) (learn.AssessmentResult, error) {
+func (ls *LearnStore) SaveResult(ctx context.Context, userID string, in learn.SaveAssessment) (learn.AssessmentResult, error) {
 	_ = ctx
-	learnLog("DEBUG", "[learn.AssessmentRepo.SaveResult] userID=%d attemptID=%d", userID, in.AttemptID)
+	learnLog("DEBUG", "[learn.AssessmentRepo.SaveResult] userID=%s attemptID=%s", userID, in.AttemptID)
 
 	if in.ScoreKind == "" || in.Assessor == "" || in.SetID == "" {
 		return learn.AssessmentResult{}, learn.ErrInvalidInput
@@ -585,10 +581,10 @@ func (ls *LearnStore) SaveResult(ctx context.Context, userID int64, in learn.Sav
 	}
 	if status != learn.AttemptStatusSubmitted {
 		if status == learn.AttemptStatusAssessed {
-			learnLog("WARN", "[learn.AssessmentRepo.SaveResult] conflict already assessed attemptID=%d", in.AttemptID)
+			learnLog("WARN", "[learn.AssessmentRepo.SaveResult] conflict already assessed attemptID=%s", in.AttemptID)
 			return learn.AssessmentResult{}, learn.ErrConflict
 		}
-		learnLog("WARN", "[learn.AssessmentRepo.SaveResult] invalid_status attemptID=%d status=%s", in.AttemptID, status)
+		learnLog("WARN", "[learn.AssessmentRepo.SaveResult] invalid_status attemptID=%s status=%s", in.AttemptID, status)
 		return learn.AssessmentResult{}, learn.ErrInvalidStatus
 	}
 
@@ -602,25 +598,22 @@ func (ls *LearnStore) SaveResult(ctx context.Context, userID int64, in learn.Sav
 	}
 
 	now := ls.Now()
-	res, err := tx.Exec(`
-		INSERT INTO assessment_results(attempt_id, pass, score, score_kind, assessor, set_id, reasons_json, created_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-	`, in.AttemptID, passInt, in.Score, in.ScoreKind, in.Assessor, in.SetID, string(reasonsJSON), now)
+	assessID := ids.New()
+	_, err = tx.Exec(`
+		INSERT INTO assessment_results(id, attempt_id, pass, score, score_kind, assessor, set_id, reasons_json, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, assessID, in.AttemptID, passInt, in.Score, in.ScoreKind, in.Assessor, in.SetID, string(reasonsJSON), now)
 	if err != nil {
 		if isUniqueConstraintErr(err) {
 			return learn.AssessmentResult{}, learn.ErrConflict
 		}
 		return learn.AssessmentResult{}, err
 	}
-	assessID, err := res.LastInsertId()
-	if err != nil {
-		return learn.AssessmentResult{}, err
-	}
 
 	for _, fb := range in.Feedback {
 		if _, err := tx.Exec(`
-			INSERT INTO assessment_feedback(assessment_id, rank, code, message) VALUES(?, ?, ?, ?)
-		`, assessID, fb.Rank, fb.Code, fb.Message); err != nil {
+			INSERT INTO assessment_feedback(id, assessment_id, rank, code, message) VALUES(?, ?, ?, ?, ?)
+		`, ids.New(), assessID, fb.Rank, fb.Code, fb.Message); err != nil {
 			return learn.AssessmentResult{}, err
 		}
 	}
@@ -642,7 +635,7 @@ func (ls *LearnStore) SaveResult(ctx context.Context, userID int64, in learn.Sav
 		return learn.AssessmentResult{}, err
 	}
 
-	learnLog("INFO", "[learn.AssessmentRepo.SaveResult] userID=%d attemptID=%d pass=%t score=%.3f", userID, in.AttemptID, in.Pass, in.Score)
+	learnLog("INFO", "[learn.AssessmentRepo.SaveResult] userID=%s attemptID=%s pass=%t score=%.3f", userID, in.AttemptID, in.Pass, in.Score)
 
 	out, err := ls.GetByAttempt(ctx, userID, in.AttemptID)
 	if err != nil {
@@ -651,7 +644,7 @@ func (ls *LearnStore) SaveResult(ctx context.Context, userID int64, in learn.Sav
 	return *out, nil
 }
 
-func upsertProgressOnAssessTx(tx *sql.Tx, userID int64, characterID string, attemptID int64, pass bool, now time.Time) error {
+func upsertProgressOnAssessTx(tx *sql.Tx, userID string, characterID string, attemptID string, pass bool, now time.Time) error {
 	passInc := 0
 	if pass {
 		passInc = 1
@@ -677,7 +670,7 @@ func upsertProgressOnAssessTx(tx *sql.Tx, userID int64, characterID string, atte
 	}
 
 	newBox, dueAt := learn.ApplyReviewOutcome(oldBox, pass, now)
-	learnLog("DEBUG", "[learn.review] userID=%d characterID=%s pass=%t box=%d→%d dueAt=%s",
+	learnLog("DEBUG", "[learn.review] userID=%s characterID=%s pass=%t box=%d→%d dueAt=%s",
 		userID, characterID, pass, oldBox, newBox, dueAt.UTC().Format(time.RFC3339))
 
 	_, err = tx.Exec(`
@@ -701,17 +694,17 @@ func upsertProgressOnAssessTx(tx *sql.Tx, userID int64, characterID string, atte
 	`, userID, characterID, status, passInc, attemptID, lastPassed, newBox, dueAt, now, now)
 	_ = status // status used in INSERT; CASE handles conflict
 	if err != nil {
-		learnLog("ERROR", "[learn.review] upsert failed userID=%d characterID=%s: %v", userID, characterID, err)
+		learnLog("ERROR", "[learn.review] upsert failed userID=%s characterID=%s: %v", userID, characterID, err)
 		return err
 	}
-	learnLog("DEBUG", "[learn.AssessmentRepo.SaveResult] schedule userID=%d characterID=%s newBox=%d dueAt=%s",
+	learnLog("DEBUG", "[learn.AssessmentRepo.SaveResult] schedule userID=%s characterID=%s newBox=%d dueAt=%s",
 		userID, characterID, newBox, dueAt.UTC().Format(time.RFC3339))
 	return nil
 }
 
-func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter learn.AttemptListFilter) (learn.AttemptListResult, error) {
+func (ls *LearnStore) ListAttempts(ctx context.Context, userID string, filter learn.AttemptListFilter) (learn.AttemptListResult, error) {
 	_ = ctx
-	if userID <= 0 {
+	if !ids.Valid(userID) {
 		return learn.AttemptListResult{}, learn.ErrInvalidInput
 	}
 	limit := filter.Limit
@@ -727,7 +720,7 @@ func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter lea
 	}
 	for _, st := range statuses {
 		if st != learn.AttemptStatusAssessed && st != learn.AttemptStatusAbandoned {
-			learnLog("WARN", "[learn.AttemptRepo.List] invalid status=%s userID=%d", st, userID)
+			learnLog("WARN", "[learn.AttemptRepo.List] invalid status=%s userID=%s", st, userID)
 			return learn.AttemptListResult{}, learn.ErrInvalidInput
 		}
 	}
@@ -766,7 +759,7 @@ func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter lea
 	b.WriteString(` ORDER BY a.started_at DESC, a.id DESC LIMIT ?`)
 	args = append(args, limit+1)
 
-	learnLog("DEBUG", "[learn.AttemptRepo.List] userID=%d lessonId=%s characterId=%s statuses=%v limit=%d hasCursor=%v",
+	learnLog("DEBUG", "[learn.AttemptRepo.List] userID=%s lessonId=%s characterId=%s statuses=%v limit=%d hasCursor=%v",
 		userID, filter.LessonID, filter.CharacterID, statuses, limit, filter.AfterID != nil)
 
 	rows, err := ls.s.SQL.Query(b.String(), args...)
@@ -777,7 +770,7 @@ func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter lea
 
 	type rowScan struct {
 		item         learn.AttemptHistoryItem
-		assessmentID sql.NullInt64
+		assessmentID sql.NullString
 		pass         sql.NullInt64
 		score        sql.NullFloat64
 		scoreKind    sql.NullString
@@ -828,7 +821,7 @@ func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter lea
 		if rs.assessmentID.Valid && item.Status == learn.AttemptStatusAssessed {
 			frows, err := ls.s.SQL.Query(`
 				SELECT rank, code, message FROM assessment_feedback WHERE assessment_id = ? ORDER BY rank LIMIT 2
-			`, rs.assessmentID.Int64)
+			`, rs.assessmentID.String)
 			if err != nil {
 				return learn.AttemptListResult{}, err
 			}
@@ -857,50 +850,50 @@ func (ls *LearnStore) ListAttempts(ctx context.Context, userID int64, filter lea
 		out.NextStartedAt = &t
 		out.NextID = &id
 	}
-	learnLog("DEBUG", "[learn.AttemptRepo.List] userID=%d resultCount=%d hasNext=%v", userID, len(items), hasNext)
+	learnLog("DEBUG", "[learn.AttemptRepo.List] userID=%s resultCount=%d hasNext=%v", userID, len(items), hasNext)
 	return out, nil
 }
 
-func (ls *LearnStore) ClearPracticeData(ctx context.Context, userID int64) (learn.ClearPracticeDataResult, error) {
+func (ls *LearnStore) ClearPracticeData(ctx context.Context, userID string) (learn.ClearPracticeDataResult, error) {
 	_ = ctx
-	if userID <= 0 {
+	if !ids.Valid(userID) {
 		return learn.ClearPracticeDataResult{}, learn.ErrInvalidInput
 	}
 	tx, err := ls.s.beginImmediate()
 	if err != nil {
-		learnLog("ERROR", "[learn.PracticeData.Clear] begin userID=%d: %v", userID, err)
+		learnLog("ERROR", "[learn.PracticeData.Clear] begin userID=%s: %v", userID, err)
 		return learn.ClearPracticeDataResult{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	progRes, err := tx.Exec(`DELETE FROM user_character_progress WHERE user_id = ?`, userID)
 	if err != nil {
-		learnLog("ERROR", "[learn.PracticeData.Clear] progress userID=%d: %v", userID, err)
+		learnLog("ERROR", "[learn.PracticeData.Clear] progress userID=%s: %v", userID, err)
 		return learn.ClearPracticeDataResult{}, err
 	}
 	progN, _ := progRes.RowsAffected()
 
 	attRes, err := tx.Exec(`DELETE FROM practice_attempts WHERE user_id = ?`, userID)
 	if err != nil {
-		learnLog("ERROR", "[learn.PracticeData.Clear] attempts userID=%d: %v", userID, err)
+		learnLog("ERROR", "[learn.PracticeData.Clear] attempts userID=%s: %v", userID, err)
 		return learn.ClearPracticeDataResult{}, err
 	}
 	attN, _ := attRes.RowsAffected()
 
 	if err := tx.Commit(); err != nil {
-		learnLog("ERROR", "[learn.PracticeData.Clear] commit userID=%d: %v", userID, err)
+		learnLog("ERROR", "[learn.PracticeData.Clear] commit userID=%s: %v", userID, err)
 		return learn.ClearPracticeDataResult{}, err
 	}
 	out := learn.ClearPracticeDataResult{AttemptsDeleted: attN, ProgressRowsCleared: progN}
-	learnLog("INFO", "[learn.PracticeData.Clear] userID=%d attemptsDeleted=%d progressRowsCleared=%d",
+	learnLog("INFO", "[learn.PracticeData.Clear] userID=%s attemptsDeleted=%d progressRowsCleared=%d",
 		userID, out.AttemptsDeleted, out.ProgressRowsCleared)
 	return out, nil
 }
 
-func (ls *LearnStore) ListAssessedOutcomes(ctx context.Context, userID int64, characterIDs []string, limitPerCharacter int) (map[string][]learn.AssessedOutcome, error) {
+func (ls *LearnStore) ListAssessedOutcomes(ctx context.Context, userID string, characterIDs []string, limitPerCharacter int) (map[string][]learn.AssessedOutcome, error) {
 	_ = ctx
 	out := make(map[string][]learn.AssessedOutcome, len(characterIDs))
-	if userID <= 0 || len(characterIDs) == 0 {
+	if !ids.Valid(userID) || len(characterIDs) == 0 {
 		return out, nil
 	}
 	limit := limitPerCharacter
@@ -945,7 +938,7 @@ func (ls *LearnStore) ListAssessedOutcomes(ctx context.Context, userID int64, ch
 	return out, nil
 }
 
-func (ls *LearnStore) GetByAttempt(ctx context.Context, userID, attemptID int64) (*learn.AssessmentResult, error) {
+func (ls *LearnStore) GetByAttempt(ctx context.Context, userID, attemptID string) (*learn.AssessmentResult, error) {
 	_ = ctx
 	// Ownership: attempt must belong to user.
 	var dummy int
@@ -994,7 +987,7 @@ func (ls *LearnStore) GetByAttempt(ctx context.Context, userID, attemptID int64)
 	return &ar, frows.Err()
 }
 
-func (ls *LearnStore) getProgress(ctx context.Context, userID int64, characterID string) (*learn.Progress, error) {
+func (ls *LearnStore) getProgress(ctx context.Context, userID string, characterID string) (*learn.Progress, error) {
 	_ = ctx
 	row := ls.s.SQL.QueryRow(`
 		SELECT user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at,
@@ -1006,7 +999,7 @@ func (ls *LearnStore) getProgress(ctx context.Context, userID int64, characterID
 
 func scanProgress(row *sql.Row) (*learn.Progress, error) {
 	var p learn.Progress
-	var lastAttempt sql.NullInt64
+	var lastAttempt sql.NullString
 	var lastPassed sql.NullTime
 	var dueAt sql.NullTime
 	var lastReviewed sql.NullTime
@@ -1021,7 +1014,7 @@ func scanProgress(row *sql.Row) (*learn.Progress, error) {
 		return nil, err
 	}
 	if lastAttempt.Valid {
-		v := lastAttempt.Int64
+		v := lastAttempt.String
 		p.LastAttemptID = &v
 	}
 	if lastPassed.Valid {
@@ -1063,47 +1056,47 @@ func (r lessonRepo) ListCharacters(ctx context.Context, lessonID string) ([]lear
 func (r attemptRepo) CreateDraft(ctx context.Context, in learn.CreateDraft) (learn.Attempt, error) {
 	return r.LearnStore.CreateDraft(ctx, in)
 }
-func (r attemptRepo) Get(ctx context.Context, userID, attemptID int64) (*learn.Attempt, error) {
+func (r attemptRepo) Get(ctx context.Context, userID, attemptID string) (*learn.Attempt, error) {
 	a, err := r.LearnStore.getAttempt(userID, attemptID)
 	if err != nil {
 		return nil, err
 	}
 	return &a, nil
 }
-func (r attemptRepo) GetByClientAttemptID(ctx context.Context, userID int64, clientAttemptID string) (*learn.Attempt, error) {
+func (r attemptRepo) GetByClientAttemptID(ctx context.Context, userID string, clientAttemptID string) (*learn.Attempt, error) {
 	return r.LearnStore.GetByClientAttemptID(ctx, userID, clientAttemptID)
 }
-func (r attemptRepo) SubmitStrokes(ctx context.Context, userID, attemptID int64, strokes []learn.StrokeInput, w, h int) error {
+func (r attemptRepo) SubmitStrokes(ctx context.Context, userID, attemptID string, strokes []learn.StrokeInput, w, h int) error {
 	return r.LearnStore.SubmitStrokes(ctx, userID, attemptID, strokes, w, h)
 }
-func (r attemptRepo) ListStrokes(ctx context.Context, userID, attemptID int64) ([]learn.StrokeInput, int, int, error) {
+func (r attemptRepo) ListStrokes(ctx context.Context, userID, attemptID string) ([]learn.StrokeInput, int, int, error) {
 	return r.LearnStore.ListStrokes(ctx, userID, attemptID)
 }
-func (r attemptRepo) MarkAssessed(ctx context.Context, userID, attemptID int64) error {
+func (r attemptRepo) MarkAssessed(ctx context.Context, userID, attemptID string) error {
 	return r.LearnStore.MarkAssessed(ctx, userID, attemptID)
 }
-func (r attemptRepo) Abandon(ctx context.Context, userID, attemptID int64) error {
+func (r attemptRepo) Abandon(ctx context.Context, userID, attemptID string) error {
 	return r.LearnStore.Abandon(ctx, userID, attemptID)
 }
-func (r attemptRepo) List(ctx context.Context, userID int64, filter learn.AttemptListFilter) (learn.AttemptListResult, error) {
+func (r attemptRepo) List(ctx context.Context, userID string, filter learn.AttemptListFilter) (learn.AttemptListResult, error) {
 	return r.LearnStore.ListAttempts(ctx, userID, filter)
 }
-func (r attemptRepo) ClearPracticeData(ctx context.Context, userID int64) (learn.ClearPracticeDataResult, error) {
+func (r attemptRepo) ClearPracticeData(ctx context.Context, userID string) (learn.ClearPracticeDataResult, error) {
 	return r.LearnStore.ClearPracticeData(ctx, userID)
 }
-func (r assessmentRepo) SaveResult(ctx context.Context, userID int64, in learn.SaveAssessment) (learn.AssessmentResult, error) {
+func (r assessmentRepo) SaveResult(ctx context.Context, userID string, in learn.SaveAssessment) (learn.AssessmentResult, error) {
 	return r.LearnStore.SaveResult(ctx, userID, in)
 }
-func (r assessmentRepo) GetByAttempt(ctx context.Context, userID, attemptID int64) (*learn.AssessmentResult, error) {
+func (r assessmentRepo) GetByAttempt(ctx context.Context, userID, attemptID string) (*learn.AssessmentResult, error) {
 	return r.LearnStore.GetByAttempt(ctx, userID, attemptID)
 }
-func (r progressRepo) Get(ctx context.Context, userID int64, characterID string) (*learn.Progress, error) {
+func (r progressRepo) Get(ctx context.Context, userID string, characterID string) (*learn.Progress, error) {
 	return r.LearnStore.getProgress(ctx, userID, characterID)
 }
-func (r progressRepo) ListAssessedOutcomes(ctx context.Context, userID int64, characterIDs []string, limitPerCharacter int) (map[string][]learn.AssessedOutcome, error) {
+func (r progressRepo) ListAssessedOutcomes(ctx context.Context, userID string, characterIDs []string, limitPerCharacter int) (map[string][]learn.AssessedOutcome, error) {
 	return r.LearnStore.ListAssessedOutcomes(ctx, userID, characterIDs, limitPerCharacter)
 }
-func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Progress, error) {
+func (r progressRepo) ListForUser(ctx context.Context, userID string) ([]learn.Progress, error) {
 	_ = ctx
 	rows, err := r.s.SQL.Query(`
 		SELECT user_id, character_id, status, attempt_count, pass_count, last_attempt_id, last_passed_at,
@@ -1117,7 +1110,7 @@ func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Pr
 	var out []learn.Progress
 	for rows.Next() {
 		var p learn.Progress
-		var lastAttempt sql.NullInt64
+		var lastAttempt sql.NullString
 		var lastPassed sql.NullTime
 		var dueAt sql.NullTime
 		var lastReviewed sql.NullTime
@@ -1128,7 +1121,7 @@ func (r progressRepo) ListForUser(ctx context.Context, userID int64) ([]learn.Pr
 			return nil, err
 		}
 		if lastAttempt.Valid {
-			v := lastAttempt.Int64
+			v := lastAttempt.String
 			p.LastAttemptID = &v
 		}
 		if lastPassed.Valid {

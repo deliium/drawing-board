@@ -108,7 +108,7 @@ describe('accessibility parity (axe)', () => {
     initLocale()
     setLocale('en')
     canvasSpy = stubCanvasContext()
-    setAuthenticatedUser({ id: 1, email: 'learner@example.com' })
+    setAuthenticatedUser({ id: '11111111-1111-4111-8111-111111111111', email: 'learner@example.com' })
   })
 
   afterEach(() => {

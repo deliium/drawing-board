@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,7 +19,7 @@ import (
 
 const contractOrigin = "http://localhost:5173"
 
-func dialAuthedWS(t *testing.T, serverURL string, authSvc *auth.Service, uid int64) *websocket.Conn {
+func dialAuthedWS(t *testing.T, serverURL string, authSvc *auth.Service, uid string) *websocket.Conn {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -113,7 +114,7 @@ func TestWSDial_CreateAckBoardRev(t *testing.T) {
 	if ack.BoardRev == nil || *ack.BoardRev != 1 {
 		t.Fatalf("boardRev=%v want 1", ack.BoardRev)
 	}
-	if ack.StrokeID == nil || *ack.StrokeID <= 0 {
+	if ack.StrokeID == nil || *ack.StrokeID == "" {
 		t.Fatalf("strokeId missing: %+v", ack)
 	}
 }
@@ -266,9 +267,10 @@ func TestHub_RaceStressSendToUser(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			conn := &websocket.Conn{}
-			hub.add(conn, int64(id%4+1))
+			hub.add(conn, fmt.Sprintf("user-%d", id%4+1))
 			for j := 0; j < 50; j++ {
-				hub.sendToUser(int64(j%4+1), message{Type: "stroke", Stroke: &Stroke{ID: int64(j), Points: []Point{{X: 1, Y: 1}}}})
+				strokeID := fmt.Sprintf("stroke-%d", j)
+				hub.sendToUser(fmt.Sprintf("user-%d", j%4+1), message{Type: "stroke", Stroke: &Stroke{ID: strokeID, Points: []Point{{X: 1, Y: 1}}}})
 			}
 			hub.remove(conn)
 		}(i)

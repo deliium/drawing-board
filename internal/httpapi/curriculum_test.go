@@ -160,7 +160,7 @@ func TestListProgress_EmptyThenAfterPass(t *testing.T) {
 		t.Fatalf("unexpected progress item: %+v", item)
 	}
 	if item.LastAttemptID == nil || *item.LastAttemptID != at.ID {
-		t.Fatalf("lastAttemptId=%v want %d", item.LastAttemptID, at.ID)
+		t.Fatalf("lastAttemptId=%v want %s", item.LastAttemptID, at.ID)
 	}
 	if item.Mastery == nil || item.Mastery.State != learn.MasteryStatePassedOnce {
 		t.Fatalf("mastery=%+v want passed_once", item.Mastery)

@@ -8,9 +8,9 @@ Personal Japanese handwriting practice app: authenticated users draw on a privat
 
 | Layer | Choice |
 |-------|--------|
-| Backend | Go 1.26+, Gorilla mux, Gorilla WebSocket |
+| Backend | Go 1.26+, Gorilla mux, Gorilla WebSocket, `github.com/google/uuid` |
 | Frontend | Vue 3, TypeScript, Vite |
-| Database | SQLite (`mattn/go-sqlite3`), per-user stroke store |
+| Database | SQLite (`mattn/go-sqlite3`), UUID TEXT surrogate PKs (migration 0007+), per-user stroke store |
 | Auth | Cookie sessions (`sid`), bcrypt passwords |
 | Deploy | Docker Compose + Nginx reverse proxy (`/api`, `/ws`) |
 

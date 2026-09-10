@@ -27,6 +27,7 @@ drawing-board/
 │   ├── httpapi/                # REST handlers (strokes, recognize, practice attempts)
 │   ├── ws/                     # WebSocket hub, CheckOrigin, ingest, ack/echo
 │   ├── limits/                 # shared validation bounds (stroke, recognize, opId)
+│   ├── ids/                    # UUID generate/parse for surrogate entity keys
 │   ├── recognize/              # hiragana5 multi-criterion assess + heuristic free-board rank; correction catalog
 │   ├── security/               # CORS / CSRF / origin policy helpers
 │   ├── metrics/                # process-local counters
@@ -56,7 +57,7 @@ drawing-board/
 ## Dependency Rules
 
 - ✅ `cmd/server` wires `internal/*` packages; packages do not import `cmd/`
-- ✅ `httpapi` and `ws` may call `db`, `auth`, `limits`, `recognize`, `metrics`, `features`
+- ✅ `httpapi` and `ws` may call `db`, `auth`, `limits`, `ids`, `recognize`, `metrics`, `features`
 - ✅ `httpapi` attempt handlers depend on `internal/learn` repos + `recognize.Assessor`; SQLite impl lives in `internal/db`
 - ✅ Learning product surfaces are gated by `internal/features` kill switches; migrations stay forward-only (flags are not substitutes for schema rollback)
 - ✅ Free-board stroke tables stay isolated from attempt stroke tables (no shared FK / clear coupling; no attempt↔board FK)
@@ -67,6 +68,7 @@ drawing-board/
 - ✅ Pronunciation audio is pack-owned + statically mirrored (`web/public/audio/hiragana5/`); play is client-side on demand with soft-fail missing/error paths
 - ✅ Optional `kanjiExtensions` in pack JSON is a future hook only — hiragana5 keeps it empty
 - ✅ `limits` is shared validation — keep free of HTTP/WS transport types when practical
+- ✅ `ids` owns UUID generation/validation for surrogate entity keys (users/strokes/attempts); curriculum natural keys stay pack-owned TEXT
 - ✅ Vue `services/` owns network I/O; `canvas/` + `composables/` own drawing geometry/lifecycle; `i18n/` owns learner chrome strings; pages compose UI + call services
 - ✅ Learner-facing builds must not mount internal DEV metrics (`MigrationHealthPanel` / “Dev metrics”) — `import.meta.env.DEV` only
 - ❌ Do not add a global WS broadcast path — delivery is `sendToUser(userID, …)` only

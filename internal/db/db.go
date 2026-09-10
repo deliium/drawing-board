@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deliium/drawing-board/internal/ids"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -17,7 +19,7 @@ type Store struct {
 }
 
 type User struct {
-	ID           int64
+	ID           string
 	Email        string
 	PasswordHash string
 	CreatedAt    time.Time
@@ -29,8 +31,8 @@ type StrokePoint struct {
 }
 
 type Stroke struct {
-	ID              int64
-	UserID          int64
+	ID              string
+	UserID          string
 	Color           string
 	Width           int
 	StartedAtUnixMs int64
@@ -127,16 +129,17 @@ func normalizeSQLitePath(dsnOrPath string) (filename string, enableFK bool) {
 	return s, true
 }
 
-func (s *Store) CreateUser(email, passwordHash string) (int64, error) {
-	res, err := s.SQL.Exec("INSERT INTO users(email, password_hash) VALUES(?, ?)", email, passwordHash)
+func (s *Store) CreateUser(email, passwordHash string) (string, error) {
+	id := ids.New()
+	_, err := s.SQL.Exec("INSERT INTO users(id, email, password_hash) VALUES(?, ?, ?)", id, email, passwordHash)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
 // DeleteUser removes a user by id. Used to roll back a failed registration after insert.
-func (s *Store) DeleteUser(userID int64) error {
+func (s *Store) DeleteUser(userID string) error {
 	res, err := s.SQL.Exec("DELETE FROM users WHERE id = ?", userID)
 	if err != nil {
 		return err
@@ -146,13 +149,13 @@ func (s *Store) DeleteUser(userID int64) error {
 		return err
 	}
 	if n == 0 {
-		return fmt.Errorf("DeleteUser: no user id=%d", userID)
+		return fmt.Errorf("DeleteUser: no user id=%s", userID)
 	}
 	return nil
 }
 
 // UpdateUserPasswordHash rewrites users.password_hash (e.g. future password-change flows).
-func (s *Store) UpdateUserPasswordHash(userID int64, passwordHash string) error {
+func (s *Store) UpdateUserPasswordHash(userID string, passwordHash string) error {
 	res, err := s.SQL.Exec("UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, userID)
 	if err != nil {
 		return err
@@ -162,7 +165,7 @@ func (s *Store) UpdateUserPasswordHash(userID int64, passwordHash string) error 
 		return err
 	}
 	if n == 0 {
-		return fmt.Errorf("UpdateUserPasswordHash: no user id=%d", userID)
+		return fmt.Errorf("UpdateUserPasswordHash: no user id=%s", userID)
 	}
 	return nil
 }
@@ -179,7 +182,7 @@ func (s *Store) GetUserByEmail(email string) (*User, error) {
 	return &u, nil
 }
 
-func (s *Store) GetUserByID(id int64) (*User, error) {
+func (s *Store) GetUserByID(id string) (*User, error) {
 	row := s.SQL.QueryRow("SELECT id, email, password_hash, created_at FROM users WHERE id = ?", id)
 	u := User{}
 	if err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt); err != nil {
@@ -191,17 +194,17 @@ func (s *Store) GetUserByID(id int64) (*User, error) {
 	return &u, nil
 }
 
-func (s *Store) SaveStroke(userID int64, color string, width int, startedAtUnixMs int64, points []StrokePoint) (int64, error) {
+func (s *Store) SaveStroke(userID string, color string, width int, startedAtUnixMs int64, points []StrokePoint) (string, error) {
 	id, _, err := s.SaveStrokeIdempotent(userID, "", color, width, startedAtUnixMs, points)
 	return id, err
 }
 
 // SaveStrokeIdempotent inserts a stroke. When opID is non-empty, a second insert with the same
 // (user_id, op_id) returns the existing stroke id with created=false.
-func (s *Store) SaveStrokeIdempotent(userID int64, opID, color string, width int, startedAtUnixMs int64, points []StrokePoint) (strokeID int64, created bool, err error) {
+func (s *Store) SaveStrokeIdempotent(userID string, opID, color string, width int, startedAtUnixMs int64, points []StrokePoint) (strokeID string, created bool, err error) {
 	tx, err := s.SQL.Begin()
 	if err != nil {
-		return 0, false, err
+		return "", false, err
 	}
 	defer func() {
 		if err != nil {
@@ -209,16 +212,16 @@ func (s *Store) SaveStrokeIdempotent(userID int64, opID, color string, width int
 		}
 	}()
 
-	var res sql.Result
+	strokeID = ids.New()
 	if opID == "" {
-		res, err = tx.Exec(
-			"INSERT INTO strokes(user_id, color, width, started_at_unix_ms) VALUES(?, ?, ?, ?)",
-			userID, color, width, startedAtUnixMs,
+		_, err = tx.Exec(
+			"INSERT INTO strokes(id, user_id, color, width, started_at_unix_ms) VALUES(?, ?, ?, ?, ?)",
+			strokeID, userID, color, width, startedAtUnixMs,
 		)
 	} else {
-		res, err = tx.Exec(
-			"INSERT INTO strokes(user_id, color, width, started_at_unix_ms, op_id) VALUES(?, ?, ?, ?, ?)",
-			userID, color, width, startedAtUnixMs, opID,
+		_, err = tx.Exec(
+			"INSERT INTO strokes(id, user_id, color, width, started_at_unix_ms, op_id) VALUES(?, ?, ?, ?, ?, ?)",
+			strokeID, userID, color, width, startedAtUnixMs, opID,
 		)
 	}
 	if err != nil {
@@ -226,44 +229,40 @@ func (s *Store) SaveStrokeIdempotent(userID int64, opID, color string, width int
 			_ = tx.Rollback()
 			existing, lookupErr := s.strokeIDByOp(userID, opID)
 			if lookupErr != nil {
-				return 0, false, lookupErr
+				return "", false, lookupErr
 			}
 			return existing, false, nil
 		}
-		return 0, false, err
-	}
-	strokeID, err = res.LastInsertId()
-	if err != nil {
-		return 0, false, err
+		return "", false, err
 	}
 	if len(points) > 0 {
-		stmt, prepErr := tx.Prepare("INSERT INTO stroke_points(stroke_id, x, y) VALUES(?, ?, ?)")
+		stmt, prepErr := tx.Prepare("INSERT INTO stroke_points(id, stroke_id, x, y) VALUES(?, ?, ?, ?)")
 		if prepErr != nil {
 			err = prepErr
-			return 0, false, err
+			return "", false, err
 		}
 		for _, p := range points {
-			if _, err = stmt.Exec(strokeID, p.X, p.Y); err != nil {
+			if _, err = stmt.Exec(ids.New(), strokeID, p.X, p.Y); err != nil {
 				_ = stmt.Close()
-				return 0, false, err
+				return "", false, err
 			}
 		}
 		_ = stmt.Close()
 	}
 	if err = tx.Commit(); err != nil {
-		return 0, false, err
+		return "", false, err
 	}
 	return strokeID, true, nil
 }
 
-func (s *Store) strokeIDByOp(userID int64, opID string) (int64, error) {
-	var id int64
+func (s *Store) strokeIDByOp(userID string, opID string) (string, error) {
+	var id string
 	err := s.SQL.QueryRow(
 		"SELECT id FROM strokes WHERE user_id = ? AND op_id = ?",
 		userID, opID,
 	).Scan(&id)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	return id, nil
 }
@@ -276,7 +275,7 @@ func isUniqueConstraintErr(err error) bool {
 	return strings.Contains(msg, "unique constraint") || strings.Contains(msg, "constraint failed")
 }
 
-func (s *Store) ListStrokesByUser(userID int64) ([]Stroke, error) {
+func (s *Store) ListStrokesByUser(userID string) ([]Stroke, error) {
 	rows, err := s.SQL.Query("SELECT id, color, width, started_at_unix_ms, created_at, COALESCE(op_id, '') FROM strokes WHERE user_id = ? ORDER BY id", userID)
 	if err != nil {
 		return nil, err
@@ -307,12 +306,12 @@ func (s *Store) ListStrokesByUser(userID int64) ([]Stroke, error) {
 	return out, nil
 }
 
-func (s *Store) ClearStrokesByUser(userID int64) error {
+func (s *Store) ClearStrokesByUser(userID string) error {
 	_, err := s.SQL.Exec("DELETE FROM strokes WHERE user_id = ?", userID)
 	return err
 }
 
-func (s *Store) DeleteStroke(userID int64, strokeID int64) error {
+func (s *Store) DeleteStroke(userID string, strokeID string) error {
 	_, err := s.SQL.Exec("DELETE FROM strokes WHERE id = ? AND user_id = ?", strokeID, userID)
 	return err
 }

@@ -4,10 +4,10 @@ export type SessionState = 'unknown' | 'authenticated' | 'anonymous'
 
 export const sessionContext = reactive({
   state: 'unknown' as SessionState,
-  user: null as null | { id: number; email: string },
+  user: null as null | { id: string; email: string },
 })
 
-export function setAuthenticatedUser(user: { id: number; email: string } | null) {
+export function setAuthenticatedUser(user: { id: string; email: string } | null) {
   sessionContext.user = user
   sessionContext.state = user ? 'authenticated' : 'anonymous'
 }

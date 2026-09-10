@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/deliium/drawing-board/internal/ids"
 )
 
 // Board mutation sentinel errors (stable WS/HTTP codes).
@@ -18,7 +20,7 @@ var (
 // BoardApplyResult is returned by revision-gated mutators.
 type BoardApplyResult struct {
 	BoardRev   int64
-	StrokeID   int64
+	StrokeID   string
 	Created    bool
 	Deleted    bool
 	Cleared    bool
@@ -48,7 +50,7 @@ func dbLog(level, format string, args ...interface{}) {
 	log.Printf(level+" "+format, args...)
 }
 
-func (s *Store) ensureBoardStateTx(tx *sql.Tx, userID int64) error {
+func (s *Store) ensureBoardStateTx(tx *sql.Tx, userID string) error {
 	_, err := tx.Exec(
 		`INSERT OR IGNORE INTO user_board_state(user_id, board_rev) VALUES(?, 0)`,
 		userID,
@@ -56,7 +58,7 @@ func (s *Store) ensureBoardStateTx(tx *sql.Tx, userID int64) error {
 	return err
 }
 
-func (s *Store) getBoardRevTx(tx *sql.Tx, userID int64) (int64, error) {
+func (s *Store) getBoardRevTx(tx *sql.Tx, userID string) (int64, error) {
 	if err := s.ensureBoardStateTx(tx, userID); err != nil {
 		return 0, err
 	}
@@ -68,7 +70,7 @@ func (s *Store) getBoardRevTx(tx *sql.Tx, userID int64) (int64, error) {
 	return rev, nil
 }
 
-func (s *Store) bumpBoardRevTx(tx *sql.Tx, userID int64) (int64, error) {
+func (s *Store) bumpBoardRevTx(tx *sql.Tx, userID string) (int64, error) {
 	res, err := tx.Exec(
 		`UPDATE user_board_state SET board_rev = board_rev + 1 WHERE user_id = ?`,
 		userID,
@@ -81,13 +83,13 @@ func (s *Store) bumpBoardRevTx(tx *sql.Tx, userID int64) (int64, error) {
 		return 0, err
 	}
 	if n == 0 {
-		return 0, fmt.Errorf("bumpBoardRev: missing user_board_state userID=%d", userID)
+		return 0, fmt.Errorf("bumpBoardRev: missing user_board_state userID=%s", userID)
 	}
 	return s.getBoardRevTx(tx, userID)
 }
 
 // GetBoardRev returns the current monotonic board revision for a user (0 if never mutated).
-func (s *Store) GetBoardRev(userID int64) (int64, error) {
+func (s *Store) GetBoardRev(userID string) (int64, error) {
 	tx, err := s.SQL.Begin()
 	if err != nil {
 		return 0, err
@@ -104,7 +106,7 @@ func (s *Store) GetBoardRev(userID int64) (int64, error) {
 }
 
 // ListStrokesWithRev returns strokes plus the current boardRev in one consistent read.
-func (s *Store) ListStrokesWithRev(userID int64) (StrokesSnapshot, error) {
+func (s *Store) ListStrokesWithRev(userID string) (StrokesSnapshot, error) {
 	tx, err := s.beginImmediate()
 	if err != nil {
 		return StrokesSnapshot{}, err
@@ -156,7 +158,7 @@ func (s *Store) ListStrokesWithRev(userID int64) (StrokesSnapshot, error) {
 	return StrokesSnapshot{BoardRev: rev, Strokes: out}, nil
 }
 
-func (s *Store) isTombstonedTx(tx *sql.Tx, userID int64, opID string) (bool, error) {
+func (s *Store) isTombstonedTx(tx *sql.Tx, userID string, opID string) (bool, error) {
 	var n int
 	err := tx.QueryRow(
 		`SELECT COUNT(1) FROM stroke_op_tombstones WHERE user_id = ? AND op_id = ?`,
@@ -168,7 +170,7 @@ func (s *Store) isTombstonedTx(tx *sql.Tx, userID int64, opID string) (bool, err
 	return n > 0, nil
 }
 
-func (s *Store) insertTombstoneTx(tx *sql.Tx, userID int64, opID, reason string, atRev int64) error {
+func (s *Store) insertTombstoneTx(tx *sql.Tx, userID string, opID, reason string, atRev int64) error {
 	_, err := tx.Exec(
 		`INSERT OR IGNORE INTO stroke_op_tombstones(user_id, op_id, reason, at_rev) VALUES(?, ?, ?, ?)`,
 		userID, opID, reason, atRev,
@@ -176,7 +178,7 @@ func (s *Store) insertTombstoneTx(tx *sql.Tx, userID int64, opID, reason string,
 	return err
 }
 
-func (s *Store) boardOpExistsTx(tx *sql.Tx, userID int64, opID string) (exists bool, atRev int64, err error) {
+func (s *Store) boardOpExistsTx(tx *sql.Tx, userID string, opID string) (exists bool, atRev int64, err error) {
 	err = tx.QueryRow(
 		`SELECT at_rev FROM board_ops WHERE user_id = ? AND op_id = ?`,
 		userID, opID,
@@ -190,7 +192,7 @@ func (s *Store) boardOpExistsTx(tx *sql.Tx, userID int64, opID string) (exists b
 	return true, atRev, nil
 }
 
-func (s *Store) insertBoardOpTx(tx *sql.Tx, userID int64, opID, kind string, atRev int64) error {
+func (s *Store) insertBoardOpTx(tx *sql.Tx, userID string, opID, kind string, atRev int64) error {
 	_, err := tx.Exec(
 		`INSERT INTO board_ops(user_id, op_id, kind, at_rev) VALUES(?, ?, ?, ?)`,
 		userID, opID, kind, atRev,
@@ -198,17 +200,17 @@ func (s *Store) insertBoardOpTx(tx *sql.Tx, userID int64, opID, kind string, atR
 	return err
 }
 
-func (s *Store) strokeIDByOpTx(tx *sql.Tx, userID int64, opID string) (int64, bool, error) {
-	var id int64
+func (s *Store) strokeIDByOpTx(tx *sql.Tx, userID string, opID string) (string, bool, error) {
+	var id string
 	err := tx.QueryRow(
 		`SELECT id FROM strokes WHERE user_id = ? AND op_id = ?`,
 		userID, opID,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, false, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return 0, false, err
+		return "", false, err
 	}
 	return id, true, nil
 }
@@ -216,8 +218,8 @@ func (s *Store) strokeIDByOpTx(tx *sql.Tx, userID int64, opID string) (int64, bo
 // ApplyStrokeCreate inserts a stroke under strict baseRev equality.
 // Active (user_id, op_id) hits return the existing stroke without bumping.
 // Tombstoned create opIds return ErrOpCancelled.
-func (s *Store) ApplyStrokeCreate(userID, baseRev int64, opID, color string, width int, startedAtUnixMs int64, points []StrokePoint) (BoardApplyResult, error) {
-	dbLog("DEBUG", "[db.ApplyStrokeCreate] enter userID=%d baseRev=%d opId=%s", userID, baseRev, opID)
+func (s *Store) ApplyStrokeCreate(userID string, baseRev int64, opID, color string, width int, startedAtUnixMs int64, points []StrokePoint) (BoardApplyResult, error) {
+	dbLog("DEBUG", "[db.ApplyStrokeCreate] enter userID=%s baseRev=%d opId=%s", userID, baseRev, opID)
 	tx, err := s.beginImmediate()
 	if err != nil {
 		return BoardApplyResult{}, err
@@ -239,14 +241,14 @@ func (s *Store) ApplyStrokeCreate(userID, baseRev int64, opID, color string, wid
 		return BoardApplyResult{}, err
 	}
 	if tombstoned {
-		dbLog("WARN", "[db.ApplyStrokeCreate] cancelled userID=%d opId=%s boardRev=%d", userID, opID, cur)
+		dbLog("WARN", "[db.ApplyStrokeCreate] cancelled userID=%s opId=%s boardRev=%d", userID, opID, cur)
 		return BoardApplyResult{BoardRev: cur}, ErrOpCancelled
 	}
 
 	if existingID, ok, lookupErr := s.strokeIDByOpTx(tx, userID, opID); lookupErr != nil {
 		return BoardApplyResult{}, lookupErr
 	} else if ok {
-		dbLog("INFO", "[db.ApplyStrokeCreate] idempotent hit userID=%d opId=%s strokeId=%d boardRev=%d", userID, opID, existingID, cur)
+		dbLog("INFO", "[db.ApplyStrokeCreate] idempotent hit userID=%s opId=%s strokeId=%s boardRev=%d", userID, opID, existingID, cur)
 		if err := tx.Commit(); err != nil {
 			return BoardApplyResult{}, err
 		}
@@ -255,28 +257,25 @@ func (s *Store) ApplyStrokeCreate(userID, baseRev int64, opID, color string, wid
 	}
 
 	if baseRev != cur {
-		dbLog("WARN", "[db.ApplyStrokeCreate] stale userID=%d baseRev=%d boardRev=%d opId=%s", userID, baseRev, cur, opID)
+		dbLog("WARN", "[db.ApplyStrokeCreate] stale userID=%s baseRev=%d boardRev=%d opId=%s", userID, baseRev, cur, opID)
 		return BoardApplyResult{BoardRev: cur}, ErrStaleBoard
 	}
 
-	res, err := tx.Exec(
-		`INSERT INTO strokes(user_id, color, width, started_at_unix_ms, op_id) VALUES(?, ?, ?, ?, ?)`,
-		userID, color, width, startedAtUnixMs, opID,
+	strokeID := ids.New()
+	_, err = tx.Exec(
+		`INSERT INTO strokes(id, user_id, color, width, started_at_unix_ms, op_id) VALUES(?, ?, ?, ?, ?, ?)`,
+		strokeID, userID, color, width, startedAtUnixMs, opID,
 	)
 	if err != nil {
 		return BoardApplyResult{}, err
 	}
-	strokeID, err := res.LastInsertId()
-	if err != nil {
-		return BoardApplyResult{}, err
-	}
 	if len(points) > 0 {
-		stmt, prepErr := tx.Prepare(`INSERT INTO stroke_points(stroke_id, x, y) VALUES(?, ?, ?)`)
+		stmt, prepErr := tx.Prepare(`INSERT INTO stroke_points(id, stroke_id, x, y) VALUES(?, ?, ?, ?)`)
 		if prepErr != nil {
 			return BoardApplyResult{}, prepErr
 		}
 		for _, p := range points {
-			if _, err = stmt.Exec(strokeID, p.X, p.Y); err != nil {
+			if _, err = stmt.Exec(ids.New(), strokeID, p.X, p.Y); err != nil {
 				_ = stmt.Close()
 				return BoardApplyResult{}, err
 			}
@@ -292,15 +291,15 @@ func (s *Store) ApplyStrokeCreate(userID, baseRev int64, opID, color string, wid
 		return BoardApplyResult{}, err
 	}
 	committed = true
-	dbLog("INFO", "[db.ApplyStrokeCreate] applied userID=%d opId=%s strokeId=%d boardRev=%d→%d", userID, opID, strokeID, cur, newRev)
+	dbLog("INFO", "[db.ApplyStrokeCreate] applied userID=%s opId=%s strokeId=%s boardRev=%d→%d", userID, opID, strokeID, cur, newRev)
 	return BoardApplyResult{BoardRev: newRev, StrokeID: strokeID, Created: true}, nil
 }
 
 // ApplyStrokeDelete deletes by stroke id and/or tombstones/deletes by create opId.
-// Exactly one of strokeID (>0) or deleteOpID (non-empty) should be provided; both may be set
+// Exactly one of strokeID (non-empty) or deleteOpID (non-empty) should be provided; both may be set
 // (id preferred for the row delete, deleteOpID always tombstones if no active stroke).
-func (s *Store) ApplyStrokeDelete(userID, baseRev int64, opID string, strokeID int64, deleteOpID string) (BoardApplyResult, error) {
-	dbLog("DEBUG", "[db.ApplyStrokeDelete] enter userID=%d baseRev=%d opId=%s strokeID=%d deleteOpId=%s",
+func (s *Store) ApplyStrokeDelete(userID string, baseRev int64, opID string, strokeID string, deleteOpID string) (BoardApplyResult, error) {
+	dbLog("DEBUG", "[db.ApplyStrokeDelete] enter userID=%s baseRev=%d opId=%s strokeId=%s deleteOpId=%s",
 		userID, baseRev, opID, strokeID, deleteOpID)
 
 	tx, err := s.beginImmediate()
@@ -322,7 +321,7 @@ func (s *Store) ApplyStrokeDelete(userID, baseRev int64, opID string, strokeID i
 	if exists, atRev, opErr := s.boardOpExistsTx(tx, userID, opID); opErr != nil {
 		return BoardApplyResult{}, opErr
 	} else if exists {
-		dbLog("INFO", "[db.ApplyStrokeDelete] idempotent hit userID=%d opId=%s boardRev=%d", userID, opID, atRev)
+		dbLog("INFO", "[db.ApplyStrokeDelete] idempotent hit userID=%s opId=%s boardRev=%d", userID, opID, atRev)
 		if err := tx.Commit(); err != nil {
 			return BoardApplyResult{}, err
 		}
@@ -331,12 +330,12 @@ func (s *Store) ApplyStrokeDelete(userID, baseRev int64, opID string, strokeID i
 	}
 
 	if baseRev != cur {
-		dbLog("WARN", "[db.ApplyStrokeDelete] stale userID=%d baseRev=%d boardRev=%d opId=%s", userID, baseRev, cur, opID)
+		dbLog("WARN", "[db.ApplyStrokeDelete] stale userID=%s baseRev=%d boardRev=%d opId=%s", userID, baseRev, cur, opID)
 		return BoardApplyResult{BoardRev: cur}, ErrStaleBoard
 	}
 
 	deleted := false
-	if strokeID > 0 {
+	if strokeID != "" {
 		res, delErr := tx.Exec(`DELETE FROM strokes WHERE id = ? AND user_id = ?`, strokeID, userID)
 		if delErr != nil {
 			return BoardApplyResult{}, delErr
@@ -373,13 +372,13 @@ func (s *Store) ApplyStrokeDelete(userID, baseRev int64, opID string, strokeID i
 		return BoardApplyResult{}, err
 	}
 	committed = true
-	dbLog("INFO", "[db.ApplyStrokeDelete] applied userID=%d opId=%s deleted=%v boardRev=%d→%d", userID, opID, deleted, cur, newRev)
-	return BoardApplyResult{BoardRev: newRev, Deleted: true}, nil
+	dbLog("INFO", "[db.ApplyStrokeDelete] applied userID=%s opId=%s deleted=%v boardRev=%d→%d", userID, opID, deleted, cur, newRev)
+	return BoardApplyResult{BoardRev: newRev, Deleted: deleted}, nil
 }
 
 // ApplyClear deletes all strokes, tombstones their create opIds, and bumps boardRev.
-func (s *Store) ApplyClear(userID, baseRev int64, opID string) (BoardApplyResult, error) {
-	dbLog("DEBUG", "[db.ApplyClear] enter userID=%d baseRev=%d opId=%s", userID, baseRev, opID)
+func (s *Store) ApplyClear(userID string, baseRev int64, opID string) (BoardApplyResult, error) {
+	dbLog("DEBUG", "[db.ApplyClear] enter userID=%s baseRev=%d opId=%s", userID, baseRev, opID)
 
 	tx, err := s.beginImmediate()
 	if err != nil {
@@ -400,7 +399,7 @@ func (s *Store) ApplyClear(userID, baseRev int64, opID string) (BoardApplyResult
 	if exists, atRev, opErr := s.boardOpExistsTx(tx, userID, opID); opErr != nil {
 		return BoardApplyResult{}, opErr
 	} else if exists {
-		dbLog("INFO", "[db.ApplyClear] idempotent hit userID=%d opId=%s boardRev=%d", userID, opID, atRev)
+		dbLog("INFO", "[db.ApplyClear] idempotent hit userID=%s opId=%s boardRev=%d", userID, opID, atRev)
 		if err := tx.Commit(); err != nil {
 			return BoardApplyResult{}, err
 		}
@@ -409,7 +408,7 @@ func (s *Store) ApplyClear(userID, baseRev int64, opID string) (BoardApplyResult
 	}
 
 	if baseRev != cur {
-		dbLog("WARN", "[db.ApplyClear] stale userID=%d baseRev=%d boardRev=%d opId=%s", userID, baseRev, cur, opID)
+		dbLog("WARN", "[db.ApplyClear] stale userID=%s baseRev=%d boardRev=%d opId=%s", userID, baseRev, cur, opID)
 		return BoardApplyResult{BoardRev: cur}, ErrStaleBoard
 	}
 
@@ -451,7 +450,7 @@ func (s *Store) ApplyClear(userID, baseRev int64, opID string) (BoardApplyResult
 		return BoardApplyResult{}, err
 	}
 	committed = true
-	dbLog("INFO", "[db.ApplyClear] applied userID=%d opId=%s tombstones=%d boardRev=%d→%d", userID, opID, len(createOpIDs), cur, newRev)
+	dbLog("INFO", "[db.ApplyClear] applied userID=%s opId=%s tombstones=%d boardRev=%d→%d", userID, opID, len(createOpIDs), cur, newRev)
 	return BoardApplyResult{BoardRev: newRev, Cleared: true}, nil
 }
 

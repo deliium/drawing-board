@@ -34,7 +34,7 @@ func TestCreateUser(t *testing.T) {
 		t.Fatalf("Failed to create user: %v", err)
 	}
 
-	if userID == 0 {
+	if userID == "" {
 		t.Fatal("User ID should not be zero")
 	}
 
@@ -81,7 +81,7 @@ func TestUpdateUserPasswordHash(t *testing.T) {
 	if u.PasswordHash != "$2a$12$updatedhashplaceholder........" {
 		t.Fatalf("hash not updated: %q", u.PasswordHash)
 	}
-	if err := store.UpdateUserPasswordHash(99999, "x"); err == nil {
+	if err := store.UpdateUserPasswordHash("00000000-0000-0000-0000-000000000099", "x"); err == nil {
 		t.Fatal("expected error for missing user")
 	}
 }
@@ -109,7 +109,7 @@ func TestGetUserByEmail(t *testing.T) {
 	}
 
 	if user.ID != createdUserID {
-		t.Fatalf("Expected user ID %d, got %d", createdUserID, user.ID)
+		t.Fatalf("Expected user ID %s, got %s", createdUserID, user.ID)
 	}
 
 	if user.Email != "test@example.com" {
@@ -160,7 +160,7 @@ func TestSaveStroke(t *testing.T) {
 		t.Fatalf("Failed to save stroke: %v", err)
 	}
 
-	if strokeID == 0 {
+	if strokeID == "" {
 		t.Fatal("Saved stroke should have an ID")
 	}
 }
@@ -377,8 +377,8 @@ func TestSaveStrokeIdempotent(t *testing.T) {
 
 	pts := []StrokePoint{{X: 1, Y: 2}, {X: 3, Y: 4}}
 	id1, created1, err := store.SaveStrokeIdempotent(userID, "op-aaa-bbb-ccc-ddd-eeeeeeeeeeee", "#111111", 2, 100, pts)
-	if err != nil || !created1 || id1 == 0 {
-		t.Fatalf("first save: id=%d created=%v err=%v", id1, created1, err)
+	if err != nil || !created1 || id1 == "" {
+		t.Fatalf("first save: id=%s created=%v err=%v", id1, created1, err)
 	}
 
 	id2, created2, err := store.SaveStrokeIdempotent(userID, "op-aaa-bbb-ccc-ddd-eeeeeeeeeeee", "#222222", 5, 200, pts)
@@ -389,7 +389,7 @@ func TestSaveStrokeIdempotent(t *testing.T) {
 		t.Fatal("second save should be idempotent hit")
 	}
 	if id2 != id1 {
-		t.Fatalf("expected same id %d, got %d", id1, id2)
+		t.Fatalf("expected same id %s, got %s", id1, id2)
 	}
 
 	strokes, err := store.ListStrokesByUser(userID)
@@ -483,9 +483,12 @@ func TestBoardRev_DeleteByOpIdBeforeCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	del, err := store.ApplyStrokeDelete(uid, 0, "op-del-1", 0, "op-pending-create")
+	del, err := store.ApplyStrokeDelete(uid, 0, "op-del-1", "", "op-pending-create")
 	if err != nil || del.BoardRev != 1 {
 		t.Fatalf("delete: %+v err=%v", del, err)
+	}
+	if del.Deleted {
+		t.Fatalf("tombstone-only delete should report Deleted=false, got %+v", del)
 	}
 	r, err := store.ApplyStrokeCreate(uid, 1, "op-pending-create", "#111111", 2, 100, []StrokePoint{{X: 1, Y: 1}, {X: 2, Y: 2}})
 	if !errors.Is(err, ErrOpCancelled) {
@@ -536,11 +539,33 @@ func TestBoardRev_DeleteByIdBumpsOnce(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	d1, err := store.ApplyStrokeDelete(uid, cr.BoardRev, "del-op", cr.StrokeID, "")
-	if err != nil || d1.BoardRev != 2 {
+	if err != nil || d1.BoardRev != 2 || !d1.Deleted {
 		t.Fatalf("delete: %+v err=%v", d1, err)
 	}
 	d2, err := store.ApplyStrokeDelete(uid, 2, "del-op", cr.StrokeID, "")
 	if err != nil || !d2.Idempotent || d2.BoardRev != 2 {
 		t.Fatalf("delete idempotent: %+v err=%v", d2, err)
+	}
+}
+
+func TestBoardRev_DeleteUnknownID_DeletedFalse(t *testing.T) {
+	tmpFile := "test_board_rev_del_unknown.db"
+	defer func() { _ = os.Remove(tmpFile) }()
+	store, err := Open(tmpFile)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = store.SQL.Close() }()
+	uid, err := store.CreateUser("delunknown@example.com", "hash")
+	if err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	missing := "00000000-0000-4000-8000-000000000001"
+	d, err := store.ApplyStrokeDelete(uid, 0, "del-miss", missing, "")
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if d.Deleted || d.BoardRev != 1 {
+		t.Fatalf("want deleted=false boardRev=1, got %+v", d)
 	}
 }

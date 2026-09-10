@@ -13,7 +13,7 @@ async function bootstrap() {
   initLocale()
   probeCriticalFonts()
   try {
-    const me = await apiFetch<{ id: number; email: string }>('/api/me')
+    const me = await apiFetch<{ id: string; email: string }>('/api/me')
     setAuthenticatedUser(me)
     await loadFeatureFlags()
   } catch {

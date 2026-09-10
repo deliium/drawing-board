@@ -35,7 +35,7 @@ export type JourneyStage =
   | 'complete'
 
 export type PracticeSessionSnapshot = {
-  attemptId: number
+  attemptId: string
   clientAttemptId: string
   characterId: string
   stage: JourneyStage
@@ -63,7 +63,14 @@ function journeyWarn(...args: unknown[]) {
 }
 
 export function sessionKey(characterId: string): string {
-  return `practice:v1:${characterId}`
+  return `practice:v2:${characterId}`
+}
+
+function isUuidAttemptId(id: unknown): id is string {
+  return (
+    typeof id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  )
 }
 
 export function newClientAttemptId(): string {
@@ -96,7 +103,14 @@ function readSession(characterId: string): PracticeSessionSnapshot | null {
   try {
     const raw = sessionStorage.getItem(sessionKey(characterId))
     if (!raw) return null
-    return JSON.parse(raw) as PracticeSessionSnapshot
+    const parsed = JSON.parse(raw) as PracticeSessionSnapshot
+    // Legacy numeric attempt IDs are invalid after UUID cutover — treat as missing.
+    if (!isUuidAttemptId(parsed.attemptId)) {
+      journeyDebug('resume skip: non-UUID attemptId', parsed.attemptId)
+      clearSession(characterId)
+      return null
+    }
+    return parsed
   } catch {
     return null
   }

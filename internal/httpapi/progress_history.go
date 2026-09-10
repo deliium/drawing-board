@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deliium/drawing-board/internal/ids"
 	"github.com/deliium/drawing-board/internal/learn"
 	"github.com/deliium/drawing-board/internal/metrics"
 )
@@ -42,7 +43,7 @@ type clearPracticeDataResponse struct {
 }
 
 type attemptHistoryItemResponse struct {
-	ID          int64                `json:"id"`
+	ID          string               `json:"id"`
 	CharacterID string               `json:"characterId"`
 	Glyph       string               `json:"glyph"`
 	LessonID    string               `json:"lessonId,omitempty"`
@@ -63,31 +64,35 @@ type attemptHistoryListResponse struct {
 
 type attemptListCursorPayload struct {
 	StartedAt string `json:"startedAt"`
-	ID        int64  `json:"id"`
+	ID        string `json:"id"`
 }
 
-func encodeAttemptCursor(startedAt time.Time, id int64) string {
+func encodeAttemptCursor(startedAt time.Time, id string) string {
 	raw, _ := json.Marshal(attemptListCursorPayload{StartedAt: startedAt.UTC().Format(time.RFC3339Nano), ID: id})
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-func decodeAttemptCursor(raw string) (time.Time, int64, error) {
+func decodeAttemptCursor(raw string) (time.Time, string, error) {
 	b, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
-		return time.Time{}, 0, err
+		return time.Time{}, "", err
 	}
 	var p attemptListCursorPayload
 	if err := json.Unmarshal(b, &p); err != nil {
-		return time.Time{}, 0, err
+		return time.Time{}, "", err
 	}
 	t, err := time.Parse(time.RFC3339Nano, p.StartedAt)
 	if err != nil {
 		t, err = time.Parse(time.RFC3339, p.StartedAt)
 	}
-	if err != nil || p.ID <= 0 {
-		return time.Time{}, 0, errors.New("invalid cursor")
+	if err != nil {
+		return time.Time{}, "", errors.New("invalid cursor")
 	}
-	return t.UTC(), p.ID, nil
+	id, err := ids.Parse(p.ID)
+	if err != nil {
+		return time.Time{}, "", errors.New("invalid cursor")
+	}
+	return t.UTC(), id, nil
 }
 
 func masteryFromLearn(m learn.Mastery) masteryResponse {
@@ -125,7 +130,7 @@ func (a *API) ListAttempts(w http.ResponseWriter, r *http.Request) {
 	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > 50 {
-			apiLog("WARN", "[httpapi.Attempts.List] bad limit=%q userID=%d", raw, uid)
+			apiLog("WARN", "[httpapi.Attempts.List] bad limit=%q userID=%s", raw, uid)
 			writeAPIError(w, 400, "invalid_input", "limit must be 1–50")
 			return
 		}
@@ -143,7 +148,7 @@ func (a *API) ListAttempts(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if st != learn.AttemptStatusAssessed && st != learn.AttemptStatusAbandoned {
-				apiLog("WARN", "[httpapi.Attempts.List] bad status=%q userID=%d", statusRaw, uid)
+				apiLog("WARN", "[httpapi.Attempts.List] bad status=%q userID=%s", statusRaw, uid)
 				writeAPIError(w, 400, "invalid_input", "status may only include assessed and/or abandoned")
 				return
 			}
@@ -164,7 +169,7 @@ func (a *API) ListAttempts(w http.ResponseWriter, r *http.Request) {
 	if cur := strings.TrimSpace(q.Get("cursor")); cur != "" {
 		startedAt, id, err := decodeAttemptCursor(cur)
 		if err != nil {
-			apiLog("WARN", "[httpapi.Attempts.List] bad cursor userID=%d", uid)
+			apiLog("WARN", "[httpapi.Attempts.List] bad cursor userID=%s", uid)
 			writeAPIError(w, 400, "invalid_input", "invalid cursor")
 			return
 		}
@@ -190,7 +195,7 @@ func (a *API) ListAttempts(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, 400, "invalid_input", "invalid input")
 			return
 		}
-		apiLog("ERROR", "[httpapi.Attempts.List] store userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Attempts.List] store userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to list attempts")
 		return
 	}
@@ -221,7 +226,7 @@ func (a *API) ListAttempts(w http.ResponseWriter, r *http.Request) {
 		resp.NextCursor = &c
 	}
 
-	apiLog("INFO", "[httpapi.Attempts.List] userID=%d count=%d lessonId=%s characterId=%s hasNext=%v",
+	apiLog("INFO", "[httpapi.Attempts.List] userID=%s count=%d lessonId=%s characterId=%s hasNext=%v",
 		uid, len(items), filter.LessonID, filter.CharacterID, resp.NextCursor != nil)
 	writeJSON(w, 200, resp)
 }
@@ -264,7 +269,7 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 	}
 	outcomes, err := ls.Progress().ListAssessedOutcomes(r.Context(), uid, ids, learn.MasteryOutcomeWindow)
 	if err != nil {
-		apiLog("ERROR", "[httpapi.Progress.Next] outcomes userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Progress.Next] outcomes userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to load suggestion")
 		return
 	}
@@ -272,13 +277,13 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 	for _, id := range ids {
 		m := learn.DeriveMastery(outcomes[id])
 		masteryBy[id] = m
-		apiLog("DEBUG", "[learn.mastery] userID=%d characterID=%s state=%s reasonCode=%s assessedCount=%d",
+		apiLog("DEBUG", "[learn.mastery] userID=%s characterID=%s state=%s reasonCode=%s assessedCount=%d",
 			uid, id, m.State, m.ReasonCode, m.AssessedCount)
 	}
 
 	progressRows, err := ls.Progress().ListForUser(r.Context(), uid)
 	if err != nil {
-		apiLog("ERROR", "[httpapi.Progress.Next] progress userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Progress.Next] progress userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to load suggestion")
 		return
 	}
@@ -298,7 +303,7 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 	if flags.Review {
 		sug := learn.SuggestNextWithReview(placements, masteryBy, reviewBy, now)
 		dueCount := learn.CountDue(reviewBy, now)
-		apiLog("DEBUG", "[learn.review.Suggest] userID=%d lessonId=%s reasonCode=%s characterId=%s dueCount=%d nextDueCharacterId=%s",
+		apiLog("DEBUG", "[learn.review.Suggest] userID=%s lessonId=%s reasonCode=%s characterId=%s dueCount=%d nextDueCharacterId=%s",
 			uid, lessonID, sug.ReasonCode, sug.CharacterID, dueCount, sug.NextDueCharacterID)
 		resp.ReasonCode = sug.ReasonCode
 		if flags.Progress {
@@ -325,7 +330,7 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		cid, glyph, reason, state := learn.SuggestNextCharacter(placements, masteryBy)
-		apiLog("DEBUG", "[learn.mastery.Suggest] userID=%d lessonId=%s reasonCode=%s characterId=%s",
+		apiLog("DEBUG", "[learn.mastery.Suggest] userID=%s lessonId=%s reasonCode=%s characterId=%s",
 			uid, lessonID, reason, cid)
 		resp.ReasonCode = reason
 		if flags.Progress {
@@ -347,7 +352,7 @@ func (a *API) GetProgressNext(w http.ResponseWriter, r *http.Request) {
 	if resp.DueAt != nil {
 		dueLog = *resp.DueAt
 	}
-	apiLog("INFO", "[httpapi.Progress.Next] userID=%d lessonId=%s characterId=%s reasonCode=%s dueAt=%s reviewBox=%v",
+	apiLog("INFO", "[httpapi.Progress.Next] userID=%s lessonId=%s characterId=%s reasonCode=%s dueAt=%s reviewBox=%v",
 		uid, lessonID, charLog, resp.ReasonCode, dueLog, resp.ReviewBox)
 	writeJSON(w, 200, resp)
 }
@@ -367,12 +372,12 @@ func (a *API) ClearPracticeData(w http.ResponseWriter, r *http.Request) {
 
 	res, err := ls.Attempts().ClearPracticeData(r.Context(), uid)
 	if err != nil {
-		apiLog("ERROR", "[httpapi.PracticeData.Clear] userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.PracticeData.Clear] userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to clear practice data")
 		return
 	}
 	metrics.Add(metricClearTotal, 1)
-	apiLog("INFO", "[httpapi.PracticeData.Clear] userID=%d attemptsDeleted=%d progressRowsCleared=%d",
+	apiLog("INFO", "[httpapi.PracticeData.Clear] userID=%s attemptsDeleted=%d progressRowsCleared=%d",
 		uid, res.AttemptsDeleted, res.ProgressRowsCleared)
 	apiLog("DEBUG", "[httpapi.PracticeData.Clear] metric=%s +1", metricClearTotal)
 	writeJSON(w, 200, clearPracticeDataResponse{

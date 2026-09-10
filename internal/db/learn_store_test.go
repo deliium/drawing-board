@@ -266,7 +266,7 @@ func TestCreateDraftIdempotentClientAttemptID(t *testing.T) {
 		t.Fatalf("idempotent create: %v", err)
 	}
 	if replay.ID != first.ID {
-		t.Fatalf("replay id=%d want %d", replay.ID, first.ID)
+		t.Fatalf("replay id=%s want %s", replay.ID, first.ID)
 	}
 
 	_, err = ls.Attempts().CreateDraft(ctx, learn.CreateDraft{
@@ -341,7 +341,7 @@ func TestListAttemptsPaginationAndFilters(t *testing.T) {
 	chars, _ := ls.Characters().ListBySet(ctx, recognize.SetIDHiragana5)
 	lessonID := "lesson:hiragana5"
 
-	makeAssessed := func(charID string, pass bool) int64 {
+	makeAssessed := func(charID string, pass bool) string {
 		d, err := ls.Attempts().CreateDraft(ctx, learn.CreateDraft{UserID: uid, CharacterID: charID, LessonID: lessonID})
 		if err != nil {
 			t.Fatalf("draft: %v", err)
@@ -409,7 +409,7 @@ func TestListAttemptsPaginationAndFilters(t *testing.T) {
 		}
 	}
 	if len(filtered.Items) != 2 {
-		t.Fatalf("char0 assessed count=%d want 2 (ids %d %d)", len(filtered.Items), id1, id2)
+		t.Fatalf("char0 assessed count=%d want 2 (ids %s %s)", len(filtered.Items), id1, id2)
 	}
 
 	withAbandon, err := ls.Attempts().List(ctx, uid, learn.AttemptListFilter{

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/deliium/drawing-board/internal/db"
+	"github.com/deliium/drawing-board/internal/ids"
 	"github.com/deliium/drawing-board/internal/learn"
 	"github.com/deliium/drawing-board/internal/limits"
 	"github.com/deliium/drawing-board/internal/metrics"
@@ -24,7 +24,7 @@ type createAttemptRequest struct {
 }
 
 type attemptResponse struct {
-	ID              int64   `json:"id"`
+	ID              string  `json:"id"`
 	CharacterID     string  `json:"characterId"`
 	Glyph           string  `json:"glyph,omitempty"`
 	LessonID        string  `json:"lessonId,omitempty"`
@@ -51,7 +51,7 @@ type submitStrokeRequest struct {
 }
 
 type submitAttemptResponse struct {
-	ID          int64  `json:"id"`
+	ID          string `json:"id"`
 	Status      string `json:"status"`
 	SubmittedAt string `json:"submittedAt"`
 	StrokeCount int    `json:"strokeCount"`
@@ -60,7 +60,7 @@ type submitAttemptResponse struct {
 }
 
 type assessmentResponse struct {
-	AttemptID   int64                 `json:"attemptId"`
+	AttemptID   string                `json:"attemptId"`
 	CharacterID string                `json:"characterId"`
 	Glyph       string                `json:"glyph,omitempty"`
 	Status      string                `json:"status"`
@@ -75,7 +75,7 @@ type assessmentResponse struct {
 }
 
 type abandonResponse struct {
-	ID     int64  `json:"id"`
+	ID     string `json:"id"`
 	Status string `json:"status"`
 }
 
@@ -126,11 +126,11 @@ func rfc3339Ptr(t *time.Time) *string {
 	return &s
 }
 
-func parseAttemptID(r *http.Request) (int64, error) {
+func parseAttemptID(r *http.Request) (string, error) {
 	raw := mux.Vars(r)["id"]
-	id, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || id <= 0 {
-		return 0, learn.ErrInvalidInput
+	id, err := ids.Parse(raw)
+	if err != nil {
+		return "", learn.ErrInvalidInput
 	}
 	return id, nil
 }
@@ -177,7 +177,7 @@ func (a *API) CreateAttempt(w http.ResponseWriter, r *http.Request) {
 	req.CharacterID = strings.TrimSpace(req.CharacterID)
 	req.LessonID = strings.TrimSpace(req.LessonID)
 	req.ClientAttemptID = strings.TrimSpace(req.ClientAttemptID)
-	apiLog("DEBUG", "[httpapi.Attempt.Create] userID=%d characterID=%s clientAttemptIDPresent=%t",
+	apiLog("DEBUG", "[httpapi.Attempt.Create] userID=%s characterID=%s clientAttemptIDPresent=%t",
 		uid, req.CharacterID, req.ClientAttemptID != "")
 
 	if req.CharacterID == "" {
@@ -201,19 +201,19 @@ func (a *API) CreateAttempt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		attemptMetric("create", "error")
-		apiLog("ERROR", "[httpapi.Attempt.Create] character lookup userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Attempt.Create] character lookup userID=%s: %v", uid, err)
 		writeAPIError(w, 500, "internal_error", "failed to load character")
 		return
 	}
 	if ch.Status != learn.CharacterStatusActive {
 		attemptRejectMetric("create", "character_not_active")
-		apiLog("WARN", "[httpapi.Attempt.Create] inactive character userID=%d characterID=%s", uid, ch.ID)
+		apiLog("WARN", "[httpapi.Attempt.Create] inactive character userID=%s characterID=%s", uid, ch.ID)
 		writeAPIError(w, 400, "character_not_active", "character is not active")
 		return
 	}
 	if ch.SetID != recognize.SetIDHiragana5 {
 		attemptRejectMetric("create", "invalid_input")
-		apiLog("WARN", "[httpapi.Attempt.Create] unsupported set userID=%d setID=%s", uid, ch.SetID)
+		apiLog("WARN", "[httpapi.Attempt.Create] unsupported set userID=%s setID=%s", uid, ch.SetID)
 		writeAPIError(w, 400, "invalid_input", "character set not supported for practice")
 		return
 	}
@@ -255,13 +255,13 @@ func (a *API) CreateAttempt(w http.ResponseWriter, r *http.Request) {
 		if existing, err := ls.Attempts().GetByClientAttemptID(r.Context(), uid, req.ClientAttemptID); err == nil {
 			if existing.CharacterID != ch.ID || existing.LessonID != req.LessonID {
 				attemptRejectMetric("create", "conflict")
-				apiLog("WARN", "[httpapi.Attempt.Create] conflict userID=%d clientAttemptID=%s", uid, req.ClientAttemptID)
+				apiLog("WARN", "[httpapi.Attempt.Create] conflict userID=%s clientAttemptID=%s", uid, req.ClientAttemptID)
 				writeAPIError(w, 409, "conflict", "clientAttemptId reused for different character/lesson")
 				return
 			}
 			statusCode = 200
 			attemptMetric("create", "ok")
-			apiLog("INFO", "[httpapi.Attempt.Create] idempotent replay userID=%d attemptID=%d", uid, existing.ID)
+			apiLog("INFO", "[httpapi.Attempt.Create] idempotent replay userID=%s attemptID=%s", uid, existing.ID)
 			writeJSON(w, statusCode, attemptResponse{
 				ID:              existing.ID,
 				CharacterID:     existing.CharacterID,
@@ -274,7 +274,7 @@ func (a *API) CreateAttempt(w http.ResponseWriter, r *http.Request) {
 			return
 		} else if !errors.Is(err, learn.ErrNotFound) {
 			attemptMetric("create", "error")
-			apiLog("ERROR", "[httpapi.Attempt.Create] lookup clientAttemptID userID=%d: %v", uid, err)
+			apiLog("ERROR", "[httpapi.Attempt.Create] lookup clientAttemptID userID=%s: %v", uid, err)
 			writeAPIError(w, 500, "internal_error", "failed to create attempt")
 			return
 		}
@@ -289,18 +289,18 @@ func (a *API) CreateAttempt(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, learn.ErrConflict) {
 			attemptRejectMetric("create", "conflict")
-			apiLog("WARN", "[httpapi.Attempt.Create] conflict userID=%d clientAttemptID=%s", uid, req.ClientAttemptID)
+			apiLog("WARN", "[httpapi.Attempt.Create] conflict userID=%s clientAttemptID=%s", uid, req.ClientAttemptID)
 			writeAPIError(w, 409, "conflict", "clientAttemptId reused for different character/lesson")
 			return
 		}
 		attemptMetric("create", "error")
-		apiLog("ERROR", "[httpapi.Attempt.Create] store userID=%d: %v", uid, err)
+		apiLog("ERROR", "[httpapi.Attempt.Create] store userID=%s: %v", uid, err)
 		writeLearnError(w, err, "failed to create attempt")
 		return
 	}
 
 	attemptMetric("create", "ok")
-	apiLog("INFO", "[httpapi.Attempt.Create] userID=%d attemptID=%d status=%s characterID=%s",
+	apiLog("INFO", "[httpapi.Attempt.Create] userID=%s attemptID=%s status=%s characterID=%s",
 		uid, created.ID, created.Status, created.CharacterID)
 	writeJSON(w, statusCode, attemptResponse{
 		ID:              created.ID,
@@ -396,7 +396,7 @@ func (a *API) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 	for _, st := range req.Strokes {
 		totalPoints += len(st.Points)
 	}
-	apiLog("DEBUG", "[httpapi.Attempt.Submit] userID=%d attemptID=%d strokeCount=%d pointCount=%d w=%d h=%d",
+	apiLog("DEBUG", "[httpapi.Attempt.Submit] userID=%s attemptID=%s strokeCount=%d pointCount=%d w=%d h=%d",
 		uid, id, len(req.Strokes), totalPoints, req.Width, req.Height)
 	if err := limits.ValidateStrokeSet(len(req.Strokes), totalPoints); err != nil {
 		attemptRejectMetric("submit", limits.ErrorCode(err))
@@ -438,7 +438,7 @@ func (a *API) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 	if err := ls.Attempts().SubmitStrokes(r.Context(), uid, id, strokes, req.Width, req.Height); err != nil {
 		if errors.Is(err, learn.ErrInvalidStatus) {
 			attemptRejectMetric("submit", "invalid_status")
-			apiLog("WARN", "[httpapi.Attempt.Submit] invalid_status attemptID=%d", id)
+			apiLog("WARN", "[httpapi.Attempt.Submit] invalid_status attemptID=%s", id)
 			writeAPIError(w, 409, "invalid_status", "attempt is not draft")
 			return
 		}
@@ -453,7 +453,7 @@ func (a *API) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		attemptMetric("submit", "error")
-		apiLog("ERROR", "[httpapi.Attempt.Submit] store attemptID=%d: %v", id, err)
+		apiLog("ERROR", "[httpapi.Attempt.Submit] store attemptID=%s: %v", id, err)
 		writeAPIError(w, 500, "internal_error", "failed to submit attempt")
 		return
 	}
@@ -464,7 +464,7 @@ func (a *API) SubmitAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	attemptMetric("submit", "ok")
-	apiLog("INFO", "[httpapi.Attempt.Submit] userID=%d attemptID=%d status=submitted strokeCount=%d",
+	apiLog("INFO", "[httpapi.Attempt.Submit] userID=%s attemptID=%s status=submitted strokeCount=%d",
 		uid, id, len(strokes))
 	writeJSON(w, 200, submitAttemptResponse{
 		ID:          id,
@@ -501,7 +501,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 	if !a.recognizeLimiter().Allow(uid) {
 		attemptRejectMetric("assess", "rate_limited")
-		apiLog("WARN", "[httpapi.Attempt.Assess] rate_limited userID=%d attemptID=%d", uid, id)
+		apiLog("WARN", "[httpapi.Attempt.Assess] rate_limited userID=%s attemptID=%s", uid, id)
 		writeAPIError(w, 429, "rate_limited", "too many assessment requests")
 		return
 	}
@@ -517,7 +517,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, 500, "internal_error", "failed to load attempt")
 		return
 	}
-	apiLog("DEBUG", "[httpapi.Attempt.Assess] userID=%d attemptID=%d status=%s", uid, id, at.Status)
+	apiLog("DEBUG", "[httpapi.Attempt.Assess] userID=%s attemptID=%s status=%s", uid, id, at.Status)
 
 	ch, err := ls.Characters().Get(r.Context(), at.CharacterID)
 	if err != nil {
@@ -535,7 +535,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 		}
 		attemptMetric("assess", "ok")
 		metrics.Add(metricAssessTotal, 1)
-		apiLog("INFO", "[httpapi.Attempt.Assess] idempotent replay userID=%d attemptID=%d pass=%t", uid, id, ar.Pass)
+		apiLog("INFO", "[httpapi.Attempt.Assess] idempotent replay userID=%s attemptID=%s pass=%t", uid, id, ar.Pass)
 		writeJSON(w, 200, assessmentResponse{
 			AttemptID:   id,
 			CharacterID: at.CharacterID,
@@ -553,7 +553,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 	if at.Status != learn.AttemptStatusSubmitted {
 		attemptRejectMetric("assess", "invalid_status")
-		apiLog("WARN", "[httpapi.Attempt.Assess] invalid_status attemptID=%d status=%s", id, at.Status)
+		apiLog("WARN", "[httpapi.Attempt.Assess] invalid_status attemptID=%s status=%s", id, at.Status)
 		writeAPIError(w, 409, "invalid_status", "attempt is not submitted")
 		return
 	}
@@ -561,7 +561,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 	strokes, width, height, err := ls.Attempts().ListStrokes(r.Context(), uid, id)
 	if err != nil {
 		attemptMetric("assess", "error")
-		apiLog("ERROR", "[httpapi.Attempt.Assess] list strokes attemptID=%d: %v", id, err)
+		apiLog("ERROR", "[httpapi.Attempt.Assess] list strokes attemptID=%s: %v", id, err)
 		writeLearnError(w, err, "failed to load attempt strokes")
 		return
 	}
@@ -582,7 +582,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		attemptMetric("assess", "error")
-		apiLog("ERROR", "[httpapi.Attempt.Assess] assessor attemptID=%d: %v", id, err)
+		apiLog("ERROR", "[httpapi.Attempt.Assess] assessor attemptID=%s: %v", id, err)
 		writeAPIError(w, 500, "internal_error", "assessment failed")
 		return
 	}
@@ -592,7 +592,7 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 	for i, f := range feedback {
 		codes[i] = f.Code
 	}
-	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%d pass=%t score=%.3f feedbackCodes=%v", id, assessment.Pass, assessment.Score, codes)
+	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%s pass=%t score=%.3f feedbackCodes=%v", id, assessment.Pass, assessment.Score, codes)
 	ar, err := ls.Assessments().SaveResult(r.Context(), uid, learn.SaveAssessment{
 		AttemptID: id,
 		Pass:      assessment.Pass,
@@ -605,16 +605,16 @@ func (a *API) AssessAttempt(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		attemptMetric("assess", "error")
-		apiLog("ERROR", "[httpapi.Attempt.Assess] save result attemptID=%d: %v", id, err)
+		apiLog("ERROR", "[httpapi.Attempt.Assess] save result attemptID=%s: %v", id, err)
 		writeLearnError(w, err, "failed to save assessment")
 		return
 	}
 
 	attemptMetric("assess", "ok")
 	metrics.Add(metricAssessTotal, 1)
-	apiLog("INFO", "[httpapi.Attempt.Assess] userID=%d attemptID=%d pass=%t score=%.3f scoreKind=%s feedbackCount=%d",
+	apiLog("INFO", "[httpapi.Attempt.Assess] userID=%s attemptID=%s pass=%t score=%.3f scoreKind=%s feedbackCount=%d",
 		uid, id, ar.Pass, ar.Score, ar.ScoreKind, len(ar.Feedback))
-	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%d status=assessed pass=%t score=%.3f metric=%s", id, ar.Pass, ar.Score, metricAssessTotal)
+	apiLog("DEBUG", "[httpapi.Attempt.Assess] attemptID=%s status=assessed pass=%t score=%.3f metric=%s", id, ar.Pass, ar.Score, metricAssessTotal)
 	writeJSON(w, 200, assessmentResponse{
 		AttemptID:   id,
 		CharacterID: at.CharacterID,
@@ -698,7 +698,7 @@ func (a *API) AbandonAttempt(w http.ResponseWriter, r *http.Request) {
 	if err := ls.Attempts().Abandon(r.Context(), uid, id); err != nil {
 		if errors.Is(err, learn.ErrInvalidStatus) {
 			attemptRejectMetric("abandon", "invalid_status")
-			apiLog("WARN", "[httpapi.Attempt.Abandon] invalid_status attemptID=%d", id)
+			apiLog("WARN", "[httpapi.Attempt.Abandon] invalid_status attemptID=%s", id)
 			writeAPIError(w, 409, "invalid_status", "attempt is not draft")
 			return
 		}
@@ -708,12 +708,12 @@ func (a *API) AbandonAttempt(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		attemptMetric("abandon", "error")
-		apiLog("ERROR", "[httpapi.Attempt.Abandon] store attemptID=%d: %v", id, err)
+		apiLog("ERROR", "[httpapi.Attempt.Abandon] store attemptID=%s: %v", id, err)
 		writeAPIError(w, 500, "internal_error", "failed to abandon attempt")
 		return
 	}
 	attemptMetric("abandon", "ok")
-	apiLog("INFO", "[httpapi.Attempt.Abandon] userID=%d attemptID=%d status=abandoned", uid, id)
+	apiLog("INFO", "[httpapi.Attempt.Abandon] userID=%s attemptID=%s status=abandoned", uid, id)
 	writeJSON(w, 200, abandonResponse{ID: id, Status: learn.AttemptStatusAbandoned})
 }
 

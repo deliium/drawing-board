@@ -87,7 +87,7 @@ describe('wsClient reliability queue', () => {
     const ok = client.send({
       type: 'delete',
       opId: 'op-del',
-      delete: 9,
+      delete: '99999999-9999-4999-8999-999999999999',
     })
     expect(ok).toBe(true)
     expect(client.getQueueLength()).toBe(1)
@@ -125,7 +125,7 @@ describe('wsClient reliability queue', () => {
       type: 'ack',
       opId: 'op-dup',
       ok: true,
-      strokeId: 7,
+      strokeId: '77777777-7777-4777-8777-777777777777',
     })
     sockets[0].onmessage?.({ data: ackPayload } as MessageEvent)
     expect(client.getQueueLength()).toBe(0)
@@ -151,14 +151,14 @@ describe('wsClient reliability queue', () => {
       client.send({
         type: 'delete',
         opId: 'a',
-        delete: 1,
+        delete: '11111111-1111-4111-8111-111111111111',
       }),
     ).toBe(true)
     expect(
       client.send({
         type: 'delete',
         opId: 'b',
-        delete: 2,
+        delete: '22222222-2222-4222-8222-222222222222',
       }),
     ).toBe(false)
     expect(rejectReason).toBe('queue_full')
@@ -190,7 +190,7 @@ describe('wsClient reliability queue', () => {
       onMessage: () => {},
       WebSocketImpl: FakeWebSocket,
     })
-    client.send({ type: 'delete', opId: 'x', delete: 1 })
+    client.send({ type: 'delete', opId: 'x', delete: '11111111-1111-4111-8111-111111111111' })
     expect(client.getQueueLength()).toBe(1)
     client.clearPending()
     expect(client.getQueueLength()).toBe(0)

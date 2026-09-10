@@ -59,7 +59,7 @@ describe('board revision client races', () => {
       type: 'ack',
       opId: 'op-local-1',
       ok: true,
-      strokeId: 42,
+      strokeId: '42424242-4242-4242-8242-424242424242',
       boardRev: 3,
     })
     expect(result.action).toBe('ignored-duplicate-ack')
@@ -67,7 +67,7 @@ describe('board revision client races', () => {
   })
 
   it('clear echo empties strokes', () => {
-    const local = pendingStroke({ id: 1, sync: 'saved' })
+    const local = pendingStroke({ id: '11111111-1111-4111-8111-111111111111', sync: 'saved' })
     const result = applyIncomingMessage([local], {
       type: 'clear',
       opId: 'op-clear',
@@ -80,7 +80,7 @@ describe('board revision client races', () => {
   })
 
   it('acked clear empties strokes', () => {
-    const local = pendingStroke({ id: 1, sync: 'saved' })
+    const local = pendingStroke({ id: '11111111-1111-4111-8111-111111111111', sync: 'saved' })
     const result = applyIncomingMessage([local], {
       type: 'ack',
       opId: 'op-clear',
@@ -113,7 +113,7 @@ describe('board revision client races', () => {
         type: 'stroke',
         opId: 'op-local-1',
         boardRev: 1,
-        stroke: { ...local, id: 9 },
+        stroke: { ...local, id: '99999999-9999-4999-8999-999999999999' },
       },
       5,
     )
@@ -155,7 +155,7 @@ describe('board revision client races', () => {
 
     // Late ack for dropped create must not re-queue
     sockets[0].onmessage?.({
-      data: JSON.stringify({ type: 'ack', opId: 'op-pending', ok: true, strokeId: 99, boardRev: 3 }),
+      data: JSON.stringify({ type: 'ack', opId: 'op-pending', ok: true, strokeId: '99999999-9999-4999-8999-999999999990', boardRev: 3 }),
     } as MessageEvent)
     expect(client.getQueueLength()).toBe(0)
   })
@@ -191,7 +191,7 @@ describe('board revision client races', () => {
     client.connect('ws://test/ws')
     sockets[0].readyState = 1
     sockets[0].onopen?.({} as Event)
-    client.send({ type: 'delete', opId: 'op-stale', delete: 1 })
+    client.send({ type: 'delete', opId: 'op-stale', delete: '11111111-1111-4111-8111-111111111111' })
     sockets[0].onmessage?.({
       data: JSON.stringify({
         type: 'ack',

@@ -1,5 +1,5 @@
 export type StrokePayload = {
-  id?: number
+  id?: string
   points: { x: number; y: number }[]
   color: string
   width: number
@@ -20,7 +20,7 @@ export type DeleteMessage = {
   type: 'delete'
   opId: string
   baseRev?: number
-  delete?: number
+  delete?: string
   deleteOpId?: string
   boardRev?: number
 }
@@ -36,8 +36,8 @@ export type AckMessage = {
   opId: string
   ok: boolean
   boardRev?: number
-  strokeId?: number
-  delete?: number
+  strokeId?: string
+  delete?: string
   clear?: boolean
   error?: string
   message?: string

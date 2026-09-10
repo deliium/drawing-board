@@ -33,7 +33,7 @@ describe('apiClient CSRF', () => {
     document.cookie = 'csrf=abc123token; path=/'
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ id: 1 }),
+      json: async () => ({ id: '11111111-1111-4111-8111-111111111111' }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
